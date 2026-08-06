@@ -11,6 +11,10 @@
 --    pela API), com search_path fixo
 -- ============================================================
 
+-- Permite definir funções que referenciam tabelas criadas mais adiante
+-- no mesmo script (a validação acontece na execução, não na criação):
+set check_function_bodies = off;
+
 -- ---------- Schema privado para helpers ----------
 create schema if not exists private;
 grant usage on schema private to authenticated;
