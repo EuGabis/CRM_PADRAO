@@ -12,7 +12,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CustomFieldsInputs } from "@/components/contacts/custom-fields-inputs";
 import { dbContactActions } from "@/lib/data/repos/db/contacts";
+import { useContactsModule } from "@/lib/data/repos/db/contacts-module";
 
 export function ContactFormDialog({
   open,
@@ -21,6 +23,7 @@ export function ContactFormDialog({
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
+  const { fields } = useContactsModule();
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
@@ -29,11 +32,11 @@ export function ContactFormDialog({
     company: "",
     tags: "",
   });
+  const [custom, setCustom] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
-
-  const [saving, setSaving] = useState(false);
 
   const submit = async () => {
     if (!form.firstName.trim() || !form.lastName.trim()) {
@@ -51,6 +54,9 @@ export function ContactFormDialog({
         .split(",")
         .map((t) => t.trim().toLowerCase())
         .filter(Boolean),
+      customFields: Object.fromEntries(
+        Object.entries(custom).filter(([, v]) => v.trim() !== "")
+      ),
     });
     setSaving(false);
     if (!ok) {
@@ -59,12 +65,13 @@ export function ContactFormDialog({
     }
     toast.success("Contato criado");
     setForm({ firstName: "", lastName: "", email: "", phone: "", company: "", tags: "" });
+    setCustom({});
     onOpenChange(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Adicionar contato</DialogTitle>
         </DialogHeader>
@@ -91,7 +98,19 @@ export function ContactFormDialog({
           </div>
           <div className="col-span-2 space-y-1">
             <Label className="text-xs">Tags (separadas por vírgula)</Label>
-            <Input value={form.tags} onChange={set("tags")} className="h-8" placeholder="quente, negociando" />
+            <Input
+              value={form.tags}
+              onChange={set("tags")}
+              className="h-8"
+              placeholder="quente, negociando"
+            />
+          </div>
+          <div className="col-span-2 grid grid-cols-2 gap-3">
+            <CustomFieldsInputs
+              fields={fields}
+              values={custom}
+              onChange={(name, value) => setCustom((c) => ({ ...c, [name]: value }))}
+            />
           </div>
         </div>
         <DialogFooter>

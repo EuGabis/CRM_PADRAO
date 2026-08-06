@@ -1,24 +1,51 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ArrowLeft, MessageSquare } from "lucide-react";
+import { ArrowLeft, MessageSquare, Pencil, X } from "lucide-react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ChannelIcon } from "@/components/shared/channel-icon";
+import { CustomFieldsInputs } from "@/components/contacts/custom-fields-inputs";
 import { contactName } from "@/lib/data/repos/contacts";
-import { useDbContact, useDbTeam } from "@/lib/data/repos/db/contacts";
-import { formatBRL, useOpportunitiesByContact, usePipelines } from "@/lib/data/repos/opportunities";
+import { dbContactActions, useDbContact, useDbTeam } from "@/lib/data/repos/db/contacts";
+import { useContactsModule } from "@/lib/data/repos/db/contacts-module";
 
 export default function ContactDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { contact, loading } = useDbContact(id);
   const team = useDbTeam();
-  const opportunities = useOpportunitiesByContact(id);
-  const pipelines = usePipelines();
+  const { fields } = useContactsModule();
+
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    company: "",
+  });
+  const [custom, setCustom] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (contact && !editing) {
+      setForm({
+        firstName: contact.firstName,
+        lastName: contact.lastName,
+        email: contact.email,
+        phone: contact.phone,
+        company: contact.company ?? "",
+      });
+      setCustom(contact.customFields);
+    }
+  }, [contact, editing]);
 
   if (loading) {
     return (
@@ -41,6 +68,34 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
 
   const owner = team.find((u) => u.id === contact.ownerId);
 
+  const save = async () => {
+    if (!form.firstName.trim()) {
+      toast.error("O nome é obrigatório");
+      return;
+    }
+    setSaving(true);
+    const ok = await dbContactActions.update(contact.id, {
+      firstName: form.firstName.trim(),
+      lastName: form.lastName.trim(),
+      email: form.email.trim(),
+      phone: form.phone.trim(),
+      company: form.company.trim(),
+      customFields: Object.fromEntries(
+        Object.entries(custom).filter(([, v]) => String(v).trim() !== "")
+      ),
+    });
+    setSaving(false);
+    if (!ok) {
+      toast.error("Não foi possível salvar as alterações");
+      return;
+    }
+    toast.success("Contato atualizado");
+    setEditing(false);
+  };
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
   return (
     <div className="p-6">
       <Link
@@ -53,8 +108,8 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
         <div className="flex items-center gap-3">
           <Avatar className="size-12">
             <AvatarFallback className="bg-indigo-500 text-base font-bold text-white">
-              {contact.firstName[0]}
-              {contact.lastName[0]}
+              {(contact.firstName[0] ?? "?").toUpperCase()}
+              {(contact.lastName[0] ?? "").toUpperCase()}
             </AvatarFallback>
           </Avatar>
           <div>
@@ -65,77 +120,116 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
             </p>
           </div>
         </div>
-        <Link href="/conversas">
-          <Button size="sm" className="h-8 gap-1.5 text-xs">
-            <MessageSquare className="size-3.5" /> Abrir conversa
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          {editing ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+                onClick={() => setEditing(false)}
+              >
+                <X className="size-3.5" /> Cancelar
+              </Button>
+              <Button size="sm" className="h-8 text-xs" onClick={save} disabled={saving}>
+                {saving ? "Salvando..." : "Salvar alterações"}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+                onClick={() => setEditing(true)}
+              >
+                <Pencil className="size-3.5" /> Editar
+              </Button>
+              <Link href="/conversas">
+                <Button size="sm" className="h-8 gap-1.5 text-xs">
+                  <MessageSquare className="size-3.5" /> Abrir conversa
+                </Button>
+              </Link>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border bg-white p-4">
           <h2 className="mb-3 text-sm font-semibold text-slate-700">Campos do contato</h2>
-          <dl className="space-y-2 text-sm">
-            {[
-              ["Nome", contact.firstName],
-              ["Sobrenome", contact.lastName],
-              ["E-mail", contact.email],
-              ["Telefone", contact.phone],
-              ["Empresa", contact.company ?? "—"],
-              ["DND", contact.dnd ? "Ativado" : "Desativado"],
-              [
-                "Criado em",
-                format(new Date(contact.createdAt), "d 'de' MMMM 'de' yyyy", { locale: ptBR }),
-              ],
-            ].map(([k, v]) => (
-              <div key={k} className="flex justify-between gap-4 border-b pb-2 last:border-0">
-                <dt className="text-slate-500">{k}</dt>
-                <dd className="font-medium text-slate-800">{v}</dd>
+          {editing ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Nome *</Label>
+                <Input value={form.firstName} onChange={set("firstName")} className="h-8" />
               </div>
-            ))}
-            {Object.entries(contact.customFields).map(([k, v]) => (
-              <div key={k} className="flex justify-between gap-4 border-b pb-2 last:border-0">
-                <dt className="text-slate-500">{k}</dt>
-                <dd className="font-medium text-slate-800">{v}</dd>
+              <div className="space-y-1">
+                <Label className="text-xs">Sobrenome</Label>
+                <Input value={form.lastName} onChange={set("lastName")} className="h-8" />
               </div>
-            ))}
-          </dl>
-          <div className="mt-3 flex flex-wrap gap-1">
-            {contact.tags.map((t) => (
-              <Badge key={t} variant="secondary" className="text-[10px]">
-                {t}
-              </Badge>
-            ))}
-          </div>
+              <div className="col-span-2 space-y-1">
+                <Label className="text-xs">E-mail</Label>
+                <Input type="email" value={form.email} onChange={set("email")} className="h-8" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Telefone</Label>
+                <Input value={form.phone} onChange={set("phone")} className="h-8" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Empresa</Label>
+                <Input value={form.company} onChange={set("company")} className="h-8" />
+              </div>
+              <CustomFieldsInputs
+                fields={fields}
+                values={custom}
+                onChange={(name, value) => setCustom((c) => ({ ...c, [name]: value }))}
+              />
+            </div>
+          ) : (
+            <>
+              <dl className="space-y-2 text-sm">
+                {[
+                  ["Nome", contact.firstName],
+                  ["Sobrenome", contact.lastName || "—"],
+                  ["E-mail", contact.email || "—"],
+                  ["Telefone", contact.phone || "—"],
+                  ["Empresa", contact.company ?? "—"],
+                  ["DND", contact.dnd ? "Ativado" : "Desativado"],
+                  [
+                    "Criado em",
+                    format(new Date(contact.createdAt), "d 'de' MMMM 'de' yyyy", { locale: ptBR }),
+                  ],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex justify-between gap-4 border-b pb-2 last:border-0">
+                    <dt className="text-slate-500">{k}</dt>
+                    <dd className="font-medium text-slate-800">{v}</dd>
+                  </div>
+                ))}
+                {Object.entries(contact.customFields).map(([k, v]) => (
+                  <div key={k} className="flex justify-between gap-4 border-b pb-2 last:border-0">
+                    <dt className="text-slate-500">{k}</dt>
+                    <dd className="font-medium text-slate-800">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="mt-3 flex flex-wrap gap-1">
+                {contact.tags.map((t) => (
+                  <Badge key={t} variant="secondary" className="text-[10px]">
+                    {t}
+                  </Badge>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="rounded-xl border bg-white p-4">
           <h2 className="mb-3 text-sm font-semibold text-slate-700">Oportunidades</h2>
-          {opportunities.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhuma oportunidade para este contato.</p>
-          ) : (
-            <ul className="space-y-2">
-              {opportunities.map((o) => {
-                const pipeline = pipelines.find((p) => p.id === o.pipelineId);
-                const stage = pipeline?.stages.find((s) => s.id === o.stageId);
-                return (
-                  <li key={o.id} className="rounded-lg border p-3">
-                    <p className="text-xs font-semibold text-slate-500">
-                      {pipeline?.name} &gt; {stage?.name}
-                    </p>
-                    <div className="mt-1 flex items-center justify-between">
-                      <span className="text-sm font-medium text-slate-800">{o.name}</span>
-                      <span className="text-sm font-bold text-slate-900">{formatBRL(o.value)}</span>
-                    </div>
-                    <p className="mt-0.5 text-[11px] text-slate-400">
-                      Fonte: {o.source} · Status:{" "}
-                      {o.status === "open" ? "Aberta" : o.status === "won" ? "Ganha" : "Perdida"}
-                    </p>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <p className="text-sm text-slate-500">
+            As oportunidades reais deste contato aparecem aqui quando o módulo Leads for
+            conectado ao banco (próxima fase).
+          </p>
         </div>
       </div>
     </div>

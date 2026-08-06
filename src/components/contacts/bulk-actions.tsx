@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { dbContactActions } from "@/lib/data/repos/db/contacts";
+import { logBulk } from "@/lib/data/repos/db/contacts-module";
 
 export function BulkActions({ ids, clear }: { ids: string[]; clear: () => void }) {
   const simulated = (label: string) => () =>
@@ -35,6 +36,7 @@ export function BulkActions({ ids, clear }: { ids: string[]; clear: () => void }
     if (!tag?.trim()) return;
     const ok = await dbContactActions.addTag(ids, tag.trim().toLowerCase());
     if (ok) {
+      void logBulk(`Adicionar tag "${tag.trim().toLowerCase()}"`, ids.length);
       toast.success(`Tag "${tag.trim()}" adicionada a ${ids.length} contato(s)`);
       clear();
     } else {
@@ -47,6 +49,7 @@ export function BulkActions({ ids, clear }: { ids: string[]; clear: () => void }
     if (!tag?.trim()) return;
     const ok = await dbContactActions.removeTag(ids, tag.trim().toLowerCase());
     if (ok) {
+      void logBulk(`Remover tag "${tag.trim().toLowerCase()}"`, ids.length);
       toast.success(`Tag "${tag.trim()}" removida de ${ids.length} contato(s)`);
       clear();
     } else {
@@ -60,6 +63,7 @@ export function BulkActions({ ids, clear }: { ids: string[]; clear: () => void }
     }
     const ok = await dbContactActions.remove(ids);
     if (ok) {
+      void logBulk("Excluir contatos", ids.length);
       toast.success(`${ids.length} contato(s) excluído(s)`);
       clear();
     } else {

@@ -120,6 +120,7 @@ export const dbContactActions = {
     phone: string;
     company?: string;
     tags: string[];
+    customFields?: Record<string, string>;
   }): Promise<boolean> {
     const { locationId, userId, setContacts } = useDbStore.getState();
     if (!locationId) return false;
@@ -135,6 +136,7 @@ export const dbContactActions = {
         company: input.company ?? null,
         tags: input.tags,
         owner_id: userId,
+        custom_fields: input.customFields ?? {},
       })
       .select()
       .single();
@@ -190,5 +192,66 @@ export const dbContactActions = {
     if (error) return false;
     useDbStore.getState().setContacts((prev) => prev.filter((c) => !ids.includes(c.id)));
     return true;
+  },
+
+  async update(
+    id: string,
+    patch: Partial<
+      Pick<Contact, "firstName" | "lastName" | "email" | "phone" | "company" | "customFields">
+    >
+  ): Promise<boolean> {
+    const supabase = createClient();
+    const row: Record<string, unknown> = {};
+    if (patch.firstName !== undefined) row.first_name = patch.firstName;
+    if (patch.lastName !== undefined) row.last_name = patch.lastName;
+    if (patch.email !== undefined) row.email = patch.email;
+    if (patch.phone !== undefined) row.phone = patch.phone;
+    if (patch.company !== undefined) row.company = patch.company || null;
+    if (patch.customFields !== undefined) row.custom_fields = patch.customFields;
+    const { data, error } = await supabase
+      .from("contacts")
+      .update(row)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error || !data) return false;
+    useDbStore
+      .getState()
+      .setContacts((prev) => prev.map((c) => (c.id === id ? mapContact(data) : c)));
+    return true;
+  },
+
+  /** Importação em massa (CSV). Retorna o nº de contatos inseridos, ou -1 em erro. */
+  async bulkInsert(
+    rows: {
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string;
+      company?: string;
+      tags: string[];
+    }[]
+  ): Promise<number> {
+    const { locationId, userId, setContacts } = useDbStore.getState();
+    if (!locationId || rows.length === 0) return -1;
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("contacts")
+      .insert(
+        rows.map((r) => ({
+          location_id: locationId,
+          first_name: r.firstName,
+          last_name: r.lastName,
+          email: r.email,
+          phone: r.phone,
+          company: r.company ?? null,
+          tags: r.tags,
+          owner_id: userId,
+        }))
+      )
+      .select();
+    if (error || !data) return -1;
+    setContacts((prev) => [...data.map(mapContact), ...prev]);
+    return data.length;
   },
 };
