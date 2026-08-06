@@ -110,7 +110,8 @@ Projeto Supabase dedicado (supabase.com, ref `boykcuhxmndlkjhojxhl`). Credenciai
 
 - ✅ Front-end: 19 módulos navegáveis, todas as sub-abas com conteúdo.
 - ✅ Backend F1: schema multi-tenant com RLS aplicado e verificado.
-- ⏳ Próximo (F2): telas de login/cadastro + middleware de sessão (@supabase/ssr),
+- ✅ Backend F2a: login/cadastro (/login) + proxy.ts protegendo todas as rotas (getUser server-side) + logout no avatar do topbar.
+- ⏳ Próximo (F2b):
   depois trocar os repos mock por Supabase, módulo a módulo (ordem: contatos →
   leads/pipelines → conversas com Realtime → dashboard com agregações).
 - ⏳ Depois: storage (Mídia Drive/arquivos), automações reais (Edge Functions),

@@ -1,15 +1,39 @@
 "use client";
 
-import { useState } from "react";
-import { Bell, Headset, LifeBuoy, Phone } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Bell, Headset, LifeBuoy, LogOut, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { createClient } from "@/lib/supabase/client";
 import { SupportPanel } from "./support-panel";
 import { WebphonePanel } from "./webphone-panel";
 
 export function Topbar() {
+  const router = useRouter();
   const [supportOpen, setSupportOpen] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email ?? null));
+  }, []);
+
+  const signOut = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  };
 
   return (
     <header className="flex h-12 shrink-0 items-center justify-end gap-2 border-b bg-[#0d1117] px-4">
@@ -52,9 +76,24 @@ export function Topbar() {
         <Bell className="size-4" />
         <span className="absolute right-1 top-1 size-1.5 rounded-full bg-orange-400" />
       </button>
-      <Avatar className="size-7">
-        <AvatarFallback className="bg-indigo-500 text-[11px] font-bold text-white">GB</AvatarFallback>
-      </Avatar>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<button className="rounded-full" />}>
+          <Avatar className="size-7">
+            <AvatarFallback className="bg-indigo-500 text-[11px] font-bold text-white">
+              {(userEmail?.[0] ?? "?").toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuLabel className="truncate text-xs font-normal text-slate-500">
+            {userEmail ?? "Carregando..."}
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={signOut}>
+            <LogOut className="size-4" /> Sair
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <SupportPanel open={supportOpen} onOpenChange={setSupportOpen} />
     </header>
   );
