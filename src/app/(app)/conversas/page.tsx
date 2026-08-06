@@ -4,10 +4,12 @@ import { useState } from "react";
 import { MessageSquare } from "lucide-react";
 import { SubNav } from "@/components/layout/subnav";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Composer } from "@/components/inbox/composer";
+import { ContactPanel } from "@/components/inbox/contact-panel";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { Thread } from "@/components/inbox/thread";
 import { ViewsRail } from "@/components/inbox/views-rail";
-import { useConversations } from "@/lib/data/repos/conversations";
+import { useConversation, useConversations } from "@/lib/data/repos/conversations";
 
 const TABS = [
   { label: "Conversas" },
@@ -22,6 +24,7 @@ export default function ConversasPage() {
   const [tab, setTab] = useState("Conversas");
   const conversations = useConversations();
   const [selectedId, setSelectedId] = useState<string | null>(conversations[0]?.id ?? null);
+  const selectedConversation = useConversation(selectedId);
 
   return (
     <div className="flex h-full flex-col">
@@ -39,17 +42,16 @@ export default function ConversasPage() {
           <ViewsRail />
           <ConversationList selectedId={selectedId} onSelect={setSelectedId} />
           {selectedId ? (
-            <Thread conversationId={selectedId} />
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <Thread conversationId={selectedId} />
+              <Composer conversationId={selectedId} />
+            </div>
           ) : (
             <div className="flex flex-1 items-center justify-center bg-slate-50">
               <p className="text-sm text-slate-400">Selecione uma conversa</p>
             </div>
           )}
-          <div className="hidden w-[340px] shrink-0 border-l bg-white xl:flex xl:items-center xl:justify-center">
-            <p className="px-6 text-center text-xs text-slate-400">
-              Painel do contato — chega na próxima etapa
-            </p>
-          </div>
+          {selectedConversation && <ContactPanel contactId={selectedConversation.contactId} />}
         </div>
       )}
     </div>
