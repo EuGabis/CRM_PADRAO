@@ -7,3 +7,91 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+---
+
+# Lito CRM — Guia do projeto (leia antes de mexer)
+
+## O que é
+
+Front-end completo de um CRM all-in-one ("Lito CRM"), inspirado no GoHighLevel
+(engenharia reversa de um vídeo de demonstração — ver `MAPA_FUNCIONALIDADES.md`,
+que é a especificação funcional canônica). **Ainda não há backend**: todos os
+dados são mock, servidos por uma camada de repositórios sobre Zustand.
+
+Documentos importantes:
+- `MAPA_FUNCIONALIDADES.md` — mapa funcional completo extraído do vídeo de referência
+- `docs/superpowers/specs/2026-08-06-crm-frontend-design.md` — spec de design aprovada
+- `docs/superpowers/plans/2026-08-06-lito-crm-frontend.md` — plano de implementação executado
+
+## Como rodar
+
+```bash
+npm install
+npm run dev      # http://localhost:3000 (redireciona para /dashboard)
+npm run build    # build + type check — deve passar sem erros
+```
+
+## Stack
+
+Next.js (App Router) · TypeScript · Tailwind CSS 4 · shadcn/ui (**variante Base UI,
+NÃO Radix**) · Zustand · dnd-kit (kanban) · Recharts (gráficos) · date-fns (ptBR) ·
+lucide-react · sonner (toasts).
+
+## Estrutura
+
+```
+src/
+  app/(app)/           # 19 módulos, cada pasta = 1 item da sidebar
+    dashboard/  conversas/  calendarios/  contatos/ (+[id])  leads/
+    pagamentos/  ai-studio/  agentes-ia/  marketing/  automacoes/ (+[id] builder)
+    sites/  assinaturas/  midia/  reputacao/  relatorios/  marketplace/
+    whatsapp/  configuracoes/ (layout próprio + 16 sub-páginas)  ativacao/
+  components/
+    layout/            # Sidebar, Topbar, SubNav, SupportPanel, WebphonePanel
+    shared/            # DataTable, FilterDrawer, KpiCard, SlaBadge, ChannelIcon, EmptyState
+    dashboard/ inbox/ contacts/ pipeline/ automations/ modules/   # por domínio
+    ui/                # shadcn (Base UI)
+  lib/
+    config/brand.ts    # ÚNICA fonte do nome/marca ("Lito CRM") — nunca hardcodar
+    config/nav.ts      # itens da sidebar (ordem espelha o mapa)
+    data/types.ts      # Contact, Conversation, Message, Opportunity, Pipeline, Workflow...
+    data/fixtures/     # dados mock pt-BR (50 contatos, 80 oportunidades, 20 conversas...)
+    data/store.ts      # Zustand store + ações (moveOpportunity, sendMessage, addContact...)
+    data/repos/        # A UI SÓ importa daqui (contacts, opportunities, conversations,
+                       # workflows, appointments) — trocar mock por backend = mexer só aqui
+```
+
+## Regras que já causaram bugs (não repita)
+
+1. **Base UI ≠ Radix**: `PopoverTrigger`/`DropdownMenuTrigger`/`TooltipTrigger`
+   NÃO aceitam `asChild`. Use `render={<Button ... />}` com children fora do render.
+2. **`SelectValue` não resolve label do value**: passe children explícito
+   `<SelectValue>{label}</SelectValue>`. `onValueChange` recebe `string | null`.
+3. **`Accordion` (Base UI)**: sem prop `type`; só `defaultValue={[...]}`.
+4. **Zustand**: NUNCA filtrar/mapear dentro do selector
+   (`useCrmStore(s => s.x.filter(...))` = loop infinito de render).
+   Selecione o array cru e derive com `useMemo` (ver `useOpportunitiesByContact`).
+5. **lucide-react não tem ícones de marca** (Facebook/Instagram) — `ChannelIcon`
+   usa badges de texto para essas redes.
+6. Páginas são client components (`"use client"`) — ícones Lucide não podem ser
+   passados de Server para Client component como prop.
+
+## Convenções
+
+- Todo texto de UI em **pt-BR**; datas mock fixas em 2026; moeda via `formatBRL`.
+- Ações que dependem de backend: `toast.info("<ação> chega com o backend")`.
+- Estilo: h1 `text-lg font-bold text-slate-900`; cards `rounded-xl border bg-white`;
+  tabelas `text-xs`; botões `h-8 text-xs`; badge de sucesso
+  `bg-emerald-100 text-emerald-700`; primário indigo (#6366f1); sidebar grafite
+  (tokens `--lito-*` em `globals.css`).
+- Commits em português, convenção `feat(modulo): descrição`.
+
+## Estado atual / próximos passos
+
+- ✅ 19 módulos navegáveis, TODAS as sub-abas com conteúdo (nenhum "em construção").
+- ✅ Interativo: kanban com drag & drop, composer multi-canal, builder de automações,
+  ações em massa, checklist de ativação.
+- ⏳ Fora do escopo até agora: backend (Supabase é o candidato — os tipos em
+  `lib/data/types.ts` são a spec do banco), autenticação, persistência entre reloads,
+  dark mode, responsividade mobile completa, execução real de automações.

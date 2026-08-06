@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Lito CRM
 
-## Getting Started
+Front-end completo de um CRM all-in-one (inspirado no GoHighLevel), construído com
+Next.js + TypeScript + Tailwind + shadcn/ui. **Fase atual: front-end com dados mock**
+— sem backend, sem autenticação; tudo navegável e interativo em memória.
 
-First, run the development server:
+## Rodando o projeto
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abra http://localhost:3000 (redireciona para `/dashboard`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Build de produção + type check:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+```
 
-## Learn More
+## O que está pronto
 
-To learn more about Next.js, take a look at the following resources:
+19 módulos com todas as sub-abas preenchidas:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Módulo | Destaques |
+|---|---|
+| Dashboard | 9 widgets (funil, donuts, gauge, fonte de leads), filtro de data, múltiplos painéis |
+| Conversas | Inbox omnichannel 4 colunas, SLA, composer WhatsApp/SMS/E-mail, notas internas, agendamento de mensagem, painel do contato |
+| Calendários | Grade semanal (sync Google mock), lista de compromissos, configurações |
+| Contatos | Tabela com ações em massa (12 ações), filtros avançados + UTM, smart lists, detalhe |
+| Leads | Kanban 9 fases com drag & drop real, vista lista, gestão de pipelines |
+| Pagamentos | Transações, faturas, pedidos, assinaturas, links, vendas, produtos, cupons, contratos c/ assinatura eletrônica, integrações |
+| Agentes de IA | Bots com 3 prompts (Personalidade/Meta/Informações), 7 ações, chat de teste, base de conhecimento, voz, logs |
+| Marketing | Planejador social multi-rede, comentários, escuta social, e-mail marketing, afiliados, anúncios |
+| Automações | Lista com pastas + builder visual (10 triggers, 16 ações) |
+| Sites | Funis, sites, lojas, webinars, analytics, blogs, formulários, quizzes, widget de chat, QR codes |
+| Assinaturas | Portal do cliente, cursos, comunidades, certificados |
+| Reputação | Reviews multi-plataforma, solicitações, widgets, IA de resposta |
+| Relatórios | Google Ads, Meta Ads, atribuição (dados reais do mock), ligações, agentes, compromissos |
+| + | Mídia Drive, Marketplace (grid de apps), WhatsApp (API oficial + instâncias QR), Configurações (16 telas), Checklist de Ativação, Suporte e Webphone no topo |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Arquitetura de dados (importante para o backend futuro)
 
-## Deploy on Vercel
+A UI **nunca** importa dados diretamente — consome hooks/ações de
+`src/lib/data/repos/*` (contacts, opportunities, conversations, workflows,
+appointments), que operam sobre um store Zustand inicializado com fixtures pt-BR.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Para plugar um backend (ex.: Supabase), basta trocar a implementação dos
+repositórios; os tipos em `src/lib/data/types.ts` servem de especificação do banco.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Documentação do projeto
+
+- `MAPA_FUNCIONALIDADES.md` — especificação funcional (engenharia reversa do vídeo de referência)
+- `docs/superpowers/specs/` — spec de design aprovada
+- `docs/superpowers/plans/` — plano de implementação executado
+- `AGENTS.md` — guia técnico para agentes/desenvolvedores (convenções, armadilhas conhecidas, estrutura)
+
+## Marca
+
+Nome, slogan e identidade ficam centralizados em `src/lib/config/brand.ts` —
+trocar a marca do produto inteiro é editar um arquivo.
