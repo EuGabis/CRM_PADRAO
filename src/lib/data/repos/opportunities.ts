@@ -29,7 +29,11 @@ export function useOpportunitiesByStage(pipelineId: string): Record<string, Oppo
 }
 
 export function useOpportunitiesByContact(contactId: string) {
-  return useCrmStore((s) => s.opportunities.filter((o) => o.contactId === contactId));
+  const opportunities = useCrmStore((s) => s.opportunities);
+  return useMemo(
+    () => opportunities.filter((o) => o.contactId === contactId),
+    [opportunities, contactId]
+  );
 }
 
 export function stageTotal(ops: Opportunity[] | undefined): number {
