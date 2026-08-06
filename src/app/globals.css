@@ -90,6 +90,29 @@
   --lito-sla-red: #ef4444;
 }
 
+/* Vinheta animada do login: lead atravessando o funil */
+@keyframes lito-lead-journey {
+  0%, 16%   { left: 2%; }
+  28%, 52%  { left: 35.5%; }
+  64%, 92%  { left: 69%; }
+  100%      { left: 2%; }
+}
+@keyframes lito-bubble-in {
+  0%   { opacity: 0; transform: translateY(8px) scale(0.92); }
+  100% { opacity: 1; transform: none; }
+}
+.lito-lead-card {
+  animation: lito-lead-journey 12s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.lito-bubble {
+  opacity: 0;
+  animation: lito-bubble-in 0.5s ease-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lito-lead-card { animation: none; left: 69%; }
+  .lito-bubble { animation: none; opacity: 1; }
+}
+
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);

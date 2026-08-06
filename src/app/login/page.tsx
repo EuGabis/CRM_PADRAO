@@ -2,16 +2,73 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Check, Loader2, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { brand } from "@/lib/config/brand";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
 
 type Mode = "login" | "signup";
+
+const STAGES = [
+  { name: "NOVO LEAD", color: "#94a3b8" },
+  { name: "NEGOCIANDO", color: "#6366f1" },
+  { name: "ASSINOU", color: "#22c55e" },
+];
+
+function PipelineVignette() {
+  return (
+    <div className="rounded-2xl border border-white/[0.06] bg-[#1d2436] p-5 shadow-2xl shadow-black/40">
+      {/* Conversa que origina o lead */}
+      <div className="mb-5 space-y-2">
+        <div
+          className="lito-bubble flex w-fit items-center gap-2 rounded-2xl rounded-bl-sm bg-white/[0.07] px-3 py-2"
+          style={{ animationDelay: "0.4s" }}
+        >
+          <span className="flex size-5 items-center justify-center rounded-full bg-[var(--lito-wa-green)]">
+            <MessageCircle className="size-3 text-white" />
+          </span>
+          <span className="text-xs text-slate-200">Oi! Vi o anúncio de vocês 👋</span>
+        </div>
+        <div
+          className="lito-bubble ml-auto flex w-fit items-center gap-2 rounded-2xl rounded-br-sm bg-indigo-500/90 px-3 py-2"
+          style={{ animationDelay: "1.1s" }}
+        >
+          <span className="text-xs text-white">Fechado! Te mando o contrato 🎉</span>
+          <Check className="size-3.5 text-indigo-200" />
+        </div>
+      </div>
+
+      {/* Mini pipeline */}
+      <div className="relative">
+        <div className="grid grid-cols-3 gap-2.5">
+          {STAGES.map((s) => (
+            <div key={s.name} className="rounded-lg bg-black/20 p-2">
+              <p
+                className="mb-2 flex items-center gap-1.5 text-[9px] font-bold tracking-wide text-slate-400"
+                style={{ color: undefined }}
+              >
+                <span className="size-1.5 rounded-full" style={{ background: s.color }} />
+                {s.name}
+              </p>
+              <div className="space-y-1.5">
+                <div className="h-7 rounded-md bg-white/[0.05]" />
+                <div className="h-7 rounded-md bg-white/[0.05]" />
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Card do lead em movimento */}
+        <div className="lito-lead-card absolute top-7 w-[29%] rounded-md border border-indigo-400/40 bg-[#252d42] px-2 py-1.5 shadow-lg shadow-indigo-950/50">
+          <p className="truncate text-[10px] font-semibold text-white">Maria Duarte</p>
+          <p className="text-[9px] text-indigo-300">R$ 297/mês</p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -73,118 +130,183 @@ export default function LoginPage() {
         router.push("/dashboard");
         router.refresh();
       } else {
-        // Projeto com confirmação de e-mail ativada
         setConfirmationSent(true);
       }
     }
   };
 
   return (
-    <div className="flex min-h-screen">
-      {/* Painel de marca */}
-      <div className="hidden w-[44%] flex-col justify-between bg-[var(--lito-sidebar)] p-10 lg:flex">
-        <div className="flex items-center gap-2.5">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--lito-sidebar-accent)] text-lg font-black text-white">
+    <div className="flex min-h-screen bg-[var(--lito-sidebar)]">
+      {/* ============ Painel do produto ============ */}
+      <div className="relative hidden w-[52%] flex-col justify-between overflow-hidden p-10 lg:flex xl:p-14">
+        {/* brilho ambiente */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -left-32 top-1/3 size-[480px] rounded-full opacity-20 blur-3xl"
+          style={{ background: "radial-gradient(circle, #6366f1 0%, transparent 70%)" }}
+        />
+
+        <div className="relative flex items-center gap-2.5">
+          <div className="flex size-9 items-center justify-center rounded-xl bg-[var(--lito-sidebar-accent)] text-base font-black text-white">
             {brand.shortName[0]}
           </div>
-          <span className="text-xl font-bold text-white">{brand.name}</span>
+          <span className="text-lg font-bold text-white">{brand.name}</span>
         </div>
-        <div>
-          <h1 className="text-3xl font-bold leading-tight text-white">
-            {brand.tagline}
-          </h1>
-          <p className="mt-3 max-w-md text-sm text-slate-400">
-            Conversas, pipelines, automações e relatórios — tudo ilimitado, em uma
-            única plataforma.
+
+        <div className="relative max-w-lg">
+          <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.25em] text-indigo-300">
+            CRM completo para vender todo dia
           </p>
+          <h1 className="text-[2.6rem] font-bold leading-[1.08] tracking-tight text-white">
+            Do primeiro oi
+            <br />
+            no WhatsApp ao
+            <br />
+            <span className="text-indigo-400">contrato assinado.</span>
+          </h1>
+          <p className="mt-4 max-w-sm text-sm leading-relaxed text-slate-400">
+            Conversas, funil, automações e cobrança no mesmo lugar — sem limite de
+            contatos, usuários ou pipelines.
+          </p>
+
+          <div className="mt-8">
+            <PipelineVignette />
+          </div>
         </div>
-        <p className="text-xs text-slate-500">
-          © 2026 {brand.name}
-        </p>
+
+        <div className="relative flex items-center gap-2 text-[11px] text-slate-500">
+          {["Conversas", "Pipeline", "Automações", "Relatórios"].map((m, i) => (
+            <span key={m} className="flex items-center gap-2">
+              {i > 0 && <span className="size-0.5 rounded-full bg-slate-600" />}
+              {m}
+            </span>
+          ))}
+        </div>
       </div>
 
-      {/* Formulário */}
-      <div className="flex flex-1 items-center justify-center bg-slate-50 p-6">
-        <div className="w-full max-w-sm">
+      {/* ============ Formulário ============ */}
+      <div className="flex flex-1 items-center justify-center rounded-none bg-slate-50 p-6 lg:my-2 lg:mr-2 lg:rounded-2xl">
+        <div className="w-full max-w-[360px]">
+          {/* marca no mobile */}
+          <div className="mb-8 flex items-center gap-2 lg:hidden">
+            <div className="flex size-8 items-center justify-center rounded-lg bg-[var(--lito-sidebar-accent)] text-sm font-black text-white">
+              {brand.shortName[0]}
+            </div>
+            <span className="text-base font-bold text-slate-900">{brand.name}</span>
+          </div>
+
           {confirmationSent ? (
-            <div className="rounded-2xl border bg-white p-8 text-center">
-              <h2 className="text-lg font-bold text-slate-900">Confirme seu e-mail</h2>
-              <p className="mt-2 text-sm text-slate-500">
+            <div>
+              <div className="mb-4 flex size-11 items-center justify-center rounded-xl bg-emerald-100">
+                <Check className="size-5 text-emerald-600" />
+              </div>
+              <h2 className="text-xl font-bold tracking-tight text-slate-900">
+                Confirme seu e-mail
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-500">
                 Enviamos um link de confirmação para{" "}
-                <span className="font-semibold text-slate-700">{form.email}</span>.
-                Depois de confirmar, volte e faça login.
+                <span className="font-semibold text-slate-700">{form.email}</span>. Abra
+                o link e depois entre com sua senha.
               </p>
               <Button
                 variant="outline"
-                size="sm"
-                className="mt-4 text-xs"
+                className="mt-6"
                 onClick={() => {
                   setConfirmationSent(false);
                   setMode("login");
                 }}
               >
-                Voltar ao login
+                Voltar para entrar
               </Button>
             </div>
           ) : (
-            <div className="rounded-2xl border bg-white p-8">
-              <h2 className="text-lg font-bold text-slate-900">
-                {mode === "login" ? "Entrar" : "Criar conta"}
+            <div>
+              <h2 className="text-xl font-bold tracking-tight text-slate-900">
+                {mode === "login" ? "Entre na sua conta" : "Comece agora"}
               </h2>
-              <p className="mb-5 text-xs text-slate-500">
+              <p className="mb-7 mt-1 text-sm text-slate-500">
                 {mode === "login"
-                  ? `Acesse sua conta do ${brand.name}`
-                  : "Sua empresa e pipeline são criados automaticamente"}
+                  ? "Bom te ver de novo."
+                  : "Criamos sua empresa e seu funil no primeiro acesso."}
               </p>
 
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {mode === "signup" && (
                   <>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Seu nome *</Label>
-                      <Input value={form.name} onChange={set("name")} className="h-9" />
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-slate-700">
+                        Seu nome
+                      </Label>
+                      <Input
+                        value={form.name}
+                        onChange={set("name")}
+                        placeholder="Como devemos te chamar"
+                        className="h-10 bg-white"
+                      />
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Nome da empresa</Label>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-slate-700">
+                        Empresa <span className="font-normal text-slate-400">(opcional)</span>
+                      </Label>
                       <Input
                         value={form.company}
                         onChange={set("company")}
-                        placeholder="Minha empresa"
-                        className="h-9"
+                        placeholder="Nome do seu negócio"
+                        className="h-10 bg-white"
                       />
                     </div>
                   </>
                 )}
-                <div className="space-y-1">
-                  <Label className="text-xs">E-mail *</Label>
-                  <Input type="email" value={form.email} onChange={set("email")} className="h-9" />
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-slate-700">E-mail</Label>
+                  <Input
+                    type="email"
+                    value={form.email}
+                    onChange={set("email")}
+                    placeholder="voce@empresa.com.br"
+                    className="h-10 bg-white"
+                  />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Senha *</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-slate-700">Senha</Label>
                   <Input
                     type="password"
                     value={form.password}
                     onChange={set("password")}
                     onKeyDown={(e) => e.key === "Enter" && submit()}
                     placeholder="Mínimo 8 caracteres"
-                    className="h-9"
+                    className="h-10 bg-white"
                   />
                 </div>
-                <Button className="w-full" disabled={loading} onClick={submit}>
+                <Button className="h-10 w-full text-sm" disabled={loading} onClick={submit}>
                   {loading && <Loader2 className="size-4 animate-spin" />}
-                  {mode === "login" ? "Entrar" : "Criar conta"}
+                  {mode === "login" ? "Entrar" : "Criar conta grátis"}
                 </Button>
               </div>
 
-              <p className="mt-4 text-center text-xs text-slate-500">
-                {mode === "login" ? "Ainda não tem conta?" : "Já tem conta?"}{" "}
-                <button
-                  onClick={() => setMode(mode === "login" ? "signup" : "login")}
-                  className={cn("font-semibold text-indigo-600 hover:underline")}
-                >
-                  {mode === "login" ? "Criar conta" : "Entrar"}
-                </button>
-              </p>
+              <div className="mt-7 border-t pt-5 text-center text-sm text-slate-500">
+                {mode === "login" ? (
+                  <>
+                    Primeira vez aqui?{" "}
+                    <button
+                      onClick={() => setMode("signup")}
+                      className="font-semibold text-indigo-600 hover:underline"
+                    >
+                      Criar conta grátis
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    Já usa o {brand.name}?{" "}
+                    <button
+                      onClick={() => setMode("login")}
+                      className="font-semibold text-indigo-600 hover:underline"
+                    >
+                      Entrar
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
