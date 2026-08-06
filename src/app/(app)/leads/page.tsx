@@ -21,7 +21,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { SubNav } from "@/components/layout/subnav";
-import { EmptyState } from "@/components/shared/empty-state";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { OpportunityCard } from "@/components/pipeline/opportunity-card";
 import { OpportunityDialog } from "@/components/pipeline/opportunity-dialog";
@@ -113,12 +112,8 @@ export default function LeadsPage() {
     <div className="flex h-full flex-col">
       <SubNav tabs={TABS} active={tab} onChange={setTab} />
       {tab !== "Leads" ? (
-        <div className="p-6">
-          <EmptyState
-            icon={KanbanSquare}
-            title={`${tab} — em construção`}
-            description="Gestão de pipelines e ações em massa serão aprofundadas nas próximas etapas."
-          />
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+          {tab === "Pipelines" ? <PipelinesTab /> : <AcoesEmMassaLeadsTab />}
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col p-4">
@@ -225,6 +220,128 @@ export default function LeadsPage() {
         </div>
       )}
       <OpportunityDialog open={dialogOpen} onOpenChange={setDialogOpen} pipelineId={pipelineId} />
+    </div>
+  );
+}
+
+/* ---------- Pipelines ---------- */
+
+function PipelinesTab() {
+  const pipelines = usePipelines();
+  const allOps = useOpportunities();
+
+  const opsByPipeline = useMemo(() => {
+    const counts: Record<string, number> = {};
+    allOps.forEach((o) => {
+      counts[o.pipelineId] = (counts[o.pipelineId] ?? 0) + 1;
+    });
+    return counts;
+  }, [allOps]);
+
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-bold text-slate-900">Pipelines</h1>
+          <Badge variant="secondary">{pipelines.length} pipelines</Badge>
+        </div>
+        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => toast.info("Criação de pipelines chega com o backend")}>
+          <Plus className="size-3.5" /> Novo pipeline
+        </Button>
+      </div>
+      <div className="flex flex-col gap-3">
+        {pipelines.map((p) => (
+          <div key={p.id} className="rounded-xl border bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="flex size-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                  <KanbanSquare className="size-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{p.name}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {p.stages.length} fases · {opsByPipeline[p.id] ?? 0} oportunidades
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => toast.info("Renomear pipeline chega com o backend")}
+                >
+                  Renomear
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs"
+                  onClick={() => toast.info("Criação de fases chega com o backend")}
+                >
+                  <Plus className="size-3.5" /> Nova fase
+                </Button>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              {p.stages
+                .slice()
+                .sort((a, b) => a.order - b.order)
+                .map((s) => (
+                  <span
+                    key={s.id}
+                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold"
+                    style={{ background: `${s.color}22`, color: s.color }}
+                  >
+                    {s.name}
+                  </span>
+                ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Ações em massa ---------- */
+
+interface BulkOpLead {
+  id: string;
+  operacao: string;
+  status: "Concluída" | "Processando";
+  afetados: number;
+  data: string;
+}
+
+const LEAD_BULK_OPS: BulkOpLead[] = [
+  { id: "lb-1", operacao: "Mover leads 'FILA DEMO' → 'CALL DEMO'", status: "Processando", afetados: 18, data: "05 ago 2026 10:52" },
+  { id: "lb-2", operacao: "Marcar oportunidades paradas como perdidas", status: "Concluída", afetados: 42, data: "01 ago 2026 09:14" },
+  { id: "lb-3", operacao: "Atualizar responsável (Camila → Lucas)", status: "Concluída", afetados: 27, data: "24 jul 2026 16:38" },
+  { id: "lb-4", operacao: "Exportar oportunidades do pipeline de demos", status: "Concluída", afetados: 63, data: "17 jul 2026 11:05" },
+];
+
+function AcoesEmMassaLeadsTab() {
+  const columns: Column<BulkOpLead>[] = [
+    { key: "operacao", header: "Operação", sortable: true, sortValue: (r) => r.operacao, render: (r) => <span className="font-medium text-slate-800">{r.operacao}</span> },
+    {
+      key: "status",
+      header: "Status",
+      render: (r) =>
+        r.status === "Concluída" ? (
+          <Badge className="bg-emerald-100 text-emerald-700">Concluída</Badge>
+        ) : (
+          <Badge className="bg-amber-100 text-amber-700">Processando</Badge>
+        ),
+    },
+    { key: "afetados", header: "Registros afetados", sortable: true, sortValue: (r) => r.afetados, render: (r) => <span className="text-slate-600">{r.afetados.toLocaleString("pt-BR")}</span> },
+    { key: "data", header: "Data", sortable: true, sortValue: (r) => r.data, render: (r) => <span className="text-slate-500">{r.data}</span> },
+  ];
+
+  return (
+    <div>
+      <h1 className="mb-4 text-lg font-bold text-slate-900">Histórico de ações em massa</h1>
+      <DataTable data={LEAD_BULK_OPS} columns={columns} pageSize={10} />
     </div>
   );
 }

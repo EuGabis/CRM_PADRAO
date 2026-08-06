@@ -4,13 +4,21 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { FolderPlus, Plus, Sparkles, Workflow as WorkflowIcon } from "lucide-react";
+import { FolderPlus, Plus, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { SubNav } from "@/components/layout/subnav";
-import { EmptyState } from "@/components/shared/empty-state";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useWorkflows, workflowActions } from "@/lib/data/repos/workflows";
 import type { Workflow } from "@/lib/data/types";
 
@@ -92,11 +100,7 @@ export default function AutomacoesPage() {
       <SubNav tabs={TABS} active={tab} onChange={setTab} />
       <div className="p-6">
         {tab !== "Fluxos de trabalho" ? (
-          <EmptyState
-            icon={WorkflowIcon}
-            title="Configurações globais — em construção"
-            description="Configurações globais de automações serão aprofundadas depois."
-          />
+          <ConfiguracoesGlobaisTab />
         ) : (
           <>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -140,6 +144,106 @@ export default function AutomacoesPage() {
             />
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Configurações globais ---------- */
+
+const TIMEZONES = [
+  { value: "America/Sao_Paulo", label: "Brasília (GMT-3)" },
+  { value: "America/Manaus", label: "Manaus (GMT-4)" },
+  { value: "America/Rio_Branco", label: "Rio Branco (GMT-5)" },
+  { value: "America/Noronha", label: "Fernando de Noronha (GMT-2)" },
+];
+
+function ConfiguracoesGlobaisTab() {
+  const [fuso, setFuso] = useState("America/Sao_Paulo");
+  const [inicio, setInicio] = useState("08:00");
+  const [fim, setFim] = useState("20:00");
+  const [limite, setLimite] = useState("200");
+  const [pausarFeriados, setPausarFeriados] = useState(true);
+
+  const fusoLabel = TIMEZONES.find((t) => t.value === fuso)?.label ?? fuso;
+
+  return (
+    <div className="max-w-2xl">
+      <div className="mb-4">
+        <h1 className="text-lg font-bold text-slate-900">Configurações globais</h1>
+        <p className="text-xs text-slate-500">Regras aplicadas a todos os fluxos de trabalho da conta.</p>
+      </div>
+      <div className="flex flex-col gap-3">
+        <div className="rounded-xl border bg-white p-4">
+          <p className="text-sm font-semibold text-slate-800">Fuso horário da conta</p>
+          <p className="mb-3 text-xs text-slate-500">Usado para agendar esperas, janelas e datas nos fluxos.</p>
+          <Select value={fuso} onValueChange={(v) => v && setFuso(v)}>
+            <SelectTrigger className="h-8 w-[260px] text-xs">
+              <SelectValue>{fusoLabel}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {TIMEZONES.map((t) => (
+                <SelectItem key={t.value} value={t.value} className="text-xs">
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="rounded-xl border bg-white p-4">
+          <p className="text-sm font-semibold text-slate-800">Janela de envio</p>
+          <p className="mb-3 text-xs text-slate-500">
+            Mensagens automáticas só são enviadas dentro deste horário.
+          </p>
+          <div className="flex items-center gap-2">
+            <Input
+              type="time"
+              value={inicio}
+              onChange={(e) => setInicio(e.target.value)}
+              className="h-8 w-[110px] text-xs"
+            />
+            <span className="text-xs text-slate-400">até</span>
+            <Input
+              type="time"
+              value={fim}
+              onChange={(e) => setFim(e.target.value)}
+              className="h-8 w-[110px] text-xs"
+            />
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-white p-4">
+          <p className="text-sm font-semibold text-slate-800">Limite de mensagens por dia</p>
+          <p className="mb-3 text-xs text-slate-500">
+            Teto diário de mensagens automáticas por contato para evitar bloqueios.
+          </p>
+          <Input
+            type="number"
+            min={1}
+            value={limite}
+            onChange={(e) => setLimite(e.target.value)}
+            className="h-8 w-[110px] text-xs"
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4 rounded-xl border bg-white p-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Pausar automações em feriados</p>
+            <p className="text-xs text-slate-500">Suspende envios automáticos em feriados nacionais.</p>
+          </div>
+          <Switch checked={pausarFeriados} onCheckedChange={(v) => setPausarFeriados(Boolean(v))} />
+        </div>
+
+        <div>
+          <Button
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => toast.success("Configurações salvas (sessão)")}
+          >
+            Salvar configurações
+          </Button>
+        </div>
       </div>
     </div>
   );

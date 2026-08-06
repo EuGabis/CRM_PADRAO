@@ -11,17 +11,17 @@ const GROUPS: { title: string; items: { label: string; href?: string }[] }[] = [
     title: "Minha Empresa",
     items: [
       { label: "Perfil da empresa", href: "/configuracoes/perfil" },
-      { label: "Meu perfil" },
-      { label: "Faturamento" },
+      { label: "Meu perfil", href: "/configuracoes/meu-perfil" },
+      { label: "Faturamento", href: "/configuracoes/faturamento" },
       { label: "Minha equipe", href: "/configuracoes/equipe" },
-      { label: "Leads & Pipelines" },
+      { label: "Leads & Pipelines", href: "/configuracoes/leads-pipelines" },
     ],
   },
   {
     title: "Empresariais",
     items: [
-      { label: "Calendários" },
-      { label: "Serviços de e-mail" },
+      { label: "Calendários", href: "/configuracoes/calendarios" },
+      { label: "Serviços de e-mail", href: "/configuracoes/email" },
       { label: "Sistema telefônico", href: "/configuracoes/telefonia" },
       { label: "WhatsApp", href: "/configuracoes/whatsapp" },
     ],
@@ -29,13 +29,13 @@ const GROUPS: { title: string; items: { label: string; href?: string }[] }[] = [
   {
     title: "Configurações",
     items: [
-      { label: "Objetos" },
-      { label: "Campos personalizados" },
-      { label: "Valores personalizados" },
-      { label: "Importar dados" },
-      { label: "Pontuação de leads" },
-      { label: "Domínios e redirecionamentos" },
-      { label: "Integrações" },
+      { label: "Objetos", href: "/configuracoes/objetos" },
+      { label: "Campos personalizados", href: "/configuracoes/campos" },
+      { label: "Valores personalizados", href: "/configuracoes/valores" },
+      { label: "Importar dados", href: "/configuracoes/importar" },
+      { label: "Pontuação de leads", href: "/configuracoes/pontuacao" },
+      { label: "Domínios e redirecionamentos", href: "/configuracoes/dominios" },
+      { label: "Integrações", href: "/configuracoes/integracoes" },
     ],
   },
 ];
