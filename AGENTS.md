@@ -87,11 +87,31 @@ src/
   (tokens `--lito-*` em `globals.css`).
 - Commits em português, convenção `feat(modulo): descrição`.
 
+## Backend (Supabase) — em andamento
+
+Projeto Supabase dedicado (supabase.com, ref `boykcuhxmndlkjhojxhl`). Credenciais em
+`.env.local` (NUNCA commitar; modelo em `.env.example`).
+
+- Clientes em `src/lib/supabase/{client,server}.ts` (@supabase/ssr, chave publishable).
+- Schema em `supabase/migrations/0001_initial_schema.sql` — **aplicado em 2026-08-06
+  via SQL Editor** e verificado: 11 tabelas, RLS deny-by-default, `REVOKE` total do
+  `anon` (confirmado por teste REST: 42501 em todas as tabelas), políticas
+  `TO authenticated` com checagem de tenant via `private.user_locations()`
+  (SECURITY DEFINER em schema não exposto), UPDATE com USING+WITH CHECK,
+  trigger de onboarding (signup → perfil + location + pipeline padrão com 9 fases).
+- Novas migrações: criar `supabase/migrations/000N_nome.sql` e aplicar via SQL Editor
+  (ou `scripts/apply-migration.mjs`, que exige o CA do projeto em
+  `scripts/supabase-ca.crt` — TLS sempre verificado, nunca desabilitar).
+- Multi-tenant: TODA tabela de domínio tem `location_id`; toda política nova segue o
+  padrão membership. Campo `location_members.only_assigned` reservado para o modo
+  "ver apenas dados atribuídos" (ainda não aplicado nas políticas).
+
 ## Estado atual / próximos passos
 
-- ✅ 19 módulos navegáveis, TODAS as sub-abas com conteúdo (nenhum "em construção").
-- ✅ Interativo: kanban com drag & drop, composer multi-canal, builder de automações,
-  ações em massa, checklist de ativação.
-- ⏳ Fora do escopo até agora: backend (Supabase é o candidato — os tipos em
-  `lib/data/types.ts` são a spec do banco), autenticação, persistência entre reloads,
-  dark mode, responsividade mobile completa, execução real de automações.
+- ✅ Front-end: 19 módulos navegáveis, todas as sub-abas com conteúdo.
+- ✅ Backend F1: schema multi-tenant com RLS aplicado e verificado.
+- ⏳ Próximo (F2): telas de login/cadastro + middleware de sessão (@supabase/ssr),
+  depois trocar os repos mock por Supabase, módulo a módulo (ordem: contatos →
+  leads/pipelines → conversas com Realtime → dashboard com agregações).
+- ⏳ Depois: storage (Mídia Drive/arquivos), automações reais (Edge Functions),
+  dark mode, mobile, WhatsApp (Cloud API / Evolution API).
