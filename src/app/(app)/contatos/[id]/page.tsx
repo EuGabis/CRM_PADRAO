@@ -16,12 +16,16 @@ import { CustomFieldsInputs } from "@/components/contacts/custom-fields-inputs";
 import { contactName } from "@/lib/data/repos/contacts";
 import { dbContactActions, useDbContact, useDbTeam } from "@/lib/data/repos/db/contacts";
 import { useContactsModule } from "@/lib/data/repos/db/contacts-module";
+import { usePipelineDb } from "@/lib/data/repos/db/pipeline";
+import { formatBRL } from "@/lib/data/repos/opportunities";
 
 export default function ContactDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { contact, loading } = useDbContact(id);
   const team = useDbTeam();
   const { fields } = useContactsModule();
+  const { pipelines, opportunities } = usePipelineDb();
+  const contactOpps = opportunities.filter((o) => o.contactId === id);
 
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -226,10 +230,34 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
 
         <div className="rounded-xl border bg-white p-4">
           <h2 className="mb-3 text-sm font-semibold text-slate-700">Oportunidades</h2>
-          <p className="text-sm text-slate-500">
-            As oportunidades reais deste contato aparecem aqui quando o módulo Leads for
-            conectado ao banco (próxima fase).
-          </p>
+          {contactOpps.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              Nenhuma oportunidade para este contato — crie uma no módulo Leads.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {contactOpps.map((o) => {
+                const pipeline = pipelines.find((p) => p.id === o.pipelineId);
+                const stage = pipeline?.stages.find((s) => s.id === o.stageId);
+                return (
+                  <li key={o.id} className="rounded-lg border p-3">
+                    <p className="text-xs font-semibold text-slate-500">
+                      {pipeline?.name} &gt;{" "}
+                      <span style={{ color: stage?.color }}>{stage?.name}</span>
+                    </p>
+                    <div className="mt-1 flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-800">{o.name}</span>
+                      <span className="text-sm font-bold text-slate-900">{formatBRL(o.value)}</span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      Fonte: {o.source} · Status:{" "}
+                      {o.status === "open" ? "Aberta" : o.status === "won" ? "Ganha" : "Perdida"}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       </div>
     </div>

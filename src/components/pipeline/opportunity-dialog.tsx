@@ -19,8 +19,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { contactName, useContacts } from "@/lib/data/repos/contacts";
-import { opportunityActions, usePipeline } from "@/lib/data/repos/opportunities";
+import { contactName } from "@/lib/data/repos/contacts";
+import { useDbContacts } from "@/lib/data/repos/db/contacts";
+import { oppActions, usePipelineDb } from "@/lib/data/repos/db/pipeline";
 
 export function OpportunityDialog({
   open,
@@ -31,30 +32,41 @@ export function OpportunityDialog({
   onOpenChange: (o: boolean) => void;
   pipelineId: string;
 }) {
-  const contacts = useContacts();
-  const pipeline = usePipeline(pipelineId);
+  const { contacts } = useDbContacts();
+  const { pipelines } = usePipelineDb();
+  const pipeline = pipelines.find((p) => p.id === pipelineId);
+
   const [contactId, setContactId] = useState<string>("");
   const [stageId, setStageId] = useState<string>("");
   const [value, setValue] = useState("0");
   const [source, setSource] = useState("Manual");
+  const [saving, setSaving] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     const contact = contacts.find((c) => c.id === contactId);
-    if (!contact || !stageId) {
+    const stage = pipeline?.stages.find((s) => s.id === stageId) ?? pipeline?.stages[0];
+    if (!contact || !stage) {
       toast.error("Escolha um contato e uma fase");
       return;
     }
-    opportunityActions.add({
+    setSaving(true);
+    const ok = await oppActions.add({
       contactId,
+      contactName: contactName(contact),
       pipelineId,
-      stageId,
-      name: contactName(contact),
-      source,
+      stageId: stage.id,
       value: Number(value) || 0,
-      ownerId: contact.ownerId,
-      status: "open",
+      source: source.trim() || "Manual",
     });
+    setSaving(false);
+    if (!ok) {
+      toast.error("Não foi possível criar a oportunidade");
+      return;
+    }
     toast.success("Oportunidade criada");
+    setContactId("");
+    setStageId("");
+    setValue("0");
     onOpenChange(false);
   };
 
@@ -76,13 +88,18 @@ export function OpportunityDialog({
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {contacts.slice(0, 30).map((c) => (
+                {contacts.slice(0, 100).map((c) => (
                   <SelectItem key={c.id} value={c.id} className="text-xs">
                     {contactName(c)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {contacts.length === 0 && (
+              <p className="text-[11px] text-amber-600">
+                Você ainda não tem contatos — crie um no módulo Contatos primeiro.
+              </p>
+            )}
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Fase *</Label>
@@ -123,7 +140,9 @@ export function OpportunityDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={submit}>Criar</Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? "Criando..." : "Criar"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

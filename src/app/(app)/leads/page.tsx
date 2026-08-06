@@ -10,20 +10,14 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import {
-  ArrowUpDown,
-  Filter,
-  KanbanSquare,
-  List,
-  Plus,
-  Search,
-  Upload,
-} from "lucide-react";
+import { KanbanSquare, List, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { SubNav } from "@/components/layout/subnav";
 import { DataTable, type Column } from "@/components/shared/data-table";
+import { BulkLogTab } from "@/components/contacts/module-tabs";
 import { OpportunityCard } from "@/components/pipeline/opportunity-card";
 import { OpportunityDialog } from "@/components/pipeline/opportunity-dialog";
+import { PipelinesManageTab } from "@/components/pipeline/pipelines-manage-tab";
 import { StageColumn } from "@/components/pipeline/stage-column";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,25 +29,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useUsers } from "@/lib/data/repos/contacts";
-import {
-  formatBRL,
-  opportunityActions,
-  useOpportunities,
-  usePipeline,
-  usePipelines,
-} from "@/lib/data/repos/opportunities";
+import { useDbTeam } from "@/lib/data/repos/db/contacts";
+import { oppActions, usePipelineDb } from "@/lib/data/repos/db/pipeline";
+import { formatBRL } from "@/lib/data/repos/opportunities";
 import type { Opportunity } from "@/lib/data/types";
 
 const TABS = [{ label: "Leads" }, { label: "Pipelines" }, { label: "Ações em massa" }];
 
 export default function LeadsPage() {
   const [tab, setTab] = useState("Leads");
-  const pipelines = usePipelines();
-  const [pipelineId, setPipelineId] = useState("pipe-controle");
-  const pipeline = usePipeline(pipelineId);
-  const allOps = useOpportunities();
-  const users = useUsers();
+  const { pipelines, opportunities, loaded } = usePipelineDb();
+  const team = useDbTeam();
+
+  const [pipelineId, setPipelineId] = useState<string>("");
+  const pipeline =
+    pipelines.find((p) => p.id === pipelineId) ?? pipelines[0] ?? null;
+
   const [query, setQuery] = useState("");
   const [view, setView] = useState<"kanban" | "list">("kanban");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -63,30 +54,38 @@ export default function LeadsPage() {
 
   const pipeOps = useMemo(
     () =>
-      allOps.filter(
+      opportunities.filter(
         (o) =>
-          o.pipelineId === pipelineId &&
+          o.pipelineId === pipeline?.id &&
           (query === "" || o.name.toLowerCase().includes(query.toLowerCase()))
       ),
-    [allOps, pipelineId, query]
+    [opportunities, pipeline?.id, query]
   );
 
-  const activeOp = activeId ? allOps.find((o) => o.id === activeId) : null;
+  const activeOp = activeId ? opportunities.find((o) => o.id === activeId) : null;
 
   const onDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id));
-  const onDragEnd = (e: DragEndEvent) => {
+  const onDragEnd = async (e: DragEndEvent) => {
     setActiveId(null);
     if (e.over && e.active.id !== e.over.id) {
       const stage = pipeline?.stages.find((s) => s.id === e.over!.id);
       if (stage) {
-        opportunityActions.move(String(e.active.id), stage.id);
-        toast.success(`Lead movido para ${stage.name}`);
+        const ok = await oppActions.move(String(e.active.id), stage.id);
+        ok
+          ? toast.success(`Lead movido para ${stage.name}`)
+          : toast.error("Não foi possível mover — tente novamente");
       }
     }
   };
 
   const listColumns: Column<Opportunity>[] = [
-    { key: "nome", header: "Nome", sortable: true, sortValue: (o) => o.name, render: (o) => <span className="font-medium">{o.name}</span> },
+    {
+      key: "nome",
+      header: "Nome",
+      sortable: true,
+      sortValue: (o) => o.name,
+      render: (o) => <span className="font-medium">{o.name}</span>,
+    },
     {
       key: "fase",
       header: "Fase",
@@ -100,28 +99,95 @@ export default function LeadsPage() {
       },
     },
     { key: "fonte", header: "Fonte", render: (o) => o.source },
-    { key: "valor", header: "Valor", sortable: true, sortValue: (o) => o.value, render: (o) => formatBRL(o.value) },
+    {
+      key: "valor",
+      header: "Valor",
+      sortable: true,
+      sortValue: (o) => o.value,
+      render: (o) => formatBRL(o.value),
+    },
     {
       key: "owner",
       header: "Responsável",
-      render: (o) => users.find((u) => u.id === o.ownerId)?.name ?? "—",
+      render: (o) => team.find((u) => u.id === o.ownerId)?.name ?? "—",
     },
   ];
+
+  function ListBulkBar({ ids, clear }: { ids: string[]; clear: () => void }) {
+    const [target, setTarget] = useState<string>("");
+    return (
+      <>
+        <span className="text-xs font-semibold text-indigo-700">
+          {ids.length} selecionado{ids.length === 1 ? "" : "s"}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <Select value={target} onValueChange={(v) => setTarget(v ?? "")}>
+            <SelectTrigger className="h-7 w-44 text-xs" size="sm">
+              <SelectValue>
+                {target
+                  ? pipeline?.stages.find((s) => s.id === target)?.name
+                  : "Mover para fase..."}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {pipeline?.stages.map((s) => (
+                <SelectItem key={s.id} value={s.id} className="text-xs">
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            className="h-7 text-xs"
+            disabled={!target}
+            onClick={async () => {
+              const ok = await oppActions.moveMany(ids, target);
+              ok ? toast.success("Leads movidos") : toast.error("Não foi possível mover");
+              clear();
+            }}
+          >
+            Mover
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 text-xs text-red-600 hover:text-red-700"
+            onClick={async () => {
+              if (!window.confirm(`Excluir ${ids.length} oportunidade(s)?`)) return;
+              const ok = await oppActions.remove(ids);
+              ok ? toast.success("Excluídas") : toast.error("Não foi possível excluir");
+              clear();
+            }}
+          >
+            <Trash2 className="size-3.5" /> Excluir
+          </Button>
+        </div>
+      </>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col">
       <SubNav tabs={TABS} active={tab} onChange={setTab} />
-      {tab !== "Leads" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">
-          {tab === "Pipelines" ? <PipelinesTab /> : <AcoesEmMassaLeadsTab />}
+      {tab === "Pipelines" ? (
+        <div className="p-6">
+          <PipelinesManageTab />
+        </div>
+      ) : tab === "Ações em massa" ? (
+        <div className="p-6">
+          <BulkLogTab />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Select value={pipelineId} onValueChange={(v) => v && setPipelineId(v)}>
+              <Select
+                value={pipeline?.id ?? ""}
+                onValueChange={(v) => v && setPipelineId(v)}
+              >
                 <SelectTrigger className="h-8 w-[220px] text-xs font-semibold">
-                  <SelectValue>{pipeline?.name}</SelectValue>
+                  <SelectValue>{pipeline?.name ?? "Carregando..."}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {pipelines.map((p) => (
@@ -131,25 +197,11 @@ export default function LeadsPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Badge variant="secondary">{pipeOps.length} leads</Badge>
+              <Badge variant="secondary">
+                {loaded ? `${pipeOps.length} leads` : "Carregando..."}
+              </Badge>
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5 text-xs"
-                onClick={() => toast.info("Filtros avançados de leads chegam em breve")}
-              >
-                <Filter className="size-3.5" /> Filtros avançados
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5 text-xs"
-                onClick={() => toast.info("Ordenação personalizada em breve")}
-              >
-                <ArrowUpDown className="size-3.5" /> Classificar
-              </Button>
               <div className="flex items-center gap-1.5 rounded-md border px-2">
                 <Search className="size-3.5 text-slate-400" />
                 <Input
@@ -174,14 +226,11 @@ export default function LeadsPage() {
                 </button>
               </div>
               <Button
-                variant="outline"
                 size="sm"
                 className="h-8 gap-1.5 text-xs"
-                onClick={() => toast.info("Importação de oportunidades chega com o backend")}
+                onClick={() => setDialogOpen(true)}
+                disabled={!pipeline}
               >
-                <Upload className="size-3.5" /> Importar
-              </Button>
-              <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setDialogOpen(true)}>
                 <Plus className="size-3.5" /> Adicionar oportunidade
               </Button>
             </div>
@@ -198,16 +247,21 @@ export default function LeadsPage() {
                       key={stage.id}
                       stage={stage}
                       opportunities={pipeOps.filter((o) => o.stageId === stage.id)}
-                      users={users}
+                      users={team}
                     />
                   ))}
+                {loaded && pipeline && pipeline.stages.length === 0 && (
+                  <p className="p-6 text-sm text-slate-500">
+                    Este pipeline não tem fases — crie na aba Pipelines.
+                  </p>
+                )}
               </div>
               <DragOverlay>
                 {activeOp && (
                   <div className="w-[220px]">
                     <OpportunityCard
                       opportunity={activeOp}
-                      owner={users.find((u) => u.id === activeOp.ownerId)}
+                      owner={team.find((u) => u.id === activeOp.ownerId)}
                       dragging
                     />
                   </div>
@@ -215,133 +269,23 @@ export default function LeadsPage() {
               </DragOverlay>
             </DndContext>
           ) : (
-            <DataTable data={pipeOps} columns={listColumns} pageSize={15} />
+            <DataTable
+              data={pipeOps}
+              columns={listColumns}
+              pageSize={15}
+              selectable
+              bulkBar={(ids, clear) => <ListBulkBar ids={ids} clear={clear} />}
+            />
           )}
         </div>
       )}
-      <OpportunityDialog open={dialogOpen} onOpenChange={setDialogOpen} pipelineId={pipelineId} />
-    </div>
-  );
-}
-
-/* ---------- Pipelines ---------- */
-
-function PipelinesTab() {
-  const pipelines = usePipelines();
-  const allOps = useOpportunities();
-
-  const opsByPipeline = useMemo(() => {
-    const counts: Record<string, number> = {};
-    allOps.forEach((o) => {
-      counts[o.pipelineId] = (counts[o.pipelineId] ?? 0) + 1;
-    });
-    return counts;
-  }, [allOps]);
-
-  return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold text-slate-900">Pipelines</h1>
-          <Badge variant="secondary">{pipelines.length} pipelines</Badge>
-        </div>
-        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => toast.info("Criação de pipelines chega com o backend")}>
-          <Plus className="size-3.5" /> Novo pipeline
-        </Button>
-      </div>
-      <div className="flex flex-col gap-3">
-        {pipelines.map((p) => (
-          <div key={p.id} className="rounded-xl border bg-white p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <span className="flex size-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-                  <KanbanSquare className="size-4" />
-                </span>
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">{p.name}</p>
-                  <p className="text-[11px] text-slate-500">
-                    {p.stages.length} fases · {opsByPipeline[p.id] ?? 0} oportunidades
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => toast.info("Renomear pipeline chega com o backend")}
-                >
-                  Renomear
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1.5 text-xs"
-                  onClick={() => toast.info("Criação de fases chega com o backend")}
-                >
-                  <Plus className="size-3.5" /> Nova fase
-                </Button>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              {p.stages
-                .slice()
-                .sort((a, b) => a.order - b.order)
-                .map((s) => (
-                  <span
-                    key={s.id}
-                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold"
-                    style={{ background: `${s.color}22`, color: s.color }}
-                  >
-                    {s.name}
-                  </span>
-                ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ---------- Ações em massa ---------- */
-
-interface BulkOpLead {
-  id: string;
-  operacao: string;
-  status: "Concluída" | "Processando";
-  afetados: number;
-  data: string;
-}
-
-const LEAD_BULK_OPS: BulkOpLead[] = [
-  { id: "lb-1", operacao: "Mover leads 'FILA DEMO' → 'CALL DEMO'", status: "Processando", afetados: 18, data: "05 ago 2026 10:52" },
-  { id: "lb-2", operacao: "Marcar oportunidades paradas como perdidas", status: "Concluída", afetados: 42, data: "01 ago 2026 09:14" },
-  { id: "lb-3", operacao: "Atualizar responsável (Camila → Lucas)", status: "Concluída", afetados: 27, data: "24 jul 2026 16:38" },
-  { id: "lb-4", operacao: "Exportar oportunidades do pipeline de demos", status: "Concluída", afetados: 63, data: "17 jul 2026 11:05" },
-];
-
-function AcoesEmMassaLeadsTab() {
-  const columns: Column<BulkOpLead>[] = [
-    { key: "operacao", header: "Operação", sortable: true, sortValue: (r) => r.operacao, render: (r) => <span className="font-medium text-slate-800">{r.operacao}</span> },
-    {
-      key: "status",
-      header: "Status",
-      render: (r) =>
-        r.status === "Concluída" ? (
-          <Badge className="bg-emerald-100 text-emerald-700">Concluída</Badge>
-        ) : (
-          <Badge className="bg-amber-100 text-amber-700">Processando</Badge>
-        ),
-    },
-    { key: "afetados", header: "Registros afetados", sortable: true, sortValue: (r) => r.afetados, render: (r) => <span className="text-slate-600">{r.afetados.toLocaleString("pt-BR")}</span> },
-    { key: "data", header: "Data", sortable: true, sortValue: (r) => r.data, render: (r) => <span className="text-slate-500">{r.data}</span> },
-  ];
-
-  return (
-    <div>
-      <h1 className="mb-4 text-lg font-bold text-slate-900">Histórico de ações em massa</h1>
-      <DataTable data={LEAD_BULK_OPS} columns={columns} pageSize={10} />
+      {pipeline && (
+        <OpportunityDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          pipelineId={pipeline.id}
+        />
+      )}
     </div>
   );
 }
