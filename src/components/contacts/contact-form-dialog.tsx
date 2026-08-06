@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { contactActions } from "@/lib/data/repos/contacts";
+import { dbContactActions } from "@/lib/data/repos/db/contacts";
 
 export function ContactFormDialog({
   open,
@@ -33,12 +33,15 @@ export function ContactFormDialog({
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const submit = () => {
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
     if (!form.firstName.trim() || !form.lastName.trim()) {
       toast.error("Nome e sobrenome são obrigatórios");
       return;
     }
-    contactActions.add({
+    setSaving(true);
+    const ok = await dbContactActions.add({
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim(),
       email: form.email.trim(),
@@ -48,10 +51,12 @@ export function ContactFormDialog({
         .split(",")
         .map((t) => t.trim().toLowerCase())
         .filter(Boolean),
-      ownerId: "u-gustavo",
-      dnd: false,
-      customFields: {},
     });
+    setSaving(false);
+    if (!ok) {
+      toast.error("Não foi possível salvar o contato — tente novamente");
+      return;
+    }
     toast.success("Contato criado");
     setForm({ firstName: "", lastName: "", email: "", phone: "", company: "", tags: "" });
     onOpenChange(false);
@@ -93,7 +98,9 @@ export function ContactFormDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={submit}>Salvar contato</Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? "Salvando..." : "Salvar contato"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -16,7 +16,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { useContacts, useUsers, contactName } from "@/lib/data/repos/contacts";
+import { useUsers, contactName } from "@/lib/data/repos/contacts";
+import { useDbContacts } from "@/lib/data/repos/db/contacts";
 import type { Contact } from "@/lib/data/types";
 import { ListChecks } from "lucide-react";
 
@@ -55,7 +56,7 @@ function avatarColor(id: string) {
 
 export default function ContatosPage() {
   const router = useRouter();
-  const contacts = useContacts();
+  const { contacts, loading } = useDbContacts();
   const [tab, setTab] = useState("Contatos");
   const [filterOpen, setFilterOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
@@ -151,7 +152,9 @@ export default function ContatosPage() {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <h1 className="text-lg font-bold text-slate-900">Contatos</h1>
-                <Badge variant="secondary">{filtered.length} contatos</Badge>
+                <Badge variant="secondary">
+                  {loading ? "Carregando..." : `${filtered.length} contatos`}
+                </Badge>
                 {conditions.length > 0 && (
                   <button
                     onClick={() => setConditions([])}

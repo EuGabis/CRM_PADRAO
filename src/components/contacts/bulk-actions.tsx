@@ -24,35 +24,46 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { contactActions } from "@/lib/data/repos/contacts";
+import { dbContactActions } from "@/lib/data/repos/db/contacts";
 
 export function BulkActions({ ids, clear }: { ids: string[]; clear: () => void }) {
   const simulated = (label: string) => () =>
-    toast.info(`${label} — ação simulada (chega com o backend)`);
+    toast.info(`${label} — ação simulada (chega em fase futura)`);
 
-  const addTag = () => {
+  const addTag = async () => {
     const tag = window.prompt("Nome da tag para adicionar:");
-    if (tag?.trim()) {
-      contactActions.addTag(ids, tag.trim().toLowerCase());
+    if (!tag?.trim()) return;
+    const ok = await dbContactActions.addTag(ids, tag.trim().toLowerCase());
+    if (ok) {
       toast.success(`Tag "${tag.trim()}" adicionada a ${ids.length} contato(s)`);
       clear();
+    } else {
+      toast.error("Não foi possível adicionar a tag");
     }
   };
 
-  const removeTag = () => {
+  const removeTag = async () => {
     const tag = window.prompt("Nome da tag para remover:");
-    if (tag?.trim()) {
-      contactActions.removeTag(ids, tag.trim().toLowerCase());
+    if (!tag?.trim()) return;
+    const ok = await dbContactActions.removeTag(ids, tag.trim().toLowerCase());
+    if (ok) {
       toast.success(`Tag "${tag.trim()}" removida de ${ids.length} contato(s)`);
       clear();
+    } else {
+      toast.error("Não foi possível remover a tag");
     }
   };
 
-  const remove = () => {
-    if (window.confirm(`Excluir ${ids.length} contato(s)? Essa ação não pode ser desfeita.`)) {
-      contactActions.remove(ids);
+  const remove = async () => {
+    if (!window.confirm(`Excluir ${ids.length} contato(s)? Essa ação não pode ser desfeita.`)) {
+      return;
+    }
+    const ok = await dbContactActions.remove(ids);
+    if (ok) {
       toast.success(`${ids.length} contato(s) excluído(s)`);
       clear();
+    } else {
+      toast.error("Não foi possível excluir");
     }
   };
 

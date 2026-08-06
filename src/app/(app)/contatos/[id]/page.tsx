@@ -9,15 +9,24 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChannelIcon } from "@/components/shared/channel-icon";
-import { useContact, useUsers, contactName } from "@/lib/data/repos/contacts";
+import { contactName } from "@/lib/data/repos/contacts";
+import { useDbContact, useDbTeam } from "@/lib/data/repos/db/contacts";
 import { formatBRL, useOpportunitiesByContact, usePipelines } from "@/lib/data/repos/opportunities";
 
 export default function ContactDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const contact = useContact(id);
-  const users = useUsers();
+  const { contact, loading } = useDbContact(id);
+  const team = useDbTeam();
   const opportunities = useOpportunitiesByContact(id);
   const pipelines = usePipelines();
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <p className="text-sm text-slate-500">Carregando contato...</p>
+      </div>
+    );
+  }
 
   if (!contact) {
     return (
@@ -30,7 +39,7 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
     );
   }
 
-  const owner = users.find((u) => u.id === contact.ownerId);
+  const owner = team.find((u) => u.id === contact.ownerId);
 
   return (
     <div className="p-6">
