@@ -26,8 +26,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/shared/empty-state";
-import { contactName, useContact } from "@/lib/data/repos/contacts";
-import { formatBRL, useOpportunitiesByContact, usePipelines } from "@/lib/data/repos/opportunities";
+import { contactName } from "@/lib/data/repos/contacts";
+import { useDbContact } from "@/lib/data/repos/db/contacts";
+import { usePipelineDb } from "@/lib/data/repos/db/pipeline";
+import { formatBRL } from "@/lib/data/repos/opportunities";
 import { cn } from "@/lib/utils";
 
 type Panel = "campos" | "tarefas" | "notas" | "compromissos" | "arquivos";
@@ -89,9 +91,9 @@ export function ContactPanel({ contactId }: { contactId: string }) {
   const [panel, setPanel] = useState<Panel>("campos");
   const [tab, setTab] = useState<"todos" | "dnd" | "acoes">("todos");
   const [fileTab, setFileTab] = useState("Todos");
-  const contact = useContact(contactId);
-  const opportunities = useOpportunitiesByContact(contactId);
-  const pipelines = usePipelines();
+  const { contact } = useDbContact(contactId);
+  const { pipelines, opportunities: allOpps } = usePipelineDb();
+  const opportunities = allOpps.filter((o) => o.contactId === contactId);
 
   if (!contact) return null;
 

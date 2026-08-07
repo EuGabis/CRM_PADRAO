@@ -15,12 +15,13 @@ import {
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SlaBadge } from "@/components/shared/sla-badge";
-import { contactName, useContact } from "@/lib/data/repos/contacts";
+import { contactName } from "@/lib/data/repos/contacts";
+import { useDbContact } from "@/lib/data/repos/db/contacts";
 import {
   conversationActions,
   useConversation,
   useMessages,
-} from "@/lib/data/repos/conversations";
+} from "@/lib/data/repos/db/conversations";
 import type { Message } from "@/lib/data/types";
 import { cn } from "@/lib/utils";
 
@@ -128,7 +129,7 @@ function MessageBubble({ message }: { message: Message }) {
 
 export function Thread({ conversationId }: { conversationId: string }) {
   const conversation = useConversation(conversationId);
-  const contact = useContact(conversation?.contactId ?? null);
+  const { contact } = useDbContact(conversation?.contactId ?? null);
   const messages = useMessages(conversationId);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -146,8 +147,8 @@ export function Thread({ conversationId }: { conversationId: string }) {
         <div className="flex items-center gap-2.5">
           <Avatar className="size-8">
             <AvatarFallback className="bg-slate-200 text-[11px] font-bold text-slate-600">
-              {contact.firstName[0]}
-              {contact.lastName[0]}
+              {(contact.firstName[0] ?? "?").toUpperCase()}
+              {(contact.lastName[0] ?? "").toUpperCase()}
             </AvatarFallback>
           </Avatar>
           <div>

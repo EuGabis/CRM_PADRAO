@@ -30,7 +30,14 @@ import {
 } from "@/components/ui/tooltip";
 import { ScheduleDialog } from "./schedule-dialog";
 import { channelLabel } from "@/components/shared/channel-icon";
-import { conversationActions } from "@/lib/data/repos/conversations";
+import { conversationActions, useSnippets } from "@/lib/data/repos/db/conversations";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Channel } from "@/lib/data/types";
 import { cn } from "@/lib/utils";
 
@@ -51,14 +58,17 @@ export function Composer({ conversationId }: { conversationId: string }) {
   const [body, setBody] = useState("");
   const [subject, setSubject] = useState("");
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const snippets = useSnippets();
 
-  const send = (scheduledFor?: string) => {
+  const send = async (scheduledFor?: string) => {
     const text = channel === "email" && subject ? `[${subject}] ${body}` : body;
     if (!text.trim()) {
       toast.error("Escreva uma mensagem antes de enviar");
       return;
     }
-    conversationActions.send(conversationId, {
+    setSending(true);
+    const ok = await conversationActions.send(conversationId, {
       direction: "out",
       type: "text",
       channel,
@@ -66,6 +76,11 @@ export function Composer({ conversationId }: { conversationId: string }) {
       internal: internal || undefined,
       scheduledFor,
     });
+    setSending(false);
+    if (!ok) {
+      toast.error("Não foi possível enviar — tente novamente");
+      return;
+    }
     setBody("");
     setSubject("");
     toast.success(
@@ -158,9 +173,38 @@ export function Composer({ conversationId }: { conversationId: string }) {
             </TooltipTrigger>
             <TooltipContent className="text-[10px]">Agendar mensagem</TooltipContent>
           </Tooltip>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <button className="ml-1 rounded-md px-2 py-1 text-[11px] font-medium text-indigo-600 hover:bg-indigo-50" />
+              }
+            >
+              Trechos
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64">
+              <DropdownMenuLabel className="text-[10px] text-slate-400">
+                Respostas rápidas
+              </DropdownMenuLabel>
+              {snippets.length === 0 && (
+                <DropdownMenuItem disabled className="text-xs text-slate-400">
+                  Nenhum trecho — crie na aba Trechos
+                </DropdownMenuItem>
+              )}
+              {snippets.map((s) => (
+                <DropdownMenuItem
+                  key={s.id}
+                  className="flex-col items-start text-xs"
+                  onClick={() => setBody((b) => (b ? `${b} ${s.content}` : s.content))}
+                >
+                  <span className="font-semibold">{s.name}</span>
+                  <span className="line-clamp-1 text-[10px] text-slate-400">{s.content}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => send()}>
-          <Send className="size-3.5" /> Enviar
+        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => send()} disabled={sending}>
+          <Send className="size-3.5" /> {sending ? "Enviando..." : "Enviar"}
         </Button>
       </div>
       <ScheduleDialog

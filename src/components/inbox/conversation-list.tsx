@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowUpDown, Star } from "lucide-react";
+import { ArrowUpDown, Plus, Star } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -11,12 +11,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChannelIcon } from "@/components/shared/channel-icon";
 import { SlaBadge } from "@/components/shared/sla-badge";
-import { contactName, useContacts } from "@/lib/data/repos/contacts";
+import { contactName } from "@/lib/data/repos/contacts";
+import { useDbContacts } from "@/lib/data/repos/db/contacts";
 import {
   conversationActions,
   useConversations,
+  useRealtimeStatus,
   type ConversationFilter,
-} from "@/lib/data/repos/conversations";
+} from "@/lib/data/repos/db/conversations";
 import { cn } from "@/lib/utils";
 
 const FILTER_TABS: { key: ConversationFilter; label: string }[] = [
@@ -38,14 +40,17 @@ const SORT_OPTIONS = [
 export function ConversationList({
   selectedId,
   onSelect,
+  onNew,
 }: {
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onNew?: () => void;
 }) {
   const [filter, setFilter] = useState<ConversationFilter>("all");
   const [sort, setSort] = useState(SORT_OPTIONS[0]);
   const conversations = useConversations(filter);
-  const contacts = useContacts();
+  const { contacts } = useDbContacts();
+  const realtime = useRealtimeStatus();
   const unreadCount = useConversations("unread").length;
 
   const sorted =
@@ -58,7 +63,25 @@ export function ConversationList({
   return (
     <div className="flex h-full w-[300px] shrink-0 flex-col border-r bg-white">
       <div className="flex items-center justify-between border-b px-3 py-2">
-        <h2 className="text-sm font-bold text-slate-800">Caixa de entrada</h2>
+        <h2 className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
+          Caixa de entrada
+          {realtime === "on" && (
+            <span
+              title="Realtime conectado — mensagens chegam ao vivo"
+              className="flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-600"
+            >
+              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" /> Ao vivo
+            </span>
+          )}
+        </h2>
+        <div className="flex items-center gap-1">
+        <button
+          onClick={onNew}
+          title="Nova conversa"
+          className="flex size-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100"
+        >
+          <Plus className="size-4" />
+        </button>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -79,6 +102,7 @@ export function ConversationList({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
       </div>
       <div className="flex gap-1 border-b px-2 py-1.5">
         {FILTER_TABS.map((t) => (
@@ -120,8 +144,8 @@ export function ConversationList({
               <div className="relative shrink-0">
                 <Avatar className="size-9">
                   <AvatarFallback className="bg-slate-200 text-[11px] font-bold text-slate-600">
-                    {contact.firstName[0]}
-                    {contact.lastName[0]}
+                    {(contact.firstName[0] ?? "?").toUpperCase()}
+                    {(contact.lastName[0] ?? "").toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <span className="absolute -bottom-0.5 -right-0.5">

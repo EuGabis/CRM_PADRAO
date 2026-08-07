@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Link2, Phone, Plus, Smartphone } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { Link2, Phone, Plus, Smartphone, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { SubNav } from "@/components/layout/subnav";
 import { Composer } from "@/components/inbox/composer";
@@ -10,10 +12,20 @@ import { ConversationList } from "@/components/inbox/conversation-list";
 import { Thread } from "@/components/inbox/thread";
 import { ViewsRail } from "@/components/inbox/views-rail";
 import { DataTable, type Column } from "@/components/shared/data-table";
+import { EmptyState } from "@/components/shared/empty-state";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { ChannelIcon, channelLabel } from "@/components/shared/channel-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -22,8 +34,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useContacts, contactName } from "@/lib/data/repos/contacts";
-import { useConversation, useConversations } from "@/lib/data/repos/conversations";
+import { Textarea } from "@/components/ui/textarea";
+import { contactName } from "@/lib/data/repos/contacts";
+import { useDbContacts } from "@/lib/data/repos/db/contacts";
+import {
+  conversationActions,
+  snippetActions,
+  useConvStore,
+  useConversation,
+  useConversations,
+  useSnippets,
+} from "@/lib/data/repos/db/conversations";
 import { brand } from "@/lib/config/brand";
 import type { Channel } from "@/lib/data/types";
 
@@ -39,8 +60,14 @@ const TABS = [
 export default function ConversasPage() {
   const [tab, setTab] = useState("Conversas");
   const conversations = useConversations();
-  const [selectedId, setSelectedId] = useState<string | null>(conversations[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newOpen, setNewOpen] = useState(false);
   const selectedConversation = useConversation(selectedId);
+
+  // seleciona a primeira conversa quando os dados chegam
+  useEffect(() => {
+    if (!selectedId && conversations.length > 0) setSelectedId(conversations[0].id);
+  }, [conversations, selectedId]);
 
   return (
     <div className="flex h-full flex-col">
@@ -56,162 +83,206 @@ export default function ConversasPage() {
       ) : (
         <div className="flex min-h-0 flex-1">
           <ViewsRail />
-          <ConversationList selectedId={selectedId} onSelect={setSelectedId} />
+          <ConversationList
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onNew={() => setNewOpen(true)}
+          />
           {selectedId ? (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <Thread conversationId={selectedId} />
               <Composer conversationId={selectedId} />
             </div>
           ) : (
-            <div className="flex flex-1 items-center justify-center bg-slate-50">
-              <p className="text-sm text-slate-400">Selecione uma conversa</p>
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-slate-50">
+              <p className="text-sm text-slate-400">
+                {conversations.length === 0
+                  ? "Nenhuma conversa ainda — comece uma com um contato"
+                  : "Selecione uma conversa"}
+              </p>
+              <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setNewOpen(true)}>
+                <Plus className="size-3.5" /> Nova conversa
+              </Button>
             </div>
           )}
           {selectedConversation && <ContactPanel contactId={selectedConversation.contactId} />}
         </div>
       )}
+      <NewConversationDialog
+        open={newOpen}
+        onOpenChange={setNewOpen}
+        onCreated={(id) => setSelectedId(id)}
+      />
     </div>
   );
 }
 
-/* ---------- Ações manuais ---------- */
+/* ---------- Nova conversa ---------- */
 
-interface ManualAction {
-  id: string;
-  contato: string;
-  tipo: "Telefone" | "SMS";
-  fluxo: string;
-  criadoEm: string;
-}
+const CHANNELS: Channel[] = ["whatsapp", "instagram", "facebook", "sms", "email"];
 
-const MANUAL_FLOWS = [
-  "Boas-vindas Teste Grátis",
-  "Follow-up Demo",
-  "Reativação de inativos",
-  "Cobrança amigável",
-];
+function NewConversationDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onCreated: (id: string) => void;
+}) {
+  const { contacts } = useDbContacts();
+  const [contactId, setContactId] = useState("");
+  const [channel, setChannel] = useState<Channel>("whatsapp");
+  const [saving, setSaving] = useState(false);
 
-const MANUAL_DATES = [
-  "05 ago 2026 09:12",
-  "05 ago 2026 10:40",
-  "04 ago 2026 16:25",
-  "04 ago 2026 11:03",
-  "03 ago 2026 18:47",
-  "03 ago 2026 14:15",
-  "02 ago 2026 09:58",
-];
-
-function AcoesManuaisTab() {
-  const contacts = useContacts();
-  const rows = useMemo<ManualAction[]>(
-    () =>
-      contacts.slice(0, 7).map((c, i) => ({
-        id: `ma-${i + 1}`,
-        contato: contactName(c),
-        tipo: i % 2 === 0 ? "Telefone" : "SMS",
-        fluxo: MANUAL_FLOWS[i % MANUAL_FLOWS.length],
-        criadoEm: MANUAL_DATES[i % MANUAL_DATES.length],
-      })),
-    [contacts]
-  );
-
-  const columns: Column<ManualAction>[] = [
-    {
-      key: "contato",
-      header: "Contato",
-      sortable: true,
-      sortValue: (r) => r.contato,
-      render: (r) => <span className="font-medium text-slate-800">{r.contato}</span>,
-    },
-    {
-      key: "tipo",
-      header: "Tipo",
-      sortable: true,
-      sortValue: (r) => r.tipo,
-      render: (r) => (
-        <span className="flex items-center gap-1.5 text-slate-600">
-          {r.tipo === "Telefone" ? (
-            <Phone className="size-3.5 text-indigo-500" />
-          ) : (
-            <Smartphone className="size-3.5 text-slate-500" />
-          )}
-          {r.tipo}
-        </span>
-      ),
-    },
-    { key: "fluxo", header: "Fluxo de origem", render: (r) => <span className="text-slate-600">{r.fluxo}</span> },
-    { key: "criado", header: "Criado em", sortable: true, sortValue: (r) => r.criadoEm, render: (r) => <span className="text-slate-500">{r.criadoEm}</span> },
-    {
-      key: "acao",
-      header: "",
-      render: () => (
-        <Button
-          size="sm"
-          className="h-7 text-xs"
-          onClick={(e) => {
-            e.stopPropagation();
-            toast.info("Iniciar ação manual chega com o backend");
-          }}
-        >
-          Iniciar
-        </Button>
-      ),
-    },
-  ];
+  const create = async () => {
+    if (!contactId) {
+      toast.error("Escolha um contato");
+      return;
+    }
+    setSaving(true);
+    const id = await conversationActions.open(contactId, channel);
+    setSaving(false);
+    if (!id) {
+      toast.error("Não foi possível abrir a conversa");
+      return;
+    }
+    onCreated(id);
+    setContactId("");
+    onOpenChange(false);
+  };
 
   return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Nova conversa</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Contato *</Label>
+            <Select value={contactId} onValueChange={(v) => setContactId(v ?? "")}>
+              <SelectTrigger className="h-8 w-full text-xs">
+                <SelectValue>
+                  {contactId
+                    ? contactName(contacts.find((c) => c.id === contactId)!)
+                    : "Selecionar contato"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {contacts.slice(0, 100).map((c) => (
+                  <SelectItem key={c.id} value={c.id} className="text-xs">
+                    {contactName(c)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {contacts.length === 0 && (
+              <p className="text-[11px] text-amber-600">
+                Você ainda não tem contatos — crie um no módulo Contatos primeiro.
+              </p>
+            )}
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Canal</Label>
+            <Select value={channel} onValueChange={(v) => v && setChannel(v as Channel)}>
+              <SelectTrigger className="h-8 w-full text-xs">
+                <SelectValue>{channelLabel(channel)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {CHANNELS.map((c) => (
+                  <SelectItem key={c} value={c} className="text-xs">
+                    {channelLabel(c)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button onClick={create} disabled={saving}>
+            {saving ? "Abrindo..." : "Abrir conversa"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ---------- Ações manuais (depende de Automações — fase futura) ---------- */
+
+function AcoesManuaisTab() {
+  return (
     <div>
-      <div className="mb-4 flex items-center gap-3">
-        <h1 className="text-lg font-bold text-slate-900">Ações manuais</h1>
-        <Badge variant="secondary">{rows.length} pendentes</Badge>
-      </div>
-      <DataTable data={rows} columns={columns} pageSize={10} />
+      <h1 className="mb-4 text-lg font-bold text-slate-900">Ações manuais</h1>
+      <EmptyState
+        icon={Phone}
+        title="Nenhuma ação manual pendente"
+        description="Quando suas automações incluírem etapas manuais (ligar, enviar SMS), a fila aparece aqui. Chega junto com o módulo de Automações real."
+      />
     </div>
   );
 }
 
-/* ---------- Trechos ---------- */
-
-interface Snippet {
-  id: string;
-  nome: string;
-  atalho: string;
-  conteudo: string;
-  canal: Channel;
-}
-
-const SNIPPETS: Snippet[] = [
-  { id: "sn-1", nome: "Tabela de preços", atalho: "/precos", conteudo: "Olá! Nossos planos começam em R$ 97/mês no plano Essencial, com automações e caixa de entrada unificada…", canal: "whatsapp" },
-  { id: "sn-2", nome: "Link da demo", atalho: "/demo", conteudo: "Perfeito! Você pode agendar uma demonstração ao vivo com nosso time neste link: agenda…", canal: "whatsapp" },
-  { id: "sn-3", nome: "Boas-vindas Instagram", atalho: "/bemvindo", conteudo: "Oi! Que bom ter você por aqui 💜 Me conta: você já usa algum CRM hoje ou faz tudo manualmente?", canal: "instagram" },
-  { id: "sn-4", nome: "Fora do horário", atalho: "/ausente", conteudo: "Nosso atendimento funciona de seg. a sex., das 8h às 20h. Deixe sua mensagem que respondemos assim que possível!", canal: "sms" },
-  { id: "sn-5", nome: "Proposta por e-mail", atalho: "/proposta", conteudo: "Conforme conversamos, segue em anexo a proposta comercial com as condições especiais válidas até o fim do mês…", canal: "email" },
-];
+/* ---------- Trechos (reais) ---------- */
 
 function TrechosTab() {
-  const columns: Column<Snippet>[] = [
-    { key: "nome", header: "Nome", sortable: true, sortValue: (r) => r.nome, render: (r) => <span className="font-medium text-slate-800">{r.nome}</span> },
+  const snippets = useSnippets();
+  const loaded = useConvStore((s) => s.loaded);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [content, setContent] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const create = async () => {
+    if (!name.trim() || !content.trim()) {
+      toast.error("Preencha nome e conteúdo");
+      return;
+    }
+    setSaving(true);
+    const ok = await snippetActions.add(name.trim(), content.trim());
+    setSaving(false);
+    if (!ok) {
+      toast.error("Não foi possível salvar o trecho");
+      return;
+    }
+    toast.success(`Trecho "${name.trim()}" criado — disponível no composer`);
+    setName("");
+    setContent("");
+    setDialogOpen(false);
+  };
+
+  const columns: Column<(typeof snippets)[number]>[] = [
     {
-      key: "atalho",
-      header: "Atalho",
-      render: (r) => (
-        <code className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-600">{r.atalho}</code>
-      ),
+      key: "nome",
+      header: "Nome",
+      sortable: true,
+      sortValue: (r) => r.name,
+      render: (r) => <span className="font-medium text-slate-800">{r.name}</span>,
     },
     {
       key: "conteudo",
       header: "Conteúdo",
-      render: (r) => (
-        <span className="block max-w-md truncate text-slate-500">{r.conteudo}</span>
-      ),
+      render: (r) => <span className="block max-w-xl truncate text-slate-500">{r.content}</span>,
     },
     {
-      key: "canal",
-      header: "Canal",
+      key: "acao",
+      header: "",
       render: (r) => (
-        <span className="flex items-center gap-1.5 text-slate-600">
-          <ChannelIcon channel={r.canal} size={16} /> {channelLabel(r.canal)}
-        </span>
+        <button
+          onClick={async () => {
+            if (!window.confirm(`Excluir o trecho "${r.name}"?`)) return;
+            (await snippetActions.remove(r.id))
+              ? toast.success("Trecho excluído")
+              : toast.error("Não foi possível excluir");
+          }}
+          className="text-slate-300 hover:text-red-500"
+        >
+          <Trash2 className="size-3.5" />
+        </button>
       ),
     },
   ];
@@ -221,94 +292,123 @@ function TrechosTab() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold text-slate-900">Trechos</h1>
-          <Badge variant="secondary">{SNIPPETS.length} trechos</Badge>
+          <Badge variant="secondary">{snippets.length} trechos</Badge>
         </div>
-        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => toast.info("Criação de trechos chega com o backend")}>
+        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setDialogOpen(true)}>
           <Plus className="size-3.5" /> Novo trecho
         </Button>
       </div>
-      <DataTable data={SNIPPETS} columns={columns} pageSize={10} />
+      {loaded && snippets.length === 0 ? (
+        <EmptyState
+          icon={Smartphone}
+          title="Nenhum trecho ainda"
+          description="Crie respostas rápidas para inserir com um clique no composer da conversa."
+          cta={
+            <Button size="sm" className="text-xs" onClick={() => setDialogOpen(true)}>
+              <Plus className="size-3.5" /> Criar trecho
+            </Button>
+          }
+        />
+      ) : (
+        <DataTable data={snippets} columns={columns} pageSize={10} />
+      )}
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Novo trecho</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Nome</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Ex.: Tabela de preços"
+                className="h-8"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Conteúdo</Label>
+              <Textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Olá! Nossos planos começam em..."
+                className="min-h-24 text-sm"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={create} disabled={saving}>
+              {saving ? "Salvando..." : "Criar trecho"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-/* ---------- Links de acionamento ---------- */
-
-interface TriggerLink {
-  id: string;
-  nome: string;
-  url: string;
-  cliques: number;
-  criadoEm: string;
-}
-
-const linkBase = `${brand.shortName.toLowerCase()}.link`;
-
-const TRIGGER_LINKS: TriggerLink[] = [
-  { id: "tl-1", nome: "Teste grátis 14 dias", url: `${linkBase}/teste-gratis`, cliques: 482, criadoEm: "12 jun 2026" },
-  { id: "tl-2", nome: "Agendar demonstração", url: `${linkBase}/demo`, cliques: 217, criadoEm: "03 jul 2026" },
-  { id: "tl-3", nome: "Promoção de inverno", url: `${linkBase}/inverno26`, cliques: 139, criadoEm: "15 jul 2026" },
-  { id: "tl-4", nome: "Grupo VIP WhatsApp", url: `${linkBase}/vip`, cliques: 96, criadoEm: "01 ago 2026" },
-];
+/* ---------- Links de acionamento (depende de Automações — fase futura) ---------- */
 
 function LinksTab() {
-  const columns: Column<TriggerLink>[] = [
-    { key: "nome", header: "Nome", sortable: true, sortValue: (r) => r.nome, render: (r) => <span className="font-medium text-slate-800">{r.nome}</span> },
-    {
-      key: "url",
-      header: "URL",
-      render: (r) => (
-        <span className="flex items-center gap-1.5 text-indigo-600">
-          <Link2 className="size-3.5" /> {r.url}
-        </span>
-      ),
-    },
-    { key: "cliques", header: "Cliques", sortable: true, sortValue: (r) => r.cliques, render: (r) => <span className="text-slate-700">{r.cliques.toLocaleString("pt-BR")}</span> },
-    { key: "criado", header: "Criado em", sortable: true, sortValue: (r) => r.criadoEm, render: (r) => <span className="text-slate-500">{r.criadoEm}</span> },
-  ];
-
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold text-slate-900">Links de acionamento</h1>
-          <Badge variant="secondary">{TRIGGER_LINKS.length} links</Badge>
-        </div>
-        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => toast.info("Criação de links de acionamento chega com o backend")}>
-          <Plus className="size-3.5" /> Criar link
-        </Button>
-      </div>
-      <DataTable data={TRIGGER_LINKS} columns={columns} pageSize={10} />
+      <h1 className="mb-4 text-lg font-bold text-slate-900">Links de acionamento</h1>
+      <EmptyState
+        icon={Link2}
+        title="Nenhum link de acionamento"
+        description={`Links rastreáveis (${brand.shortName.toLowerCase()}.link/...) que disparam automações ao serem clicados. Chegam junto com o módulo de Automações real.`}
+      />
     </div>
   );
 }
 
-/* ---------- Estatísticas ---------- */
+/* ---------- Estatísticas (reais) ---------- */
 
 const ALL_CHANNELS: Channel[] = ["whatsapp", "instagram", "facebook", "sms", "email"];
 
 function EstatisticasTab() {
   const conversations = useConversations();
+  const messages = useConvStore((s) => s.messages);
 
-  const porCanal = useMemo(() => {
-    const counts: Record<Channel, number> = { whatsapp: 0, instagram: 0, facebook: 0, sms: 0, email: 0 };
+  const hoje = format(new Date(), "yyyy-MM-dd");
+  const stats = useMemo(() => {
+    const porCanal: Record<Channel, number> = {
+      whatsapp: 0,
+      instagram: 0,
+      facebook: 0,
+      sms: 0,
+      email: 0,
+    };
     conversations.forEach((c) => {
-      counts[c.channel] += 1;
+      porCanal[c.channel] += 1;
     });
-    return counts;
-  }, [conversations]);
-
-  const abertas = conversations.length;
-  const slaEstourado = useMemo(() => conversations.filter((c) => c.slaDays > 0).length, [conversations]);
+    return {
+      porCanal,
+      abertas: conversations.length,
+      slaEstourado: conversations.filter((c) => c.slaDays > 0).length,
+      totalMensagens: messages.length,
+      mensagensHoje: messages.filter((m) => m.at.slice(0, 10) === hoje).length,
+      enviadas: messages.filter((m) => m.direction === "out" && !m.internal).length,
+    };
+  }, [conversations, messages, hoje]);
 
   return (
     <div>
       <h1 className="mb-4 text-lg font-bold text-slate-900">Estatísticas de conversas</h1>
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label="Tempo médio de resposta" value="4m 12s" delta={-18} />
-        <KpiCard label="Conversas abertas" value={String(abertas)} delta={6} />
-        <KpiCard label="Resolvidas hoje" value="9" delta={12} />
-        <KpiCard label="SLA estourado" value={String(slaEstourado)} hint="Conversas sem resposta acima do SLA alvo" />
+        <KpiCard label="Conversas abertas" value={String(stats.abertas)} />
+        <KpiCard label="Mensagens hoje" value={String(stats.mensagensHoje)} />
+        <KpiCard label="Mensagens enviadas (total)" value={String(stats.enviadas)} />
+        <KpiCard
+          label="SLA estourado"
+          value={String(stats.slaEstourado)}
+          hint="Conversas sem resposta acima do SLA alvo"
+        />
       </div>
       <div className="rounded-xl border bg-white">
         <div className="border-b px-4 py-3">
@@ -317,8 +417,8 @@ function EstatisticasTab() {
         <table className="w-full text-xs">
           <tbody>
             {ALL_CHANNELS.map((ch) => {
-              const count = porCanal[ch];
-              const pct = abertas > 0 ? Math.round((count / abertas) * 100) : 0;
+              const count = stats.porCanal[ch];
+              const pct = stats.abertas > 0 ? Math.round((count / stats.abertas) * 100) : 0;
               return (
                 <tr key={ch} className="border-b last:border-0">
                   <td className="px-4 py-2.5">
@@ -328,7 +428,10 @@ function EstatisticasTab() {
                   </td>
                   <td className="w-40 px-4 py-2.5">
                     <div className="h-1.5 w-full rounded-full bg-slate-100">
-                      <div className="h-1.5 rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
+                      <div
+                        className="h-1.5 rounded-full bg-indigo-500"
+                        style={{ width: `${pct}%` }}
+                      />
                     </div>
                   </td>
                   <td className="px-4 py-2.5 text-right text-slate-600">{count}</td>
@@ -380,42 +483,43 @@ function ConfiguracoesTab() {
   ];
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-xl">
       <h1 className="mb-4 text-lg font-bold text-slate-900">Configurações da caixa de entrada</h1>
-      <div className="rounded-xl border bg-white">
+      <div className="space-y-3 rounded-xl border bg-white p-5">
         {toggles.map((t) => (
-          <div key={t.label} className="flex items-center justify-between gap-4 border-b px-4 py-3.5">
+          <div key={t.label} className="flex items-center justify-between gap-4 border-b pb-3 last:border-0 last:pb-0">
             <div>
-              <p className="text-sm font-medium text-slate-800">{t.label}</p>
-              <p className="text-xs text-slate-500">{t.description}</p>
+              <p className="text-xs font-semibold text-slate-800">{t.label}</p>
+              <p className="text-[11px] text-slate-500">{t.description}</p>
             </div>
-            <Switch
-              checked={t.value}
-              onCheckedChange={(v) => {
-                t.set(Boolean(v));
-                toast.info("Persistência das configurações chega com o backend");
-              }}
-            />
+            <Switch checked={t.value} onCheckedChange={(v) => t.set(Boolean(v))} />
           </div>
         ))}
-        <div className="flex items-center justify-between gap-4 px-4 py-3.5">
+        <div className="flex items-center justify-between gap-4 pt-1">
           <div>
-            <p className="text-sm font-medium text-slate-800">SLA alvo de primeira resposta</p>
-            <p className="text-xs text-slate-500">Tempo máximo antes de sinalizar a conversa como atrasada</p>
+            <p className="text-xs font-semibold text-slate-800">SLA alvo de resposta</p>
+            <p className="text-[11px] text-slate-500">Tempo máximo para responder um lead</p>
           </div>
           <Select value={slaAlvo} onValueChange={(v) => v && setSlaAlvo(v)}>
-            <SelectTrigger className="h-8 w-[120px] text-xs">
-              <SelectValue>{`${slaAlvo} hora${slaAlvo === "1" ? "" : "s"}`}</SelectValue>
+            <SelectTrigger className="h-8 w-32 text-xs">
+              <SelectValue>{slaAlvo} horas</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {["1", "2", "4", "8", "24"].map((h) => (
                 <SelectItem key={h} value={h} className="text-xs">
-                  {h} hora{h === "1" ? "" : "s"}
+                  {h} horas
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
+        <Button
+          size="sm"
+          className="text-xs"
+          onClick={() => toast.success("Preferências salvas (sessão)")}
+        >
+          Salvar
+        </Button>
       </div>
     </div>
   );
