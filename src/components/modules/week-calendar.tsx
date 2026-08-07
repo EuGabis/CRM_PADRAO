@@ -1,33 +1,53 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { format } from "date-fns";
+import { addDays, format, startOfWeek } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Badge } from "@/components/ui/badge";
-import { useAppointments } from "@/lib/data/repos/appointments";
+import { Button } from "@/components/ui/button";
+import { useDbAppointments } from "@/lib/data/repos/db/appointments";
 
 const HOURS = Array.from({ length: 12 }, (_, i) => 8 + i); // 8h–19h
-const WEEK_START = new Date("2026-08-02T00:00:00-03:00"); // domingo
 
 export function WeekCalendar() {
-  const appointments = useAppointments();
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(WEEK_START);
-    d.setDate(d.getDate() + i);
-    return d;
-  });
+  const { appointments, loading } = useDbAppointments();
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 0 }));
+
+  const days = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
+    [weekStart]
+  );
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+
+  const weekLabel = `${format(days[0], "d", { locale: ptBR })} – ${format(days[6], "d 'de' MMMM 'de' yyyy", { locale: ptBR })}`;
 
   return (
     <div className="rounded-xl border bg-white">
       <div className="flex items-center justify-between border-b px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <button className="flex size-7 items-center justify-center rounded-md border text-slate-500 hover:bg-slate-50">
+          <button
+            onClick={() => setWeekStart((w) => addDays(w, -7))}
+            className="flex size-7 items-center justify-center rounded-md border text-slate-500 hover:bg-slate-50"
+          >
             <ChevronLeft className="size-4" />
           </button>
-          <button className="flex size-7 items-center justify-center rounded-md border text-slate-500 hover:bg-slate-50">
+          <button
+            onClick={() => setWeekStart((w) => addDays(w, 7))}
+            className="flex size-7 items-center justify-center rounded-md border text-slate-500 hover:bg-slate-50"
+          >
             <ChevronRight className="size-4" />
           </button>
-          <span className="text-sm font-bold text-slate-800">2 – 8 de agosto de 2026</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setWeekStart(startOfWeek(new Date(), { weekStartsOn: 0 }))}
+          >
+            Hoje
+          </Button>
+          <span className="text-sm font-bold text-slate-800">{weekLabel}</span>
+          {loading && <span className="text-[11px] text-slate-400">Carregando...</span>}
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="secondary">Semana</Badge>
@@ -40,7 +60,7 @@ export function WeekCalendar() {
           <div
             key={i}
             className={`border-b px-2 py-2 text-center font-semibold ${
-              format(d, "yyyy-MM-dd") === "2026-08-06"
+              format(d, "yyyy-MM-dd") === todayStr
                 ? "bg-indigo-50 text-indigo-700"
                 : "text-slate-600"
             } ${i < 6 ? "border-r" : ""}`}

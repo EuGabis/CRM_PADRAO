@@ -141,7 +141,10 @@ os módulos ainda não migrados continuam importando dos repos mock em
   de acionamento = empty states (dependem de Automações real).
 - ✅ Backend F2e: **Dashboard** com widgets calculando sobre dados reais
   (adapters `useDbPipelines/useDbOpportunities/useDbPipeline` em `db/pipeline.ts`).
-- ⏳ Próximo: Calendários (compromissos reais), Pagamentos, Automações reais
+- ✅ Backend F2f: módulo **Calendários** real — compromissos do banco (repo
+  db/appointments.ts), grade semanal com navegação e "Hoje", criar/excluir
+  compromisso (com contato vinculado), lista futuro/passado. Sync Google = futura.
+- ⏳ Próximo: Pagamentos, Automações reais
   (Edge Functions), Equipe/convites em Configurações.
 - ⏳ Backlog: personalizar template/remetente dos e-mails de auth do Supabase
   (pedido do Gabriel), storage (Mídia Drive/arquivos), automações reais

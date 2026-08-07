@@ -3,11 +3,20 @@
 import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { SubNav } from "@/components/layout/subnav";
 import { WeekCalendar } from "@/components/modules/week-calendar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -17,8 +26,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useAppointments } from "@/lib/data/repos/appointments";
-import { useContacts, contactName } from "@/lib/data/repos/contacts";
+import { appointmentActions, useDbAppointments } from "@/lib/data/repos/db/appointments";
+import { useDbContacts } from "@/lib/data/repos/db/contacts";
+import { contactName } from "@/lib/data/repos/contacts";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -29,10 +39,17 @@ const TABS = [
 
 /* -------------------------- Lista de compromissos ------------------------ */
 
-function ListaCompromissos() {
-  const appointments = useAppointments();
-  const contacts = useContacts();
+function ListaCompromissos({ onNew }: { onNew: () => void }) {
+  const { appointments } = useDbAppointments();
+  const { contacts } = useDbContacts();
   const [filtro, setFiltro] = useState<"Futuro" | "Passado">("Futuro");
+
+  const remove = async (id: string, title: string) => {
+    if (!window.confirm(`Excluir o compromisso "${title}"?`)) return;
+    (await appointmentActions.remove(id))
+      ? toast.success("Compromisso excluído")
+      : toast.error("Não foi possível excluir");
+  };
 
   const rows = useMemo(() => {
     const byId = new Map(contacts.map((c) => [c.id, contactName(c)]));
@@ -60,19 +77,24 @@ function ListaCompromissos() {
             Todos os agendamentos sincronizados, em formato de lista
           </p>
         </div>
-        <div className="flex gap-1">
-          {(["Futuro", "Passado"] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFiltro(f)}
-              className={cn(
-                "rounded-full px-3 py-1 text-[11px] font-medium",
-                filtro === f ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"
-              )}
-            >
-              {f}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1">
+            {(["Futuro", "Passado"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFiltro(f)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-[11px] font-medium",
+                  filtro === f ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"
+                )}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={onNew}>
+            <Plus className="size-3.5" /> Novo compromisso
+          </Button>
         </div>
       </div>
       <div className="overflow-x-auto rounded-xl border bg-white">
@@ -84,6 +106,7 @@ function ListaCompromissos() {
               <th className="whitespace-nowrap px-4 py-2.5 font-medium">Calendário</th>
               <th className="whitespace-nowrap px-4 py-2.5 font-medium">Origem</th>
               <th className="whitespace-nowrap px-4 py-2.5 font-medium">Contato</th>
+              <th className="w-10 px-4 py-2.5" />
             </tr>
           </thead>
           <tbody>
@@ -111,6 +134,15 @@ function ListaCompromissos() {
                   </Badge>
                 </td>
                 <td className="whitespace-nowrap px-4 py-2.5 text-slate-600">{a.contato}</td>
+                <td className="px-4 py-2.5">
+                  <button
+                    onClick={() => remove(a.id, a.title)}
+                    className="text-slate-300 hover:text-red-500"
+                    title="Excluir compromisso"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </td>
               </tr>
             ))}
             {rows.length === 0 && (
@@ -262,10 +294,133 @@ function ConfigCalendarios() {
   );
 }
 
+/* --------------------------- Novo compromisso ---------------------------- */
+
+function NewAppointmentDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
+  const { contacts } = useDbContacts();
+  const [title, setTitle] = useState("");
+  const [contactId, setContactId] = useState("");
+  const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [startTime, setStartTime] = useState("10:00");
+  const [endTime, setEndTime] = useState("10:45");
+  const [saving, setSaving] = useState(false);
+
+  const create = async () => {
+    if (!title.trim() || !date || !startTime || !endTime) {
+      toast.error("Preencha título, data e horários");
+      return;
+    }
+    if (endTime <= startTime) {
+      toast.error("O horário de término precisa ser depois do início");
+      return;
+    }
+    setSaving(true);
+    const ok = await appointmentActions.add({
+      title: title.trim(),
+      contactId: contactId || null,
+      start: `${date}T${startTime}:00-03:00`,
+      end: `${date}T${endTime}:00-03:00`,
+    });
+    setSaving(false);
+    if (!ok) {
+      toast.error("Não foi possível criar o compromisso");
+      return;
+    }
+    toast.success("Compromisso criado");
+    setTitle("");
+    setContactId("");
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Novo compromisso</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Título *</Label>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Ex.: Demo Lito CRM — Maria"
+              className="h-8"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Contato (opcional)</Label>
+            <Select value={contactId} onValueChange={(v) => setContactId(v ?? "")}>
+              <SelectTrigger className="h-8 w-full text-xs">
+                <SelectValue>
+                  {contactId
+                    ? contactName(contacts.find((c) => c.id === contactId)!)
+                    : "Sem contato vinculado"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {contacts.slice(0, 100).map((c) => (
+                  <SelectItem key={c.id} value={c.id} className="text-xs">
+                    {contactName(c)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Data *</Label>
+              <Input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="h-8"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Início *</Label>
+              <Input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="h-8"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Término *</Label>
+              <Input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="h-8"
+              />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button onClick={create} disabled={saving}>
+            {saving ? "Criando..." : "Criar compromisso"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ---------------------------------- Page --------------------------------- */
 
 export default function CalendariosPage() {
   const [tab, setTab] = useState(TABS[0].label);
+  const [newOpen, setNewOpen] = useState(false);
   return (
     <div>
       <SubNav tabs={TABS} active={tab} onChange={setTab} />
@@ -274,18 +429,24 @@ export default function CalendariosPage() {
           <>
             <div className="mb-3 flex items-center justify-between">
               <h1 className="text-lg font-bold text-slate-900">Calendários</h1>
-              <p className="text-xs text-slate-500">
-                Sincronizado com Google Calendar · eventos verdes vêm do Google
-              </p>
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-slate-500">
+                  Eventos indigo são do CRM · verdes virão do Google (integração futura)
+                </p>
+                <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setNewOpen(true)}>
+                  <Plus className="size-3.5" /> Novo compromisso
+                </Button>
+              </div>
             </div>
             <WeekCalendar />
           </>
         ) : tab === "Lista de compromissos" ? (
-          <ListaCompromissos />
+          <ListaCompromissos onNew={() => setNewOpen(true)} />
         ) : (
           <ConfigCalendarios />
         )}
       </div>
+      <NewAppointmentDialog open={newOpen} onOpenChange={setNewOpen} />
     </div>
   );
 }
