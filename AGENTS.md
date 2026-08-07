@@ -142,6 +142,46 @@ Supabase). Peças:
 - Sem domínio verificado no Resend, use `onboarding@resend.dev` (só entrega para o
   e-mail dono da conta) — para produção, verificar domínio no painel do Resend.
 
+## Automações — EM CONSTRUÇÃO (leia antes de continuar)
+
+Spec: `docs/superpowers/specs/2026-08-07-automacoes-design.md`
+Plano: `docs/superpowers/plans/2026-08-07-automacoes.md` (8 tarefas)
+
+**Arquitetura aprovada (híbrida):** triggers no Postgres capturam eventos e
+enfileiram em `automation_runs`; `pg_cron` chama a cada minuto (via `pg_net`) a rota
+protegida `/api/automations/tick` do Next; a rota executa os passos em TypeScript
+com a service role e grava `automation_logs`.
+Motivo de não usar Vercel Cron: no plano Hobby ele roda só 1×/dia.
+
+### Estado (2026-08-07)
+
+- ✅ **Tarefa 1+2** — migração `0007_automations.sql` **aplicada**: tabelas
+  `automation_runs` / `automation_logs`, colunas `workflows.trigger_key|trigger_config|steps`,
+  função `private.enqueue_automation(...)` (idempotência por `event_key` + anti-loop de
+  5 min) e os triggers de captura em contacts, opportunities, messages, appointments
+  + job diário `lito-aniversarios`.
+  **Consequência prática:** eventos já enfileiram runs, mas **nada os executa ainda**
+  (runs ficam em `pending`). Isso é inofensivo — nenhum workflow está publicado com
+  `trigger_key` preenchido.
+- ⏳ **Tarefa 3 — PRÓXIMO PASSO:** executor em TypeScript
+  (`src/lib/supabase/admin.ts`, `src/lib/automations/{types,actions,engine}.ts`,
+  `src/app/api/automations/tick/route.ts`). **Bloqueado por:** falta a variável
+  `SUPABASE_SERVICE_ROLE_KEY` (Supabase → Settings → API → chave `service_role`)
+  e definir `AUTOMATION_SECRET` (string aleatória) — ambas em `.env.local` e na Vercel.
+- ⏳ Tarefa 4 — migração `0009` do `pg_cron` (só depois que a rota estiver publicada,
+  pois precisa da URL + segredo).
+- ⏳ Tarefas 5–7 — builder configurável, aba de execuções/logs com teste manual,
+  galeria de 5 modelos prontos.
+- ⏳ Tarefa 8 — env vars em produção, deploy, teste ponta a ponta, doc final.
+
+### Como pausar/retomar o motor
+
+```sql
+select cron.unschedule('lito-automation-tick');  -- pausa (após a tarefa 4)
+select jobname, active from cron.job;            -- conferir jobs
+select * from public.automation_runs order by created_at desc limit 20;
+```
+
 ## Padrão de migração módulo a módulo (IMPORTANTE)
 
 A estratégia é deixar **uma tela inteira funcional por vez**. Repos reais ficam em
@@ -183,6 +223,13 @@ os módulos ainda não migrados continuam importando dos repos mock em
 - ✅ Backend F2f: módulo **Calendários** real — compromissos do banco (repo
   db/appointments.ts), grade semanal com navegação e "Hoje", criar/excluir
   compromisso (com contato vinculado), lista futuro/passado. Sync Google = futura.
+- ✅ **Cadastro fechado** (migração 0006): só entra quem tem convite pendente — o
+  trigger de signup aborta a transação, então nem chamando a API de auth direto
+  a conta é criada. Reabrir: `update private.app_settings set signup_mode = 'open';`
+- ✅ Backend F2h: **Calendários**, **Configurações** (empresa/perfil reais, sidebar
+  mostrando a empresa do banco) e **Checklist de ativação** persistente (migração 0005).
+- ⏳ **Automações: em construção** — ver seção própria acima (tarefa 3 do plano é o
+  próximo passo, bloqueada pela `SUPABASE_SERVICE_ROLE_KEY`).
 - ✅ Backend F2g: **Equipe e permissões** (migração 0004) — convites por e-mail
   (trigger de signup vincula à empresa que convidou em vez de criar nova),
   papéis admin/usuário, permissões por módulo (jsonb em `location_members`),
