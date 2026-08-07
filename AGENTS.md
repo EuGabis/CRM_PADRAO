@@ -120,6 +120,11 @@ os módulos ainda não migrados continuam importando dos repos mock em
   (`logBulk()` registra qualquer ação em massa)
 - `db/pipeline.ts` — pipelines/fases/oportunidades, drag&drop persistente,
   gestão de pipelines e fases, mover/excluir em massa
+- `db/conversations.ts` — conversas/mensagens + Realtime, trechos
+- `db/appointments.ts` — compromissos do calendário
+- `db/team.ts` — membros, convites, permissões; `useMyMembership().can(moduleKey)`
+  é o guard de navegação (admin sempre true; usuário: só bloqueia se explicitamente
+  `false` — membros antigos com `{}` continuam vendo tudo)
 
 ## Estado atual / próximos passos
 
@@ -144,6 +149,13 @@ os módulos ainda não migrados continuam importando dos repos mock em
 - ✅ Backend F2f: módulo **Calendários** real — compromissos do banco (repo
   db/appointments.ts), grade semanal com navegação e "Hoje", criar/excluir
   compromisso (com contato vinculado), lista futuro/passado. Sync Google = futura.
+- ✅ Backend F2g: **Equipe e permissões** (migração 0004) — convites por e-mail
+  (trigger de signup vincula à empresa que convidou em vez de criar nova),
+  papéis admin/usuário, permissões por módulo (jsonb em `location_members`),
+  modo "ver apenas dados atribuídos" aplicado nas políticas RLS de contacts e
+  opportunities via `private.sees_all()`, trigger `protect_last_admin` impedindo
+  a empresa ficar sem administrador. Sidebar respeita permissões; a tela
+  /configuracoes/equipe é restrita a admins.
 - ⏳ Próximo: Pagamentos, Automações reais
   (Edge Functions), Equipe/convites em Configurações.
 - ⏳ Backlog: personalizar template/remetente dos e-mails de auth do Supabase

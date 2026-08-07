@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ChevronsUpDown, Plus, Search } from "lucide-react";
 import { brand } from "@/lib/config/brand";
 import { NAV_ITEMS, SETTINGS_ITEM, type NavItem } from "@/lib/config/nav";
+import { useMyMembership } from "@/lib/data/repos/db/team";
 import { cn } from "@/lib/utils";
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
@@ -32,6 +33,7 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { can } = useMyMembership();
   return (
     <aside className="flex h-screen w-[240px] shrink-0 flex-col bg-[var(--lito-sidebar)]">
       <div className="px-4 pt-4">
@@ -62,9 +64,11 @@ export function Sidebar() {
       <nav className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2 [scrollbar-width:thin]">
         <NavLink item={NAV_ITEMS[0]} active={pathname.startsWith(NAV_ITEMS[0].href)} />
         <div className="mx-2 my-2 border-t border-slate-700/60" />
-        {NAV_ITEMS.slice(1).map((item) => (
-          <NavLink key={item.href} item={item} active={pathname.startsWith(item.href)} />
-        ))}
+        {NAV_ITEMS.slice(1)
+          .filter((item) => can(item.key))
+          .map((item) => (
+            <NavLink key={item.href} item={item} active={pathname.startsWith(item.href)} />
+          ))}
       </nav>
       <div className="border-t border-slate-700/60 p-2">
         <NavLink item={SETTINGS_ITEM} active={pathname.startsWith(SETTINGS_ITEM.href)} />
