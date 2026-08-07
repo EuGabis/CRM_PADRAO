@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ChevronsUpDown, Plus, Search } from "lucide-react";
 import { brand } from "@/lib/config/brand";
 import { NAV_ITEMS, SETTINGS_ITEM, type NavItem } from "@/lib/config/nav";
+import { useAccount } from "@/lib/data/repos/db/account";
 import { useMyMembership } from "@/lib/data/repos/db/team";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 export function Sidebar() {
   const pathname = usePathname();
   const { can } = useMyMembership();
+  const { company } = useAccount();
   return (
     <aside className="flex h-screen w-[240px] shrink-0 flex-col bg-[var(--lito-sidebar)]">
       <div className="px-4 pt-4">
@@ -43,13 +45,21 @@ export function Sidebar() {
           </div>
           <span className="text-[15px] font-bold text-white">{brand.name}</span>
         </div>
-        <button className="mt-3 flex w-full items-center justify-between rounded-lg bg-[var(--lito-sidebar-hover)] px-3 py-2 text-left">
-          <span>
-            <span className="block text-xs font-semibold text-white">Lito Comercial</span>
-            <span className="block text-[10px] text-slate-400">São Gonçalo, RJ</span>
+        <Link
+          href="/configuracoes/perfil"
+          title="Perfil da empresa"
+          className="mt-3 flex w-full items-center justify-between rounded-lg bg-[var(--lito-sidebar-hover)] px-3 py-2 text-left"
+        >
+          <span className="min-w-0">
+            <span className="block truncate text-xs font-semibold text-white">
+              {company?.name ?? "Minha empresa"}
+            </span>
+            <span className="block truncate text-[10px] text-slate-400">
+              {company?.city || "Definir localização"}
+            </span>
           </span>
-          <ChevronsUpDown className="size-3.5 text-slate-400" />
-        </button>
+          <ChevronsUpDown className="size-3.5 shrink-0 text-slate-400" />
+        </Link>
         <div className="mt-2 flex items-center gap-1.5">
           <div className="flex flex-1 items-center gap-2 rounded-md border border-slate-700 px-2.5 py-1.5">
             <Search className="size-3.5 text-slate-500" />
