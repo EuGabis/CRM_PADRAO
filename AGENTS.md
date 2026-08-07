@@ -35,6 +35,18 @@ npm run dev      # http://localhost:3000 (redireciona para /dashboard)
 npm run build    # build + type check — deve passar sem erros
 ```
 
+## Produção
+
+- **App no ar:** https://lito-crm.vercel.app (projeto Vercel `lito-crm`, escopo
+  `gabriels-projects-fa9c86e6`).
+- Deploy: `vercel deploy --prod` (CLI já linkado; `.vercel/` fora do git).
+- Env vars configuradas na Vercel (production+preview+development):
+  `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
+  `RESEND_API_KEY`, `EMAIL_FROM`, `NEXT_PUBLIC_APP_URL`.
+  Ao criar variável nova, adicionar na Vercel **e** no `.env.local`.
+- Supabase Auth → URL Configuration precisa conter a URL de produção em
+  Site URL e Redirect URLs (senão a confirmação de e-mail cai em localhost).
+
 ## Stack
 
 Next.js (App Router) · TypeScript · Tailwind CSS 4 · shadcn/ui (**variante Base UI,
