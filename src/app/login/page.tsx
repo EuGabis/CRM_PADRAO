@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, MessageCircle } from "lucide-react";
+import { Check, Loader2, Mail, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -122,7 +122,15 @@ export default function LoginPage() {
       });
       setLoading(false);
       if (error) {
-        toast.error(error.message);
+        // O banco recusa cadastros sem convite (trigger handle_new_user)
+        const inviteOnly =
+          /database error|apenas por convite|unexpected_failure/i.test(error.message);
+        toast.error(
+          inviteOnly
+            ? "Este e-mail não tem convite. Peça a um administrador para te convidar."
+            : error.message,
+          { duration: 7000 }
+        );
         return;
       }
       if (data.session) {
@@ -227,8 +235,18 @@ export default function LoginPage() {
               <p className="mb-7 mt-1 text-sm text-slate-500">
                 {mode === "login"
                   ? "Bom te ver de novo."
-                  : "Criamos sua empresa e seu funil no primeiro acesso."}
+                  : "Use o e-mail que recebeu o convite da sua equipe."}
               </p>
+
+              {mode === "signup" && (
+                <div className="mb-5 flex gap-2 rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
+                  <Mail className="mt-0.5 size-4 shrink-0 text-indigo-500" />
+                  <p className="text-[11px] leading-relaxed text-indigo-900">
+                    O acesso é <strong>somente por convite</strong>. Cadastre-se com o mesmo
+                    e-mail que recebeu o convite — assim você entra direto na empresa certa.
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-4">
                 {mode === "signup" && (
