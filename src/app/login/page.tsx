@@ -262,17 +262,6 @@ export default function LoginPage() {
                         className="h-10 bg-white"
                       />
                     </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-semibold text-slate-700">
-                        Empresa <span className="font-normal text-slate-400">(opcional)</span>
-                      </Label>
-                      <Input
-                        value={form.company}
-                        onChange={set("company")}
-                        placeholder="Nome do seu negócio"
-                        className="h-10 bg-white"
-                      />
-                    </div>
                   </>
                 )}
                 <div className="space-y-1.5">
