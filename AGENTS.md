@@ -134,8 +134,15 @@ os módulos ainda não migrados continuam importando dos repos mock em
   drop persistente (status ganho/perda deduzido pela fase), criar oportunidade,
   vista lista com ações em massa, gestão completa de pipelines/fases,
   oportunidades reais no detalhe do contato.
-- ⏳ Próximo: **Conversas** com Supabase Realtime (mensagens ao vivo), depois
-  Dashboard com agregações reais, depois Calendários/Pagamentos etc.
+- ✅ Backend F2d: módulo **Conversas 100% funcional com Realtime** (migração 0003:
+  snippets + publicação realtime) — enviar/agendar/nota interna persistem, nova
+  conversa por contato+canal, trechos reais usados no composer, estatísticas
+  calculadas, badge "Ao vivo". Repo: `db/conversations.ts`. Ações manuais e links
+  de acionamento = empty states (dependem de Automações real).
+- ✅ Backend F2e: **Dashboard** com widgets calculando sobre dados reais
+  (adapters `useDbPipelines/useDbOpportunities/useDbPipeline` em `db/pipeline.ts`).
+- ⏳ Próximo: Calendários (compromissos reais), Pagamentos, Automações reais
+  (Edge Functions), Equipe/convites em Configurações.
 - ⏳ Backlog: personalizar template/remetente dos e-mails de auth do Supabase
   (pedido do Gabriel), storage (Mídia Drive/arquivos), automações reais
   (Edge Functions), dark mode, mobile, WhatsApp (Cloud API / Evolution API).
