@@ -99,7 +99,9 @@ Projeto Supabase dedicado (supabase.com, ref `boykcuhxmndlkjhojxhl`). Credenciai
   `TO authenticated` com checagem de tenant via `private.user_locations()`
   (SECURITY DEFINER em schema não exposto), UPDATE com USING+WITH CHECK,
   trigger de onboarding (signup → perfil + location + pipeline padrão com 9 fases).
-- Migração `0002_contacts_module.sql` — **aplicada em 2026-08-06**: smart_lists,
+- Migrações aplicadas: `0002` (smart_lists, tasks, contact_fields, bulk_logs),
+  `0003` (snippets + realtime), `0004` (equipe/convites/permissões),
+  `0005` (activation_steps). Detalhe da 0002:
   tasks, contact_fields, bulk_logs (mesmo padrão de RLS/políticas da 0001).
 - Novas migrações: criar `supabase/migrations/000N_nome.sql` e aplicar via SQL Editor
   (ou `scripts/apply-migration.mjs`, que exige o CA do projeto em

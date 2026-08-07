@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowRight, Check, LifeBuoy } from "lucide-react";
+import { useMemo } from "react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { ArrowRight, Check, LifeBuoy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Accordion,
@@ -10,9 +12,12 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { brand } from "@/lib/config/brand";
+import { activationActions, useActivation } from "@/lib/data/repos/db/activation";
+import { useTeam } from "@/lib/data/repos/db/team";
 
 const STEPS = [
   {
+    key: "app",
     title: "Baixar o app",
     bullets: [
       "Escolha o dispositivo (iOS, Android, macOS ou Windows)",
@@ -21,6 +26,7 @@ const STEPS = [
     ],
   },
   {
+    key: "empresa",
     title: "Configurações da empresa",
     bullets: [
       "Insira o nome da empresa e o logo",
@@ -30,32 +36,62 @@ const STEPS = [
     ],
   },
   {
+    key: "meta",
     title: "Integrar Facebook e Instagram",
     bullets: ["Conecte as páginas e contas comerciais", "Autorize as permissões de mensagens"],
   },
   {
+    key: "whatsapp",
     title: "Conectar WhatsApp",
     bullets: ["Escolha entre API oficial ou QR Code", "Conecte o número principal da operação"],
   },
   {
+    key: "pipeline",
     title: "Criar o pipeline (funil comercial)",
     bullets: ["Defina as fases do seu processo de vendas", "Configure valores e responsáveis"],
   },
   {
+    key: "entrada-leads",
     title: "Automação de entrada de leads",
     bullets: ["Crie o fluxo de boas-vindas", "Direcione novos leads para o pipeline"],
   },
   {
+    key: "follow-up",
     title: "Automação de follow-up",
     bullets: ["Configure lembretes automáticos", "Defina o prazo para mover leads sem resposta"],
   },
 ];
 
 export default function AtivacaoPage() {
-  const [done, setDone] = useState<boolean[]>(STEPS.map(() => false));
+  const { steps, loaded } = useActivation();
+  const { members } = useTeam();
+
+  const byKey = useMemo(() => new Map(steps.map((s) => [s.key, s])), [steps]);
+  const done = STEPS.map((s) => byKey.has(s.key));
   const completed = done.filter(Boolean).length;
   const pct = Math.round((completed / STEPS.length) * 100);
   const next = STEPS[done.findIndex((d) => !d)] ?? null;
+
+  const toggle = async (stepKey: string, isDone: boolean) => {
+    const ok = isDone
+      ? await activationActions.undo(stepKey)
+      : await activationActions.complete(stepKey);
+    if (!ok) {
+      toast.error(
+        "Não foi possível salvar. Se o erro persistir, aplique a migração 0005 no Supabase."
+      );
+      return;
+    }
+    if (!isDone) toast.success("Passo concluído!");
+  };
+
+  const authorLabel = (key: string) => {
+    const step = byKey.get(key);
+    if (!step) return null;
+    const who = members.find((m) => m.userId === step.completedBy)?.name;
+    const when = format(new Date(step.completedAt), "d MMM yyyy 'às' HH:mm", { locale: ptBR });
+    return who ? `Concluído por ${who} · ${when}` : `Concluído em ${when}`;
+  };
 
   return (
     <div className="min-h-full bg-[#131826] p-6 text-white">
@@ -71,8 +107,8 @@ export default function AtivacaoPage() {
 
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           <div className="rounded-xl bg-[#1d2436] p-4">
-            <p className="text-2xl font-bold">
-              {completed} de {STEPS.length}
+            <p className="flex items-center gap-2 text-2xl font-bold">
+              {loaded ? `${completed} de ${STEPS.length}` : <Loader2 className="size-5 animate-spin" />}
             </p>
             <p className="text-xs text-slate-400">passos concluídos</p>
           </div>
@@ -129,18 +165,21 @@ export default function AtivacaoPage() {
                       </li>
                     ))}
                   </ul>
-                  <button
-                    onClick={() =>
-                      setDone((d) => d.map((v, di) => (di === i ? !v : v)))
-                    }
-                    className={`rounded-lg px-3 py-1.5 text-[11px] font-bold ${
-                      done[i]
-                        ? "bg-[#2b3245] text-slate-300"
-                        : "bg-lime-400 text-lime-950 hover:bg-lime-300"
-                    }`}
-                  >
-                    {done[i] ? "Desmarcar" : "Marcar como concluída"}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={() => toggle(step.key, done[i])}
+                      className={`rounded-lg px-3 py-1.5 text-[11px] font-bold ${
+                        done[i]
+                          ? "bg-[#2b3245] text-slate-300"
+                          : "bg-lime-400 text-lime-950 hover:bg-lime-300"
+                      }`}
+                    >
+                      {done[i] ? "Desmarcar" : "Marcar como concluída"}
+                    </button>
+                    {done[i] && (
+                      <span className="text-[10px] text-slate-400">{authorLabel(step.key)}</span>
+                    )}
+                  </div>
                 </AccordionContent>
               </AccordionItem>
             ))}
