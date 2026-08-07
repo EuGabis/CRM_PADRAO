@@ -99,6 +99,8 @@ Projeto Supabase dedicado (supabase.com, ref `boykcuhxmndlkjhojxhl`). Credenciai
   `TO authenticated` com checagem de tenant via `private.user_locations()`
   (SECURITY DEFINER em schema não exposto), UPDATE com USING+WITH CHECK,
   trigger de onboarding (signup → perfil + location + pipeline padrão com 9 fases).
+- Migração `0002_contacts_module.sql` — **aplicada em 2026-08-06**: smart_lists,
+  tasks, contact_fields, bulk_logs (mesmo padrão de RLS/políticas da 0001).
 - Novas migrações: criar `supabase/migrations/000N_nome.sql` e aplicar via SQL Editor
   (ou `scripts/apply-migration.mjs`, que exige o CA do projeto em
   `scripts/supabase-ca.crt` — TLS sempre verificado, nunca desabilitar).
@@ -106,14 +108,34 @@ Projeto Supabase dedicado (supabase.com, ref `boykcuhxmndlkjhojxhl`). Credenciai
   padrão membership. Campo `location_members.only_assigned` reservado para o modo
   "ver apenas dados atribuídos" (ainda não aplicado nas políticas).
 
+## Padrão de migração módulo a módulo (IMPORTANTE)
+
+A estratégia é deixar **uma tela inteira funcional por vez**. Repos reais ficam em
+`src/lib/data/repos/db/` (store Zustand carregado do Supabase + ações otimistas);
+os módulos ainda não migrados continuam importando dos repos mock em
+`src/lib/data/repos/`. Repos db existentes:
+
+- `db/contacts.ts` — contatos, equipe (profiles+membership), CRUD, import em massa
+- `db/contacts-module.ts` — smart lists, tarefas, campos personalizados, bulk_logs
+  (`logBulk()` registra qualquer ação em massa)
+- `db/pipeline.ts` — pipelines/fases/oportunidades, drag&drop persistente,
+  gestão de pipelines e fases, mover/excluir em massa
+
 ## Estado atual / próximos passos
 
 - ✅ Front-end: 19 módulos navegáveis, todas as sub-abas com conteúdo.
-- ✅ Backend F1: schema multi-tenant com RLS aplicado e verificado.
-- ✅ Backend F2a: login/cadastro (/login) + proxy.ts protegendo todas as rotas (getUser server-side) + logout no avatar do topbar.
-- ✅ Backend F2b (parcial): módulo Contatos usando Supabase real (repo src/lib/data/repos/db/contacts.ts — padrão a seguir nas próximas migrações).
-- ⏳ Próximo:
-  depois trocar os repos mock por Supabase, módulo a módulo (ordem: contatos →
-  leads/pipelines → conversas com Realtime → dashboard com agregações).
-- ⏳ Depois: storage (Mídia Drive/arquivos), automações reais (Edge Functions),
-  dark mode, mobile, WhatsApp (Cloud API / Evolution API).
+- ✅ Backend F1: schema multi-tenant com RLS aplicado e verificado (migração 0001).
+- ✅ Backend F2a: login/cadastro (/login, com vinheta animada) + proxy.ts protegendo
+  todas as rotas (getUser server-side) + logout no avatar do topbar.
+- ✅ Backend F2b: módulo **Contatos 100% funcional** com Supabase — lista/CRUD/edição,
+  listas inteligentes, tarefas, empresas (derivadas), campos personalizados (aparecem
+  no cadastro e detalhe), importação/exportação CSV, log real de ações em massa.
+- ✅ Backend F2c: módulo **Leads/Pipelines 100% funcional** — kanban real com drag &
+  drop persistente (status ganho/perda deduzido pela fase), criar oportunidade,
+  vista lista com ações em massa, gestão completa de pipelines/fases,
+  oportunidades reais no detalhe do contato.
+- ⏳ Próximo: **Conversas** com Supabase Realtime (mensagens ao vivo), depois
+  Dashboard com agregações reais, depois Calendários/Pagamentos etc.
+- ⏳ Backlog: personalizar template/remetente dos e-mails de auth do Supabase
+  (pedido do Gabriel), storage (Mídia Drive/arquivos), automações reais
+  (Edge Functions), dark mode, mobile, WhatsApp (Cloud API / Evolution API).

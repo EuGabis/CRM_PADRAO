@@ -1,8 +1,12 @@
 # Lito CRM
 
-Front-end completo de um CRM all-in-one (inspirado no GoHighLevel), construído com
-Next.js + TypeScript + Tailwind + shadcn/ui. **Fase atual: front-end com dados mock**
-— sem backend, sem autenticação; tudo navegável e interativo em memória.
+CRM all-in-one (inspirado no GoHighLevel), construído com Next.js + TypeScript +
+Tailwind + shadcn/ui e backend **Supabase** (Postgres + Auth + RLS multi-tenant).
+
+**Fase atual:** autenticação completa (login/cadastro com onboarding automático) e
+migração módulo a módulo do mock para dados reais — **Contatos** e **Leads/Pipelines**
+já são 100% Supabase; os demais módulos seguem com dados de demonstração até suas
+fases. Detalhes técnicos e estado exato em `AGENTS.md`.
 
 ## Rodando o projeto
 
@@ -28,8 +32,8 @@ npm run build
 | Dashboard | 9 widgets (funil, donuts, gauge, fonte de leads), filtro de data, múltiplos painéis |
 | Conversas | Inbox omnichannel 4 colunas, SLA, composer WhatsApp/SMS/E-mail, notas internas, agendamento de mensagem, painel do contato |
 | Calendários | Grade semanal (sync Google mock), lista de compromissos, configurações |
-| Contatos | Tabela com ações em massa (12 ações), filtros avançados + UTM, smart lists, detalhe |
-| Leads | Kanban 9 fases com drag & drop real, vista lista, gestão de pipelines |
+| Contatos ✅ Supabase | CRUD real, listas inteligentes, tarefas, empresas, campos personalizados, import/export CSV, log de ações em massa |
+| Leads ✅ Supabase | Kanban real com drag & drop persistente, vista lista com ações em massa, gestão de pipelines e fases |
 | Pagamentos | Transações, faturas, pedidos, assinaturas, links, vendas, produtos, cupons, contratos c/ assinatura eletrônica, integrações |
 | Agentes de IA | Bots com 3 prompts (Personalidade/Meta/Informações), 7 ações, chat de teste, base de conhecimento, voz, logs |
 | Marketing | Planejador social multi-rede, comentários, escuta social, e-mail marketing, afiliados, anúncios |
