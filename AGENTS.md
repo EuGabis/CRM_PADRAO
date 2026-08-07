@@ -14,10 +14,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## O que é
 
-Front-end completo de um CRM all-in-one ("Lito CRM"), inspirado no GoHighLevel
-(engenharia reversa de um vídeo de demonstração — ver `MAPA_FUNCIONALIDADES.md`,
-que é a especificação funcional canônica). **Ainda não há backend**: todos os
-dados são mock, servidos por uma camada de repositórios sobre Zustand.
+CRM all-in-one ("Lito CRM") inspirado no GoHighLevel (engenharia reversa de um vídeo
+de demonstração — ver `MAPA_FUNCIONALIDADES.md`, a especificação funcional canônica).
+
+**Backend Supabase em migração módulo a módulo.** Módulos já reais: Contatos,
+Leads/Pipelines, Conversas (Realtime), Dashboard, Calendários, Equipe/permissões,
+Configurações (empresa/perfil) e Checklist de ativação. Os demais ainda usam os
+repositórios mock sobre Zustand — ver "Padrão de migração módulo a módulo" abaixo.
 
 Documentos importantes:
 - `MAPA_FUNCIONALIDADES.md` — mapa funcional completo extraído do vídeo de referência
@@ -99,10 +102,10 @@ Projeto Supabase dedicado (supabase.com, ref `boykcuhxmndlkjhojxhl`). Credenciai
   `TO authenticated` com checagem de tenant via `private.user_locations()`
   (SECURITY DEFINER em schema não exposto), UPDATE com USING+WITH CHECK,
   trigger de onboarding (signup → perfil + location + pipeline padrão com 9 fases).
-- Migrações aplicadas: `0002` (smart_lists, tasks, contact_fields, bulk_logs),
-  `0003` (snippets + realtime), `0004` (equipe/convites/permissões),
-  `0005` (activation_steps). Detalhe da 0002:
-  tasks, contact_fields, bulk_logs (mesmo padrão de RLS/políticas da 0001).
+- Migrações seguintes, todas com o mesmo padrão de RLS/políticas da 0001:
+  `0002` (smart_lists, tasks, contact_fields, bulk_logs), `0003` (snippets +
+  publicação realtime), `0004` (equipe: invitations, permissions, sees_all,
+  protect_last_admin, convite no signup), `0005` (activation_steps).
 - Novas migrações: criar `supabase/migrations/000N_nome.sql` e aplicar via SQL Editor
   (ou `scripts/apply-migration.mjs`, que exige o CA do projeto em
   `scripts/supabase-ca.crt` — TLS sempre verificado, nunca desabilitar).
