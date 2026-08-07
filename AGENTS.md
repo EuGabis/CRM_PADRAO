@@ -108,6 +108,23 @@ Projeto Supabase dedicado (supabase.com, ref `boykcuhxmndlkjhojxhl`). Credenciai
   padrão membership. Campo `location_members.only_assigned` reservado para o modo
   "ver apenas dados atribuídos" (ainda não aplicado nas políticas).
 
+## E-mail transacional (Resend)
+
+Convites de equipe saem com template próprio do Lito CRM (nada de e-mail padrão do
+Supabase). Peças:
+
+- `src/lib/email/invite-template.ts` — HTML com estilo inline (tabelas), pt-BR,
+  cores da marca; exporta `renderInviteEmail()` com versões HTML e texto.
+- `src/app/api/team/invite/route.ts` — cria o convite E envia o e-mail. Valida a
+  sessão com `getUser()` e exige papel admin **no servidor**; a RLS reforça.
+  Se `RESEND_API_KEY` faltar ou o envio falhar, o convite é criado e a resposta
+  traz `warning` (a UI mostra aviso e o admin copia o link manualmente).
+- Env: `RESEND_API_KEY` (privada), `EMAIL_FROM`, `NEXT_PUBLIC_APP_URL`.
+  Provisionado via Vercel Marketplace (`vercel integration add resend/resend-email`);
+  `vercel env pull` traz a chave. Projeto Vercel: `lito-crm`.
+- Sem domínio verificado no Resend, use `onboarding@resend.dev` (só entrega para o
+  e-mail dono da conta) — para produção, verificar domínio no painel do Resend.
+
 ## Padrão de migração módulo a módulo (IMPORTANTE)
 
 A estratégia é deixar **uma tela inteira funcional por vez**. Repos reais ficam em

@@ -140,45 +140,46 @@ async function reload() {
 }
 
 export const teamActions = {
+  /**
+   * Cria o convite e dispara o e-mail personalizado (rota /api/team/invite,
+   * que valida a sessão e a permissão de admin no servidor).
+   */
   async invite(input: {
     email: string;
     role: MemberRole;
     onlyAssigned: boolean;
     permissions: ModulePermissions;
-  }): Promise<{ ok: boolean; error?: string }> {
-    const loc = locationId();
-    if (!loc) return { ok: false, error: "Empresa não encontrada" };
+  }): Promise<{ ok: boolean; error?: string; warning?: string }> {
     const email = input.email.trim().toLowerCase();
     const state = useTeamStore.getState();
     if (state.members.some((m) => m.email.toLowerCase() === email)) {
       return { ok: false, error: "Esta pessoa já faz parte da equipe" };
     }
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("invitations")
-      .insert({
-        location_id: loc,
-        email,
-        role: input.role,
-        only_assigned: input.onlyAssigned,
-        permissions: input.permissions,
-        created_by: useDbStore.getState().userId,
-      })
-      .select()
-      .single();
-    if (error || !data) {
-      return {
-        ok: false,
-        error:
-          error?.code === "23505"
-            ? "Já existe um convite pendente para este e-mail"
-            : error?.code === "42P01"
-              ? "Aplique a migração 0004 no Supabase para habilitar convites"
-              : "Não foi possível criar o convite",
-      };
+
+    let payload: { invite?: unknown; error?: string; warning?: string };
+    try {
+      const res = await fetch("/api/team/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          role: input.role,
+          onlyAssigned: input.onlyAssigned,
+          permissions: input.permissions,
+        }),
+      });
+      payload = await res.json();
+      if (!res.ok) {
+        return { ok: false, error: payload.error ?? "Não foi possível criar o convite" };
+      }
+    } catch {
+      return { ok: false, error: "Falha de conexão ao criar o convite" };
     }
-    state.patch({ invitations: [mapInvite(data), ...state.invitations] });
-    return { ok: true };
+
+    if (payload.invite) {
+      state.patch({ invitations: [mapInvite(payload.invite), ...state.invitations] });
+    }
+    return { ok: true, warning: payload.warning };
   },
 
   async revokeInvite(id: string): Promise<boolean> {

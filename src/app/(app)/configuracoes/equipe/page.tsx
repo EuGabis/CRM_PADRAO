@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { brand } from "@/lib/config/brand";
 import { PERMISSION_MODULES } from "@/lib/config/nav";
 import {
   teamActions,
@@ -351,7 +352,11 @@ function InviteDialog({
       toast.error(res.error ?? "Não foi possível convidar");
       return;
     }
-    toast.success(`Convite criado para ${email.trim().toLowerCase()}`);
+    if (res.warning) {
+      toast.warning(res.warning, { duration: 8000 });
+    } else {
+      toast.success(`Convite enviado por e-mail para ${email.trim().toLowerCase()}`);
+    }
     setEmail("");
     setRole("user");
     setOnlyAssigned(false);
@@ -376,7 +381,8 @@ function InviteDialog({
               className="h-8"
             />
             <p className="text-[10px] text-slate-400">
-              A pessoa cria a conta com este e-mail e entra direto na sua empresa.
+              Enviamos um convite com a identidade do {brand.name}. A pessoa cria a conta com
+              este e-mail e entra direto na sua empresa.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
