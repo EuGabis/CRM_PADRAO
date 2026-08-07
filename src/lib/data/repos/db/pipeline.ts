@@ -96,6 +96,26 @@ const loc = () => useDbStore.getState().locationId;
 const uid = () => useDbStore.getState().userId;
 const state = () => usePipelineDbStore.getState();
 
+/** Pipelines reais (carrega on-demand). */
+export function useDbPipelines(): Pipeline[] {
+  return usePipelineDb().pipelines;
+}
+
+/** Oportunidades reais (carrega on-demand). */
+export function useDbOpportunities(): Opportunity[] {
+  return usePipelineDb().opportunities;
+}
+
+/** Resolve um pipeline por id; ""/"all"/id inexistente caem no primeiro. */
+export function useDbPipeline(id: string): Pipeline | null {
+  const { pipelines } = usePipelineDb();
+  if (id && id !== "all") {
+    const found = pipelines.find((p) => p.id === id);
+    if (found) return found;
+  }
+  return pipelines[0] ?? null;
+}
+
 export const oppActions = {
   async move(id: string, stageId: string): Promise<boolean> {
     const s = state();

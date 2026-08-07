@@ -3,16 +3,13 @@
 import { useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { WidgetCard } from "./widget-card";
-import {
-  formatBRL,
-  useOpportunities,
-  usePipeline,
-} from "@/lib/data/repos/opportunities";
+import { formatBRL } from "@/lib/data/repos/opportunities";
+import { useDbOpportunities, useDbPipeline } from "@/lib/data/repos/db/pipeline";
 
 export function FunnelWidget() {
-  const [pipeId, setPipeId] = useState("pipe-controle");
-  const pipeline = usePipeline(pipeId === "all" ? "pipe-controle" : pipeId);
-  const ops = useOpportunities();
+  const [pipeId, setPipeId] = useState("");
+  const pipeline = useDbPipeline(pipeId);
+  const ops = useDbOpportunities();
   if (!pipeline) return null;
 
   const rows = pipeline.stages.map((st) => {
@@ -61,9 +58,9 @@ export function FunnelWidget() {
 }
 
 export function StageDistribution() {
-  const [pipeId, setPipeId] = useState("pipe-controle");
-  const pipeline = usePipeline(pipeId === "all" ? "pipe-controle" : pipeId);
-  const ops = useOpportunities();
+  const [pipeId, setPipeId] = useState("");
+  const pipeline = useDbPipeline(pipeId);
+  const ops = useDbOpportunities();
   if (!pipeline) return null;
 
   const data = pipeline.stages

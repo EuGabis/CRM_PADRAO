@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { usePipelines } from "@/lib/data/repos/opportunities";
+import { useDbPipelines } from "@/lib/data/repos/db/pipeline";
 
 export function WidgetCard({
   title,
@@ -24,7 +24,7 @@ export function WidgetCard({
   onPipelineChange?: (id: string) => void;
   footer?: ReactNode;
 }) {
-  const pipelines = usePipelines();
+  const pipelines = useDbPipelines();
   return (
     <div className="flex flex-col rounded-xl border bg-white p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -34,9 +34,10 @@ export function WidgetCard({
             <Select value={pipelineId} onValueChange={(v) => v && onPipelineChange(v)}>
               <SelectTrigger className="h-7 w-[150px] text-[11px]" size="sm">
                 <SelectValue>
-                  {pipelineId === "all"
+                  {pipelineId === "all" || !pipelineId
                     ? "Todos os pipelines"
-                    : pipelines.find((p) => p.id === pipelineId)?.name}
+                    : (pipelines.find((p) => p.id === pipelineId)?.name ??
+                      "Todos os pipelines")}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>

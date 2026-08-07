@@ -15,10 +15,11 @@ import {
   YAxis,
 } from "recharts";
 import { WidgetCard } from "./widget-card";
-import { formatBRL, useOpportunities } from "@/lib/data/repos/opportunities";
+import { formatBRL } from "@/lib/data/repos/opportunities";
+import { useDbOpportunities } from "@/lib/data/repos/db/pipeline";
 
 function useFilteredOps(pipelineId: string) {
-  const ops = useOpportunities();
+  const ops = useDbOpportunities();
   return pipelineId === "all" ? ops : ops.filter((o) => o.pipelineId === pipelineId);
 }
 
@@ -34,7 +35,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export function StatusDonut() {
-  const [pipe, setPipe] = useState("pipe-controle");
+  const [pipe, setPipe] = useState("all");
   const ops = useFilteredOps(pipe);
   const data = (["open", "won", "lost"] as const)
     .map((s) => ({ name: STATUS_LABEL[s], value: ops.filter((o) => o.status === s).length, color: STATUS_COLOR[s] }))
@@ -76,7 +77,7 @@ export function StatusDonut() {
 }
 
 export function ValueBars() {
-  const [pipe, setPipe] = useState("pipe-controle");
+  const [pipe, setPipe] = useState("all");
   const ops = useFilteredOps(pipe);
   const data = (["open", "won", "lost"] as const).map((s) => ({
     name: STATUS_LABEL[s],
@@ -112,7 +113,7 @@ export function ValueBars() {
 }
 
 export function ConversionGauge() {
-  const [pipe, setPipe] = useState("pipe-controle");
+  const [pipe, setPipe] = useState("all");
   const ops = useFilteredOps(pipe);
   const won = ops.filter((o) => o.status === "won");
   const rate = ops.length ? Math.round((won.length / ops.length) * 100) : 0;
