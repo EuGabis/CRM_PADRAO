@@ -163,13 +163,25 @@ Motivo de não usar Vercel Cron: no plano Hobby ele roda só 1×/dia.
   **Consequência prática:** eventos já enfileiram runs, mas **nada os executa ainda**
   (runs ficam em `pending`). Isso é inofensivo — nenhum workflow está publicado com
   `trigger_key` preenchido.
-- ⏳ **Tarefa 3 — PRÓXIMO PASSO:** executor em TypeScript
-  (`src/lib/supabase/admin.ts`, `src/lib/automations/{types,actions,engine}.ts`,
-  `src/app/api/automations/tick/route.ts`). **Bloqueado por:** falta a variável
-  `SUPABASE_SERVICE_ROLE_KEY` (Supabase → Settings → API → chave `service_role`)
-  e definir `AUTOMATION_SECRET` (string aleatória) — ambas em `.env.local` e na Vercel.
-- ⏳ Tarefa 4 — migração `0009` do `pg_cron` (só depois que a rota estiver publicada,
-  pois precisa da URL + segredo).
+- ✅ **Tarefa 3 — executor implementado** (2026-08-08):
+  - `src/lib/supabase/admin.ts` — cliente service role (lança se faltar env).
+  - `src/lib/automations/types.ts` — `ActionKey`, `Step`, `RunContext`, `parseSteps()`,
+    teto de 50 passos e backoff `[1, 5, 15]` minutos.
+  - `src/lib/automations/actions.ts` — as 15 ações + `renderTemplate()` (`{{nome}}`,
+    `{{email}}`, campos personalizados pelo próprio nome). `enviar-whatsapp`/`enviar-sms`
+    retornam `skipped` (canal não conectado); `enviar-email` respeita `contacts.dnd`.
+  - `src/lib/automations/engine.ts` — `processDueRuns()`: claim do run por update
+    condicional (dois ticks simultâneos não pegam o mesmo run), log por passo,
+    `waiting` na espera, `cancelled` se o workflow foi despublicado.
+  - `src/app/api/automations/tick/route.ts` — POST protegido por `x-automation-secret`.
+  - **`src/proxy.ts`: `api/automations` saiu do matcher** — a chamada é máquina-a-máquina
+    (pg_cron), não tem sessão; sem isso o middleware redirecionava para /login (307).
+  - Verificado local: sem header → 401; header errado → 401; header certo → executa.
+  - **Falta só a chave:** `SUPABASE_SERVICE_ROLE_KEY` (Supabase → Settings → API →
+    `service_role`) em `.env.local` e na Vercel. Sem ela a rota responde 500 com
+    "Motor de automações sem credenciais". `AUTOMATION_SECRET` já está no `.env.local`.
+- ⏳ **Tarefa 4 — PRÓXIMO PASSO:** migração `0009` do `pg_cron` (precisa da rota
+  publicada em produção + as duas variáveis na Vercel).
 - ⏳ Tarefas 5–7 — builder configurável, aba de execuções/logs com teste manual,
   galeria de 5 modelos prontos.
 - ⏳ Tarefa 8 — env vars em produção, deploy, teste ponta a ponta, doc final.

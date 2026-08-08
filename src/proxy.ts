@@ -7,7 +7,9 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Tudo, exceto assets estáticos e imagens — inclui /login e todas as rotas do app.
+  // `api/automations` fica de fora: é chamada máquina-a-máquina (pg_cron), sem
+  // sessão de usuário — a própria rota valida o cabeçalho x-automation-secret.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/automations|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
