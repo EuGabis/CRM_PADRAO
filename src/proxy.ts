@@ -7,11 +7,13 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Tudo, exceto assets estáticos e imagens — inclui /login e todas as rotas do app.
-  // `api/automations` e `api/marketing` ficam de fora: são chamadas máquina-a-máquina
-  // (pg_cron) ou públicas verificadas (webhook/unsubscribe), sem sessão de usuário — as
-  // próprias rotas validam o segredo/assinatura. As rotas autenticadas de marketing
+  // `api/automations`, `api/webhooks`, `api/integrations` e `api/marketing` ficam de
+  // fora: são chamadas máquina-a-máquina (pg_cron e provedores externos como a Guru
+  // e o Resend) ou públicas verificadas (webhook/unsubscribe), sem sessão de usuário
+  // — cada rota valida sua própria credencial (x-automation-secret, o token da Guru,
+  // x-guru-sync-secret ou assinatura Svix). As rotas autenticadas de marketing
   // (send/test) fazem seu próprio getUser().
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/automations|api/marketing|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/automations|api/webhooks|api/integrations|api/marketing|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

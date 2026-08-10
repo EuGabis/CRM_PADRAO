@@ -4,8 +4,9 @@ import { createClient } from "@supabase/supabase-js";
  * Cliente com a service role — ignora RLS.
  *
  * NUNCA importar em componente client: a chave só existe no servidor
- * (sem prefixo NEXT_PUBLIC_). Usado apenas pelo motor de automações,
- * que precisa ler/escrever em nome de qualquer empresa sem sessão de usuário.
+ * (sem prefixo NEXT_PUBLIC_). Usado por rotas que precisam ler/escrever
+ * em nome de qualquer empresa sem sessão de usuário (motor de automações,
+ * motor de e-mail marketing, webhook e sincronização de pagamentos da Guru).
  */
 export function createAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,7 +14,7 @@ export function createAdminClient() {
 
   if (!url || !key) {
     throw new Error(
-      "Motor de automações sem credenciais: defina NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.",
+      "Cliente admin sem credenciais: defina NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.",
     );
   }
 

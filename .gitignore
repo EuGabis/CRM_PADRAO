@@ -45,3 +45,6 @@ crm_ideia.mp4
 crm_ideia_frames/
 crm_ideia.txt
 .code-review-graph/
+
+# claude code — configuração local da máquina
+.claude/settings.local.json

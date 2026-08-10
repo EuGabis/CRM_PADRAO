@@ -19,8 +19,9 @@ de demonstração — ver `MAPA_FUNCIONALIDADES.md`, a especificação funcional
 
 **Backend Supabase em migração módulo a módulo.** Módulos já reais: Contatos,
 Leads/Pipelines, Conversas (Realtime), Dashboard, Calendários, Equipe/permissões,
-Configurações (empresa/perfil) e Checklist de ativação. Os demais ainda usam os
-repositórios mock sobre Zustand — ver "Padrão de migração módulo a módulo" abaixo.
+Configurações (empresa/perfil), Checklist de ativação e Pagamentos (via Guru — ver
+seção própria abaixo). Os demais ainda usam os repositórios mock sobre Zustand — ver
+"Padrão de migração módulo a módulo" abaixo.
 
 Documentos importantes:
 - `MAPA_FUNCIONALIDADES.md` — mapa funcional completo extraído do vídeo de referência
@@ -42,7 +43,8 @@ npm run build    # build + type check — deve passar sem erros
 - Deploy: `vercel deploy --prod` (CLI já linkado; `.vercel/` fora do git).
 - Env vars configuradas na Vercel (production+preview+development):
   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
-  `RESEND_API_KEY`, `EMAIL_FROM`, `NEXT_PUBLIC_APP_URL`.
+  `RESEND_API_KEY`, `EMAIL_FROM`, `NEXT_PUBLIC_APP_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+  `AUTOMATION_SECRET`, `GURU_SYNC_SECRET`.
   Ao criar variável nova, adicionar na Vercel **e** no `.env.local`.
 - Supabase Auth → URL Configuration precisa conter a URL de produção em
   Site URL e Redirect URLs (senão a confirmação de e-mail cai em localhost).
@@ -51,7 +53,8 @@ npm run build    # build + type check — deve passar sem erros
 
 Next.js (App Router) · TypeScript · Tailwind CSS 4 · shadcn/ui (**variante Base UI,
 NÃO Radix**) · Zustand · dnd-kit (kanban) · Recharts (gráficos) · date-fns (ptBR) ·
-lucide-react · sonner (toasts).
+lucide-react · sonner (toasts) · Tiptap (editor rich text do Marketing) · svix
+(verificação de webhook do Resend).
 
 ## Estrutura
 
@@ -62,10 +65,13 @@ src/
     pagamentos/  ai-studio/  agentes-ia/  marketing/  automacoes/ (+[id] builder)
     sites/  assinaturas/  midia/  reputacao/  relatorios/  marketplace/
     whatsapp/  configuracoes/ (layout próprio + 16 sub-páginas)  ativacao/
+  app/api/
+    automations/tick/    marketing/{tick,resend-webhook,unsubscribe,campaigns/[id]/*}
+    webhooks/guru/       integrations/guru/sync/    team/invite/
   components/
     layout/            # Sidebar, Topbar, SubNav, SupportPanel, WebphonePanel
     shared/            # DataTable, FilterDrawer, KpiCard, SlaBadge, ChannelIcon, EmptyState
-    dashboard/ inbox/ contacts/ pipeline/ automations/ modules/   # por domínio
+    dashboard/ inbox/ contacts/ pipeline/ automations/ marketing/ modules/   # por domínio
     ui/                # shadcn (Base UI)
   lib/
     config/brand.ts    # ÚNICA fonte do nome/marca ("Lito CRM") — nunca hardcodar
@@ -75,6 +81,8 @@ src/
     data/store.ts      # Zustand store + ações (moveOpportunity, sendMessage, addContact...)
     data/repos/        # A UI SÓ importa daqui (contacts, opportunities, conversations,
                        # workflows, appointments) — trocar mock por backend = mexer só aqui
+    integrations/guru*.ts  # cliente REST + mapeamento de payload da Digital Manager Guru
+    marketing/         # motor de e-mail marketing (engine, types, unsubscribe HMAC)
 ```
 
 ## Regras que já causaram bugs (não repita)
@@ -107,7 +115,9 @@ src/
 Projeto Supabase dedicado (supabase.com, ref `boykcuhxmndlkjhojxhl`). Credenciais em
 `.env.local` (NUNCA commitar; modelo em `.env.example`).
 
-- Clientes em `src/lib/supabase/{client,server}.ts` (@supabase/ssr, chave publishable).
+- Clientes em `src/lib/supabase/{client,server}.ts` (@supabase/ssr, chave publishable)
+  e `src/lib/supabase/admin.ts` (service role — só em rotas server-side sem sessão de
+  usuário: motor de automações, motor de marketing, webhook/sync de pagamentos da Guru).
 - Schema em `supabase/migrations/0001_initial_schema.sql` — **aplicado em 2026-08-06
   via SQL Editor** e verificado: 11 tabelas, RLS deny-by-default, `REVOKE` total do
   `anon` (confirmado por teste REST: 42501 em todas as tabelas), políticas
@@ -117,7 +127,10 @@ Projeto Supabase dedicado (supabase.com, ref `boykcuhxmndlkjhojxhl`). Credenciai
 - Migrações seguintes, todas com o mesmo padrão de RLS/políticas da 0001:
   `0002` (smart_lists, tasks, contact_fields, bulk_logs), `0003` (snippets +
   publicação realtime), `0004` (equipe: invitations, permissions, sees_all,
-  protect_last_admin, convite no signup), `0005` (activation_steps).
+  protect_last_admin, convite no signup), `0005` (activation_steps), `0006` (cadastro
+  por convite), `0007` (automações — schema + captura), `0008` (pagamentos: webhook da
+  Guru), `0009` (pg_cron do motor de automações), `0010` (e-mail marketing), `0011`
+  (pg_cron do marketing), `0012`/`0013` (assinaturas e sincronização ativa da Guru).
 - Novas migrações: criar `supabase/migrations/000N_nome.sql` e aplicar via SQL Editor
   (ou `scripts/apply-migration.mjs`, que exige o CA do projeto em
   `scripts/supabase-ca.crt` — TLS sempre verificado, nunca desabilitar).
@@ -156,17 +169,14 @@ protegida `/api/automations/tick` do Next; a rota executa os passos em TypeScrip
 com a service role e grava `automation_logs`.
 Motivo de não usar Vercel Cron: no plano Hobby ele roda só 1×/dia.
 
-### Estado (2026-08-07)
+### Estado (2026-08-10)
 
 - ✅ **Tarefa 1+2** — migração `0007_automations.sql` **aplicada**: tabelas
   `automation_runs` / `automation_logs`, colunas `workflows.trigger_key|trigger_config|steps`,
   função `private.enqueue_automation(...)` (idempotência por `event_key` + anti-loop de
   5 min) e os triggers de captura em contacts, opportunities, messages, appointments
   + job diário `lito-aniversarios`.
-  **Consequência prática:** eventos já enfileiram runs, mas **nada os executa ainda**
-  (runs ficam em `pending`). Isso é inofensivo — nenhum workflow está publicado com
-  `trigger_key` preenchido.
-- ✅ **Tarefa 3 — executor implementado** (2026-08-08):
+- ✅ **Tarefa 3 — executor implementado**:
   - `src/lib/supabase/admin.ts` — cliente service role (lança se faltar env).
   - `src/lib/automations/types.ts` — `ActionKey`, `Step`, `RunContext`, `parseSteps()`,
     teto de 50 passos e backoff `[1, 5, 15]` minutos.
@@ -179,26 +189,21 @@ Motivo de não usar Vercel Cron: no plano Hobby ele roda só 1×/dia.
   - `src/app/api/automations/tick/route.ts` — POST protegido por `x-automation-secret`.
   - **`src/proxy.ts`: `api/automations` saiu do matcher** — a chamada é máquina-a-máquina
     (pg_cron), não tem sessão; sem isso o middleware redirecionava para /login (307).
-  - **Verificado local com as chaves reais (2026-08-10):** sem header → 401;
-    header errado → 401; header certo → `200 {"processed":0,"errors":0}` (motor
-    conectou na service role e consultou a fila). `SUPABASE_SERVICE_ROLE_KEY` e
-    `AUTOMATION_SECRET` já estão no `.env.local`.
-- ✅ **Tarefa 4 — código pronto** (2026-08-10): migração
-  `0009_automation_cron.sql` — tabela `private.automation_config` (guarda
-  `tick_url` + `secret` fora do alcance da API), função `private.automation_tick()`
-  (chama a rota via `net.http_post`) e job `lito-automation-tick` (a cada minuto).
-  **Falta aplicar em produção (passos manuais):** (1) `SUPABASE_SERVICE_ROLE_KEY`
-  e `AUTOMATION_SECRET` na Vercel (production+preview+development); (2) redeploy de
-  produção; (3) rodar a `0009` no SQL Editor trocando o placeholder do secret pelo
-  valor real; (4) conferir `cron.job` ativo + `net._http_response` com status 200.
+  - **Verificado com as chaves reais:** sem header → 401; header errado → 401; header
+    certo → `200 {"processed":0,"errors":0}` (motor conectou na service role e
+    consultou a fila).
+- ✅ **Tarefa 4 — pg_cron aplicado**: migração `0009_automation_cron.sql` — tabela
+  `private.automation_config` (guarda `tick_url` + `secret` fora do alcance da API),
+  função `private.automation_tick()` (chama a rota via `net.http_post`) e job
+  `lito-automation-tick` (a cada minuto). Ativo em produção.
 - ⏳ Tarefas 5–7 — builder configurável, aba de execuções/logs com teste manual,
   galeria de 5 modelos prontos.
-- ⏳ Tarefa 8 — env vars em produção, deploy, teste ponta a ponta, doc final.
+- ⏳ Tarefa 8 — teste ponta a ponta, doc final.
 
 ### Como pausar/retomar o motor
 
 ```sql
-select cron.unschedule('lito-automation-tick');  -- pausa (após a tarefa 4)
+select cron.unschedule('lito-automation-tick');  -- pausa
 select jobname, active from cron.job;            -- conferir jobs
 select * from public.automation_runs order by created_at desc limit 20;
 ```
@@ -230,11 +235,10 @@ a rota envia em lotes de 100 via **Resend Batch** com a service role e grava sta
 
 **Passos manuais que FALTAM para ligar em produção:**
 1. `RESEND_WEBHOOK_SECRET` no `.env.local` e na Vercel (production+preview+development).
-2. Garantir `SUPABASE_SERVICE_ROLE_KEY` e `AUTOMATION_SECRET` na Vercel + **redeploy**.
-3. Resend → **Webhooks** → criar endpoint `https://lito-crm.vercel.app/api/marketing/resend-webhook`
+2. Resend → **Webhooks** → criar endpoint `https://lito-crm.vercel.app/api/marketing/resend-webhook`
    (eventos email.delivered/opened/clicked/bounced/complained) e **ativar tracking** de
    abertura/clique no domínio; copiar o signing secret para `RESEND_WEBHOOK_SECRET`.
-4. Aplicar `0011` no SQL Editor trocando o placeholder pelo `AUTOMATION_SECRET`.
+3. Aplicar `0011` no SQL Editor trocando o placeholder pelo `AUTOMATION_SECRET`.
 
 **Fora da v1:** A/B test, drip, upload próprio de imagens (imagem por URL por enquanto),
 inserção de trechos no composer (só variáveis por ora).
@@ -244,6 +248,52 @@ inserção de trechos no composer (só variáveis por ora).
 ```sql
 select cron.unschedule('lito-marketing-tick');   -- pausa o cron
 update public.email_campaigns set status = 'paused' where id = '<id>';  -- pausa uma campanha
+```
+
+## Pagamentos — Guru (webhook + sincronização ativa a cada minuto)
+
+A Guru é a central de pagamentos do Lito CRM (vendas, assinaturas). Aba **Pagamentos**
+mostra dados mock só enquanto a Guru não estiver conectada; conectada, Pagamentos e
+Assinaturas passam a mostrar dados reais.
+
+**Duas fontes alimentando as mesmas tabelas** (upsert, não log — a mesma
+venda/assinatura é vista de novo a cada mudança de status):
+1. **Webhook** (`/api/webhooks/guru`) — a Guru envia em tempo real. Autenticado pelo
+   `api_token` do corpo (= Account Token da conta, obtido em Minha Conta → API no
+   painel da Guru), comparado com `payment_credentials.webhook_token`.
+2. **Sincronização ativa** (`/api/integrations/guru/sync`) — `pg_cron` chama a cada
+   minuto (migração `0013`); a rota consulta `digitalmanager.guru/api/v2/{transactions,subscriptions}`
+   (header `Authorization: Bearer {user_token}` — o **User Token**, obtido em Meu
+   Perfil → Tokens API, diferente do Account Token) pra cada empresa conectada e faz
+   upsert. Primeira sincronização: assinaturas sem filtro de data (tudo) e vendas dos
+   últimos 175 dias (máximo que a API da Guru permite por filtro de data); depois disso,
+   só o que mudou desde o último sync. Protegida por `x-guru-sync-secret`.
+
+**Peças:**
+- `src/lib/integrations/guru.ts` — cliente REST (paginação por cursor, backoff em 429).
+- `src/lib/integrations/guru-map.ts` — mapeamento Guru → nossas tabelas, com os nomes
+  de campo confirmados na referência oficial (`api.docs.digitalmanager.guru`) —
+  webhook e REST usam o mesmo shape de `Transaction`/`Subscription`, exceto que datas
+  vêm como unix timestamp na API REST e string ISO no webhook.
+- `src/lib/data/guru.ts` — `classifyGuruStatus`/`guruStatusLabel`, vocabulário exato
+  de status (aprovada/atrasada/cancelada/reembolsada/chargeback/...) copiado da doc.
+- `src/lib/data/repos/db/payments.ts` — repo real (`useGuruIntegration`,
+  `usePaymentEvents`, `usePaymentSubscriptions`), Realtime nas duas tabelas.
+- Migrações: `0008` (`payment_credentials`, `payment_events`, webhook), `0012`
+  (`payment_subscriptions`), `0013` (colunas de sync + `last_synced_at`/`sync_started_at`
+  como trava anti-corrida + `cron.schedule('lito-guru-sync', '* * * * *', ...)`).
+- Env: `GURU_SYNC_SECRET` (privada, gerada por sessão — não é a mesma coisa que o
+  Account/User Token da Guru, que ficam por empresa em `payment_credentials`).
+
+**Conectar:** Pagamentos → Integrações → card Guru → cola a URL do webhook no painel
+da Guru + os dois tokens no diálogo do CRM. Sem o User Token, só o webhook funciona
+(sem a sincronização de 1 minuto).
+
+### Como pausar a sincronização
+
+```sql
+select cron.unschedule('lito-guru-sync');
+select * from public.payment_credentials where provider = 'guru';
 ```
 
 ## Padrão de migração módulo a módulo (IMPORTANTE)
@@ -263,6 +313,8 @@ os módulos ainda não migrados continuam importando dos repos mock em
 - `db/team.ts` — membros, convites, permissões; `useMyMembership().can(moduleKey)`
   é o guard de navegação (admin sempre true; usuário: só bloqueia se explicitamente
   `false` — membros antigos com `{}` continuam vendo tudo)
+- `db/campaigns.ts` — campanhas de e-mail marketing
+- `db/payments.ts` — integração Guru (vendas, assinaturas)
 
 ## Estado atual / próximos passos
 
@@ -292,8 +344,7 @@ os módulos ainda não migrados continuam importando dos repos mock em
   a conta é criada. Reabrir: `update private.app_settings set signup_mode = 'open';`
 - ✅ Backend F2h: **Calendários**, **Configurações** (empresa/perfil reais, sidebar
   mostrando a empresa do banco) e **Checklist de ativação** persistente (migração 0005).
-- ⏳ **Automações: em construção** — ver seção própria acima (tarefa 3 do plano é o
-  próximo passo, bloqueada pela `SUPABASE_SERVICE_ROLE_KEY`).
+- ✅ **Automações** — motor + pg_cron em produção (ver seção própria acima).
 - ✅ Backend F2g: **Equipe e permissões** (migração 0004) — convites por e-mail
   (trigger de signup vincula à empresa que convidou em vez de criar nova),
   papéis admin/usuário, permissões por módulo (jsonb em `location_members`),
@@ -301,8 +352,11 @@ os módulos ainda não migrados continuam importando dos repos mock em
   opportunities via `private.sees_all()`, trigger `protect_last_admin` impedindo
   a empresa ficar sem administrador. Sidebar respeita permissões; a tela
   /configuracoes/equipe é restrita a admins.
-- ⏳ Próximo: Pagamentos, Automações reais
-  (Edge Functions), Equipe/convites em Configurações.
+- ✅ **Pagamentos** — integração real com a Guru, webhook + sincronização a cada
+  minuto (ver seção própria acima).
+- ⏳ **Email Marketing** — código pronto, faltam passos manuais de produção (ver
+  seção própria acima).
+- ⏳ Próximo: Automações reais (Edge Functions) tarefas 5–8, Agentes de IA.
 - ⏳ Backlog: personalizar template/remetente dos e-mails de auth do Supabase
-  (pedido do Gabriel), storage (Mídia Drive/arquivos), automações reais
-  (Edge Functions), dark mode, mobile, WhatsApp (Cloud API / Evolution API).
+  (pedido do Gabriel), storage (Mídia Drive/arquivos), dark mode, mobile,
+  WhatsApp (Cloud API / Evolution API).

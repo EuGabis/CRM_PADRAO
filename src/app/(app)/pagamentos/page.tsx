@@ -1,11 +1,21 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { SubNav } from "@/components/layout/subnav";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,6 +28,17 @@ import {
 } from "@/components/ui/select";
 import { useContacts, useUsers, contactName } from "@/lib/data/repos/contacts";
 import { formatBRL } from "@/lib/data/repos/opportunities";
+import {
+  paymentsActions,
+  useGuruIntegration,
+  usePaymentEvents,
+  usePaymentSubscriptions,
+  usePaymentsRealtimeStatus,
+  type PaymentEvent,
+  type PaymentSubscription,
+} from "@/lib/data/repos/db/payments";
+import { useMyMembership } from "@/lib/data/repos/db/team";
+import { classifyGuruStatus, guruStatusLabel } from "@/lib/data/guru";
 import { brand } from "@/lib/config/brand";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +67,256 @@ const PROVIDERS = [
   { name: "NMI", desc: "Conexões flexíveis a processadores, cartões e ACH.", connected: false },
   { name: "Métodos manuais", desc: "Pagamento offline/custom (dinheiro na entrega etc.).", connected: false },
 ];
+
+/* ------------------------------- Guru (real) ----------------------------- */
+
+function GuruProviderCard() {
+  const { guru, loaded } = useGuruIntegration();
+  const { isAdmin } = useMyMembership();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="flex flex-col rounded-xl border bg-white p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="flex size-9 items-center justify-center rounded-lg bg-slate-100 text-sm font-black text-slate-600">
+          G
+        </span>
+        {guru.connected && <Badge className="bg-emerald-100 text-emerald-700">Conectado</Badge>}
+      </div>
+      <p className="text-sm font-semibold text-slate-800">Guru</p>
+      <p className="mt-1 flex-1 text-[11px] text-slate-500">
+        Checkout, vendas e assinaturas da Digital Manager Guru — sincronizado a cada minuto.
+      </p>
+      {guru.connected && (
+        <p className="mt-1 text-[10px] text-slate-400">
+          {guru.lastSyncedAt
+            ? `Última sincronização: ${format(new Date(guru.lastSyncedAt), "dd MMM, HH:mm:ss", { locale: ptBR })}`
+            : "Aguardando a primeira sincronização (roda a cada minuto)..."}
+        </p>
+      )}
+      <Button
+        variant={guru.connected ? "outline" : "default"}
+        size="sm"
+        className="mt-3 h-7 text-xs"
+        disabled={!loaded}
+        onClick={() => {
+          if (!isAdmin) {
+            toast.info("Apenas administradores podem configurar integrações de pagamento");
+            return;
+          }
+          setOpen(true);
+        }}
+      >
+        {guru.connected ? "Gerenciar" : "Conectar"}
+      </Button>
+      <GuruDialog open={open} onOpenChange={setOpen} />
+    </div>
+  );
+}
+
+function GuruDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+}) {
+  const { guru } = useGuruIntegration();
+  const [apiKey, setApiKey] = useState(guru.apiKey);
+  const [webhookToken, setWebhookToken] = useState(guru.webhookToken);
+  const [saving, setSaving] = useState(false);
+  const [origin, setOrigin] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setApiKey(guru.apiKey);
+      setWebhookToken(guru.webhookToken);
+      setOrigin(window.location.origin);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const webhookUrl = origin ? `${origin}/api/webhooks/guru` : "";
+
+  const copy = async (value: string, label: string) => {
+    await navigator.clipboard.writeText(value);
+    toast.success(`${label} copiado`);
+  };
+
+  const save = async () => {
+    if (!webhookToken.trim()) {
+      toast.error("Cole o Account Token (api_token) mostrado no painel da Guru");
+      return;
+    }
+    if (!apiKey.trim()) {
+      toast.error("Cole o User Token — sem ele a sincronização de 1 minuto não funciona");
+      return;
+    }
+    setSaving(true);
+    const res = await paymentsActions.saveGuruCredentials({ apiKey, webhookToken });
+    setSaving(false);
+    if (!res.ok) {
+      toast.error(res.error ?? "Não foi possível salvar");
+      return;
+    }
+    toast.success("Guru conectada");
+    onOpenChange(false);
+  };
+
+  const disconnect = async () => {
+    if (!window.confirm("Desconectar a Guru? Os eventos já recebidos continuam salvos.")) return;
+    const ok = await paymentsActions.disconnectGuru();
+    if (ok) {
+      toast.success("Guru desconectada");
+      onOpenChange(false);
+    } else {
+      toast.error("Não foi possível desconectar");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Conectar com a Guru</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <Label className="text-xs">URL do webhook</Label>
+            <div className="flex gap-2">
+              <Input value={webhookUrl} readOnly className="h-8 font-mono text-[11px]" />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 shrink-0 text-xs"
+                onClick={() => copy(webhookUrl, "URL")}
+              >
+                Copiar
+              </Button>
+            </div>
+            <p className="text-[10px] text-slate-400">
+              Cole esta URL no painel da Guru em Configurações → Webhook.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Account Token (api_token do webhook) *</Label>
+            <Input
+              key={open ? "open" : "closed"}
+              value={webhookToken}
+              onChange={(e) => setWebhookToken(e.target.value)}
+              placeholder="Painel da Guru → Minha Conta → API"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              className="h-8 font-mono text-xs"
+            />
+            <p className="text-[10px] text-slate-400">
+              A Guru envia esse valor em todo webhook — usamos para confirmar que o evento é
+              mesmo dela e identificar sua empresa.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">User Token (para sincronizar vendas/assinaturas) *</Label>
+            <Input
+              key={open ? "open" : "closed"}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="Painel da Guru → Meu Perfil → Tokens API"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              className="h-8 font-mono text-xs"
+            />
+            <p className="text-[10px] text-slate-400">
+              {guru.apiKey
+                ? `Token salvo: ${"•".repeat(Math.max(0, guru.apiKey.length - 4))}${guru.apiKey.slice(-4)}`
+                : "Nenhum token salvo ainda."}{" "}
+              Sem ele, a sincronização automática de 1 minuto não roda — só os webhooks recebidos.
+            </p>
+          </div>
+        </div>
+        <DialogFooter>
+          {guru.connected && (
+            <Button variant="ghost" className="text-red-600 hover:text-red-700" onClick={disconnect}>
+              Desconectar
+            </Button>
+          )}
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? "Salvando..." : "Salvar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function guruStatusBadgeClass(status: string | null): string {
+  switch (classifyGuruStatus(status)) {
+    case "aprovado":
+      return "bg-emerald-100 text-emerald-700";
+    case "pendente":
+    case "atrasado":
+      return "bg-amber-100 text-amber-700";
+    case "recusado":
+    case "reembolsado":
+    case "chargeback":
+    case "cancelado":
+    case "expirado":
+      return "bg-red-100 text-red-600";
+    default:
+      return "bg-slate-100 text-slate-600";
+  }
+}
+
+function GuruStatusBadge({ status }: { status: string | null }) {
+  return (
+    <Badge variant="secondary" className={cn(guruStatusBadgeClass(status))}>
+      {guruStatusLabel(status)}
+    </Badge>
+  );
+}
+
+/** Aberto por "Ver payload" nas tabelas alimentadas pela Guru — mostra o JSON bruto. */
+function RawPayloadDialog({
+  raw,
+  onClose,
+}: {
+  raw: Record<string, unknown> | null;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={!!raw} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Payload recebido da Guru</DialogTitle>
+        </DialogHeader>
+        <pre className="max-h-96 overflow-auto rounded-lg bg-slate-50 p-3 text-[11px] text-slate-700">
+          {raw ? JSON.stringify(raw, null, 2) : ""}
+        </pre>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RawPayloadButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      className="text-[11px] font-medium text-indigo-600 hover:underline"
+      onClick={onClick}
+    >
+      Ver payload
+    </button>
+  );
+}
+
+function GuruLiveBadge() {
+  const realtime = usePaymentsRealtimeStatus();
+  if (realtime !== "on") return null;
+  return <Badge className="bg-emerald-100 text-emerald-700">● Ao vivo</Badge>;
+}
 
 const DOC_STATUS = [
   { label: "Rascunho", count: 1 },
@@ -161,6 +432,12 @@ function useClienteNome() {
 /* ------------------------------- Pagamentos ------------------------------ */
 
 function TransacoesTab() {
+  const { guru, loaded } = useGuruIntegration();
+  if (!loaded) return null;
+  return guru.connected ? <TransacoesGuruTab /> : <TransacoesMockTab />;
+}
+
+function TransacoesMockTab() {
   const nome = useClienteNome();
   const rows = useMemo(
     () => [
@@ -199,6 +476,79 @@ function TransacoesTab() {
           <span key="d" className="text-slate-500">{r.data}</span>,
         ])}
       />
+    </>
+  );
+}
+
+function TransacoesGuruTab() {
+  const events = usePaymentEvents();
+  const [rawEvent, setRawEvent] = useState<PaymentEvent | null>(null);
+
+  const kpis = useMemo(() => {
+    const now = new Date();
+    const thisMonth = events.filter((e) => {
+      if (!e.guruCreatedAt) return false;
+      const d = new Date(e.guruCreatedAt);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    });
+    const approved = thisMonth.filter((e) => classifyGuruStatus(e.status) === "aprovado");
+    const revenue = approved.reduce((sum, e) => sum + (e.amount ?? 0), 0);
+    const refunded = events.filter((e) =>
+      ["reembolsado", "chargeback"].includes(classifyGuruStatus(e.status))
+    );
+    const refundTotal = refunded.reduce((sum, e) => sum + (e.amount ?? 0), 0);
+    return {
+      revenue,
+      count: approved.length,
+      ticket: approved.length ? revenue / approved.length : 0,
+      refundTotal,
+      refundCount: refunded.length,
+    };
+  }, [events]);
+
+  return (
+    <>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-slate-900">Pagamentos</h1>
+          <p className="text-xs text-slate-500">Vendas sincronizadas da Guru (webhook + API)</p>
+        </div>
+        <GuruLiveBadge />
+      </div>
+      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Receita do mês" value={formatBRL(kpis.revenue)} />
+        <KpiCard label="Vendas aprovadas (mês)" value={String(kpis.count)} />
+        <KpiCard label="Ticket médio" value={formatBRL(kpis.ticket)} />
+        <KpiCard
+          label="Reembolsos / chargebacks"
+          value={formatBRL(kpis.refundTotal)}
+          hint={`${kpis.refundCount} transações`}
+        />
+      </div>
+      {events.length === 0 ? (
+        <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
+          Nenhuma venda sincronizada ainda. A primeira sincronização roda no próximo minuto após
+          conectar — as vendas aparecem aqui automaticamente.
+        </div>
+      ) : (
+        <MiniTable
+          headers={["Código", "Contato", "Produto", "Criada em", "Status", "Valor", ""]}
+          rows={events.map((e) => [
+            <span key="cd" className="font-mono text-[11px] text-slate-500">{e.code ?? "—"}</span>,
+            <span key="c" className="text-slate-600">{e.contactName ?? e.contactEmail ?? "—"}</span>,
+            <span key="p" className="text-slate-600">{e.productName ?? "—"}</span>,
+            <span key="d" className="text-slate-500">
+              {e.guruCreatedAt ? format(new Date(e.guruCreatedAt), "dd MMM yyyy, HH:mm", { locale: ptBR }) : "—"}
+            </span>,
+            <GuruStatusBadge key="s" status={e.status} />,
+            <span key="v" className="font-semibold text-slate-800">
+              {e.amount !== null ? formatBRL(e.amount) : "—"}
+            </span>,
+            <RawPayloadButton key="raw" onClick={() => setRawEvent(e)} />,
+          ])}
+        />
+      )}
+      <RawPayloadDialog raw={rawEvent?.raw ?? null} onClose={() => setRawEvent(null)} />
     </>
   );
 }
@@ -278,6 +628,12 @@ function PedidosTab() {
 /* ------------------------------- Assinaturas ----------------------------- */
 
 function AssinaturasTab() {
+  const { guru, loaded } = useGuruIntegration();
+  if (!loaded) return null;
+  return guru.connected ? <AssinaturasGuruTab /> : <AssinaturasMockTab />;
+}
+
+function AssinaturasMockTab() {
   const nome = useClienteNome();
   const rows = useMemo(
     () => [
@@ -307,6 +663,71 @@ function AssinaturasTab() {
           <span key="d" className="text-slate-500">{r.proxima}</span>,
         ])}
       />
+    </>
+  );
+}
+
+function AssinaturasGuruTab() {
+  const subscriptions = usePaymentSubscriptions();
+  const [rawSub, setRawSub] = useState<PaymentSubscription | null>(null);
+
+  const counts = useMemo(() => {
+    const byCategory = { ativa: 0, atrasado: 0, cancelado: 0, outro: 0 };
+    for (const s of subscriptions) {
+      const cat = classifyGuruStatus(s.status);
+      if (cat === "aprovado") byCategory.ativa++;
+      else if (cat === "atrasado") byCategory.atrasado++;
+      else if (cat === "cancelado" || cat === "expirado") byCategory.cancelado++;
+      else byCategory.outro++;
+    }
+    return byCategory;
+  }, [subscriptions]);
+
+  return (
+    <>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-slate-900">Assinaturas</h1>
+          <p className="text-xs text-slate-500">Estado atual de cada assinante da Guru</p>
+        </div>
+        <GuruLiveBadge />
+      </div>
+      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Ativas" value={String(counts.ativa)} />
+        <KpiCard label="Atrasadas" value={String(counts.atrasado)} />
+        <KpiCard label="Canceladas / expiradas" value={String(counts.cancelado)} />
+        <KpiCard label="Total de assinantes" value={String(subscriptions.length)} />
+      </div>
+      {subscriptions.length === 0 ? (
+        <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
+          Nenhuma assinatura sincronizada ainda. A primeira sincronização roda no próximo minuto
+          após conectar — as assinaturas aparecem aqui automaticamente.
+        </div>
+      ) : (
+        <MiniTable
+          headers={["Código", "Contato", "Produto", "Iniciada em", "Atualizada em", "Status", "Qtd cobranças", "Cobrada a cada", ""]}
+          rows={subscriptions.map((s) => [
+            <span key="cd" className="font-mono text-[11px] text-slate-500">{s.code ?? "—"}</span>,
+            <span key="c" className="font-medium text-slate-800">
+              {s.contactName ?? s.contactEmail ?? "—"}
+            </span>,
+            <span key="p" className="text-slate-600">{s.productName ?? "—"}</span>,
+            <span key="i" className="text-slate-500">
+              {s.guruStartedAt ? format(new Date(s.guruStartedAt), "dd MMM yyyy, HH:mm", { locale: ptBR }) : "—"}
+            </span>,
+            <span key="d" className="text-slate-500">
+              {s.guruUpdatedAt ? format(new Date(s.guruUpdatedAt), "dd MMM yyyy, HH:mm", { locale: ptBR }) : "—"}
+            </span>,
+            <GuruStatusBadge key="s" status={s.status} />,
+            <span key="qt" className="text-slate-600">{s.chargedTimes ?? "—"}</span>,
+            <span key="ce" className="text-slate-600">
+              {s.chargedEveryDays !== null ? `${s.chargedEveryDays} dias` : "—"}
+            </span>,
+            <RawPayloadButton key="raw" onClick={() => setRawSub(s)} />,
+          ])}
+        />
+      )}
+      <RawPayloadDialog raw={rawSub?.raw ?? null} onClose={() => setRawSub(null)} />
     </>
   );
 }
@@ -610,6 +1031,7 @@ export default function PagamentosPage() {
                   </Button>
                 </div>
               ))}
+              <GuruProviderCard />
             </div>
           </>
         ) : tab === "Arquivos e contratos" ? (
