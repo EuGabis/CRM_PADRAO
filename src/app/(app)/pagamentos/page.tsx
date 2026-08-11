@@ -1,9 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import {
+  Bar,
+  BarChart,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip as RTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { SubNav } from "@/components/layout/subnav";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +29,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EmptyState } from "@/components/shared/empty-state";
-import { Users2, UserPlus, Radar, BarChart3 } from "lucide-react";
+import {
+  Users2,
+  UserPlus,
+  Radar,
+  BarChart3,
+  FileText,
+  Upload,
+  Download,
+  Trash2,
+  Loader2,
+} from "lucide-react";
 import { useContacts, contactName } from "@/lib/data/repos/contacts";
 import { formatBRL } from "@/lib/data/repos/opportunities";
 import {
@@ -30,6 +51,12 @@ import {
   type PaymentEvent,
   type PaymentSubscription,
 } from "@/lib/data/repos/db/payments";
+import {
+  ALLOWED_FILES,
+  paymentFilesActions,
+  usePaymentFiles,
+  type PaymentFile,
+} from "@/lib/data/repos/db/payment-files";
 import { useMyMembership } from "@/lib/data/repos/db/team";
 import { classifyGuruStatus, guruStatusLabel } from "@/lib/data/guru";
 import { cn } from "@/lib/utils";
@@ -312,21 +339,6 @@ function GuruLiveBadge() {
   if (realtime !== "on") return null;
   return <Badge className="bg-emerald-100 text-emerald-700">● Ao vivo</Badge>;
 }
-
-const DOC_STATUS = [
-  { label: "Rascunho", count: 1 },
-  { label: "Aguardando por outros", count: 1 },
-  { label: "Concluído", count: 2 },
-  { label: "Pagamentos", count: 2 },
-  { label: "Arquivado", count: 0 },
-];
-
-const DOCS = [
-  { title: "Contrato de assinatura — Maurício Magalhães", status: "Concluído", client: "MM", date: "30 jun 2026", value: "R$ 147,00" },
-  { title: "Proposta implementação — Linx Consultoria", status: "Aguardando por outros", client: "TS", date: "28 jul 2026", value: "R$ 2.000,00" },
-  { title: "Contrato de assinatura — Carla Santos", status: "Concluído", client: "CS", date: "22 jul 2026", value: "R$ 197,00" },
-  { title: "Novo Documento", status: "Rascunho", client: "GR", date: "1 ago 2026", value: "R$ 0,00" },
-];
 
 function statusBadgeClass(status: string) {
   switch (status) {
@@ -786,24 +798,302 @@ function ProdutosGuruTab() {
   );
 }
 
-/* -------------------------------- Placeholders ---------------------------- */
+/* -------------------------------- Contatos ------------------------------- */
+
+interface BuyerRow {
+  key: string;
+  name: string;
+  email: string | null;
+  purchases: number;
+  totalSpent: number;
+  activeSubs: number;
+  lastPurchase: string | null;
+}
+
+/** Compradores únicos derivados das vendas + assinaturas já sincronizadas. */
+function useBuyers(events: PaymentEvent[], subscriptions: PaymentSubscription[]): BuyerRow[] {
+  return useMemo(() => {
+    const map = new Map<string, BuyerRow>();
+    const keyOf = (name: string | null, email: string | null) =>
+      (email?.toLowerCase() || name?.toLowerCase() || "").trim();
+    const ensure = (name: string | null, email: string | null): BuyerRow | null => {
+      const key = keyOf(name, email);
+      if (!key) return null;
+      let row = map.get(key);
+      if (!row) {
+        row = { key, name: name ?? email ?? "—", email, purchases: 0, totalSpent: 0, activeSubs: 0, lastPurchase: null };
+        map.set(key, row);
+      }
+      if (!row.email && email) row.email = email;
+      if ((row.name === "—" || !row.name) && name) row.name = name;
+      return row;
+    };
+
+    for (const e of events) {
+      const row = ensure(e.contactName, e.contactEmail);
+      if (!row) continue;
+      if (classifyGuruStatus(e.status) === "aprovado") {
+        row.purchases += 1;
+        row.totalSpent += e.amount ?? 0;
+      }
+      if (e.guruCreatedAt && (!row.lastPurchase || e.guruCreatedAt > row.lastPurchase)) {
+        row.lastPurchase = e.guruCreatedAt;
+      }
+    }
+    for (const s of subscriptions) {
+      const row = ensure(s.contactName, s.contactEmail);
+      if (!row) continue;
+      if (classifyGuruStatus(s.status) === "aprovado") row.activeSubs += 1;
+    }
+    return Array.from(map.values()).sort((a, b) => b.totalSpent - a.totalSpent);
+  }, [events, subscriptions]);
+}
 
 function ContatosTab() {
-  return (
+  const { guru, loaded } = useGuruIntegration();
+  if (!loaded) return null;
+  return guru.connected ? (
+    <ContatosGuruTab />
+  ) : (
     <EmptyState
       icon={Users2}
       title="Contatos da Guru"
-      description="Lista de contatos vindos da API da Guru (GET /api/v2/contacts) — ainda não conectada. Conte pra gente se quer isso antes das outras abas."
+      description="Conecte a Guru na aba Integrações. Assim que as vendas sincronizarem, seus compradores aparecem aqui automaticamente."
     />
   );
 }
+
+function ContatosGuruTab() {
+  const events = usePaymentEvents();
+  const subscriptions = usePaymentSubscriptions();
+  const buyers = useBuyers(events, subscriptions);
+
+  const revenue = buyers.reduce((s, b) => s + b.totalSpent, 0);
+  const withSub = buyers.filter((b) => b.activeSubs > 0).length;
+
+  return (
+    <>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-slate-900">Contatos</h1>
+          <p className="text-xs text-slate-500">Compradores derivados das vendas e assinaturas da Guru</p>
+        </div>
+        <GuruLiveBadge />
+      </div>
+      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Contatos" value={String(buyers.length)} />
+        <KpiCard label="Receita total" value={formatBRL(revenue)} />
+        <KpiCard label="Ticket por contato" value={formatBRL(buyers.length ? revenue / buyers.length : 0)} />
+        <KpiCard label="Com assinatura ativa" value={String(withSub)} />
+      </div>
+      {buyers.length === 0 ? (
+        <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
+          Nenhum contato ainda. Os compradores aparecem aqui conforme as vendas sincronizam da Guru.
+        </div>
+      ) : (
+        <MiniTable
+          headers={["Contato", "E-mail", "Compras", "Total gasto", "Assinaturas", "Última compra"]}
+          rows={buyers.map((b) => [
+            <span key="n" className="font-medium text-slate-800">{b.name}</span>,
+            <span key="e" className="text-slate-500">{b.email ?? "—"}</span>,
+            <span key="p" className="text-slate-600">{b.purchases}</span>,
+            <span key="t" className="font-semibold text-slate-800">{formatBRL(b.totalSpent)}</span>,
+            <span key="s" className="text-slate-600">
+              {b.activeSubs > 0 ? (
+                <Badge className="bg-emerald-100 text-emerald-700">{b.activeSubs} ativa{b.activeSubs > 1 ? "s" : ""}</Badge>
+              ) : (
+                "—"
+              )}
+            </span>,
+            <span key="d" className="text-slate-500">
+              {b.lastPurchase ? format(new Date(b.lastPurchase), "dd MMM yyyy", { locale: ptBR }) : "—"}
+            </span>,
+          ])}
+        />
+      )}
+    </>
+  );
+}
+
+/* ------------------------------- Relatórios ------------------------------ */
+
+const CHART_INDIGO = "#6366f1";
+const SUB_COLORS = { ativa: "#10b981", atrasado: "#f59e0b", cancelado: "#ef4444", outro: "#94a3b8" };
+
+function RelatoriosTab() {
+  const { guru, loaded } = useGuruIntegration();
+  if (!loaded) return null;
+  return guru.connected ? (
+    <RelatoriosGuruTab />
+  ) : (
+    <EmptyState
+      icon={BarChart3}
+      title="Relatórios"
+      description="Conecte a Guru para ver receita por mês, os produtos que mais vendem e o estado das assinaturas."
+    />
+  );
+}
+
+function RelatoriosGuruTab() {
+  const events = usePaymentEvents();
+  const subscriptions = usePaymentSubscriptions();
+
+  const data = useMemo(() => {
+    const approved = events.filter((e) => classifyGuruStatus(e.status) === "aprovado");
+    const revenue = approved.reduce((s, e) => s + (e.amount ?? 0), 0);
+
+    // Receita dos últimos 6 meses
+    const now = new Date();
+    const months: { key: string; label: string; total: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: format(d, "MMM/yy", { locale: ptBR }), total: 0 });
+    }
+    const idxByKey = new Map(months.map((m, i) => [m.key, i]));
+    for (const e of approved) {
+      if (!e.guruCreatedAt) continue;
+      const d = new Date(e.guruCreatedAt);
+      const idx = idxByKey.get(`${d.getFullYear()}-${d.getMonth()}`);
+      if (idx !== undefined) months[idx].total += e.amount ?? 0;
+    }
+
+    // Top produtos por receita
+    const prod = new Map<string, number>();
+    for (const e of approved) {
+      const name = e.productName ?? "Sem produto";
+      prod.set(name, (prod.get(name) ?? 0) + (e.amount ?? 0));
+    }
+    const topProducts = Array.from(prod.entries())
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 6);
+    const topMax = Math.max(1, ...topProducts.map((p) => p.total));
+
+    // Assinaturas por status
+    const subCounts = { ativa: 0, atrasado: 0, cancelado: 0, outro: 0 };
+    for (const s of subscriptions) {
+      const cat = classifyGuruStatus(s.status);
+      if (cat === "aprovado") subCounts.ativa++;
+      else if (cat === "atrasado") subCounts.atrasado++;
+      else if (cat === "cancelado" || cat === "expirado") subCounts.cancelado++;
+      else subCounts.outro++;
+    }
+    const pie = [
+      { name: "Ativas", value: subCounts.ativa, color: SUB_COLORS.ativa },
+      { name: "Atrasadas", value: subCounts.atrasado, color: SUB_COLORS.atrasado },
+      { name: "Canceladas", value: subCounts.cancelado, color: SUB_COLORS.cancelado },
+      { name: "Outras", value: subCounts.outro, color: SUB_COLORS.outro },
+    ].filter((d) => d.value > 0);
+
+    return {
+      revenue,
+      salesCount: approved.length,
+      ticket: approved.length ? revenue / approved.length : 0,
+      activeSubs: subCounts.ativa,
+      months,
+      topProducts,
+      topMax,
+      pie,
+    };
+  }, [events, subscriptions]);
+
+  return (
+    <>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-slate-900">Relatórios</h1>
+          <p className="text-xs text-slate-500">Consolidado de vendas e assinaturas da Guru</p>
+        </div>
+        <GuruLiveBadge />
+      </div>
+      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Receita aprovada" value={formatBRL(data.revenue)} />
+        <KpiCard label="Vendas aprovadas" value={String(data.salesCount)} />
+        <KpiCard label="Ticket médio" value={formatBRL(data.ticket)} />
+        <KpiCard label="Assinaturas ativas" value={String(data.activeSubs)} />
+      </div>
+      <div className="grid gap-3 lg:grid-cols-3">
+        <div className="rounded-xl border bg-white p-4 lg:col-span-2">
+          <p className="mb-3 text-xs font-semibold text-slate-700">Receita por mês (aprovadas)</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={data.months} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+              <YAxis
+                tick={{ fontSize: 11, fill: "#94a3b8" }}
+                axisLine={false}
+                tickLine={false}
+                width={64}
+                tickFormatter={(v) => formatBRL(Number(v)).replace(/\s?R\$\s?/, "R$")}
+              />
+              <RTooltip
+                formatter={(v) => formatBRL(Number(v))}
+                contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
+              />
+              <Bar dataKey="total" fill={CHART_INDIGO} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="rounded-xl border bg-white p-4">
+          <p className="mb-3 text-xs font-semibold text-slate-700">Assinaturas por status</p>
+          {data.pie.length === 0 ? (
+            <p className="py-12 text-center text-xs text-slate-400">Sem assinaturas ainda.</p>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie data={data.pie} dataKey="value" nameKey="name" innerRadius={44} outerRadius={70} paddingAngle={2}>
+                    {data.pie.map((d) => (
+                      <Cell key={d.name} fill={d.color} />
+                    ))}
+                  </Pie>
+                  <RTooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="mt-2 space-y-1">
+                {data.pie.map((d) => (
+                  <div key={d.name} className="flex items-center justify-between text-[11px]">
+                    <span className="flex items-center gap-1.5 text-slate-600">
+                      <span className="size-2 rounded-full" style={{ background: d.color }} />
+                      {d.name}
+                    </span>
+                    <span className="font-medium text-slate-800">{d.value}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="mt-3 rounded-xl border bg-white p-4">
+        <p className="mb-3 text-xs font-semibold text-slate-700">Produtos que mais faturam</p>
+        {data.topProducts.length === 0 ? (
+          <p className="py-8 text-center text-xs text-slate-400">Nenhuma venda aprovada ainda.</p>
+        ) : (
+          <div className="space-y-2">
+            {data.topProducts.map((p) => (
+              <div key={p.name} className="flex items-center gap-3">
+                <span className="w-40 shrink-0 truncate text-xs text-slate-700" title={p.name}>{p.name}</span>
+                <div className="h-4 flex-1 overflow-hidden rounded bg-slate-100">
+                  <div className="h-full rounded bg-indigo-500" style={{ width: `${(p.total / data.topMax) * 100}%` }} />
+                </div>
+                <span className="w-24 shrink-0 text-right text-xs font-semibold text-slate-800">{formatBRL(p.total)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/* -------------------------------- Placeholders ---------------------------- */
 
 function LeadsTab() {
   return (
     <EmptyState
       icon={UserPlus}
-      title="Leads da Guru"
-      description="Leads capturados na Guru (formulários, checkouts abandonados) — integração ainda não construída."
+      title="Leads"
+      description="A API pública da Guru não expõe um recurso de leads separado — só de contatos (quem já comprou aparece na aba Contatos). Esta aba fica reservada para quando decidirmos puxar todos os contatos capturados da Guru (incl. quem ainda não comprou)."
     />
   );
 }
@@ -818,13 +1108,129 @@ function RPPCTab() {
   );
 }
 
-function RelatoriosTab() {
+/* -------------------------- Arquivos e contratos ------------------------- */
+
+function formatBytes(n: number | null): string {
+  if (!n) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+const FILE_ACCEPT = [
+  ".pdf",
+  ".docx",
+  ...ALLOWED_FILES.map((a) => a.mime),
+].join(",");
+
+function ArquivosTab() {
+  const { files, ready } = usePaymentFiles();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setBusy(true);
+    const res = await paymentFilesActions.upload(file);
+    setBusy(false);
+    if (res.ok) toast.success("Arquivo enviado");
+    else toast.error(res.error ?? "Falha no upload");
+  };
+
+  const onDownload = async (f: PaymentFile) => {
+    const url = await paymentFilesActions.signedUrl(f.path);
+    if (url) window.open(url, "_blank", "noopener");
+    else toast.error("Não foi possível gerar o link de download");
+  };
+
+  const onDelete = async (f: PaymentFile) => {
+    if (!window.confirm(`Excluir "${f.name}"? Essa ação não pode ser desfeita.`)) return;
+    const ok = await paymentFilesActions.remove(f.id, f.path);
+    if (ok) toast.success("Arquivo excluído");
+    else toast.error("Não foi possível excluir");
+  };
+
   return (
-    <EmptyState
-      icon={BarChart3}
-      title="Relatórios"
-      description="Relatórios consolidados de vendas e assinaturas da Guru — ainda não construído."
-    />
+    <>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-slate-900">Arquivos e contratos</h1>
+          <p className="text-xs text-slate-500">Guarde contratos e propostas em PDF ou DOCX (até 15 MB)</p>
+        </div>
+        <input ref={inputRef} type="file" accept={FILE_ACCEPT} className="hidden" onChange={onFile} />
+        <Button size="sm" className="h-8 text-xs" disabled={busy} onClick={() => inputRef.current?.click()}>
+          {busy ? (
+            <><Loader2 className="mr-1.5 size-3.5 animate-spin" /> Enviando...</>
+          ) : (
+            <><Upload className="mr-1.5 size-3.5" /> Enviar arquivo</>
+          )}
+        </Button>
+      </div>
+      {!ready ? (
+        <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">Carregando arquivos...</div>
+      ) : files.length === 0 ? (
+        <EmptyState
+          icon={FileText}
+          title="Nenhum arquivo ainda"
+          description="Envie contratos e propostas em PDF ou DOCX. Ficam guardados com segurança, visíveis só para a sua empresa."
+        />
+      ) : (
+        <div className="overflow-hidden rounded-xl border bg-white">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b text-[11px] text-slate-400">
+                <th className="px-4 py-2.5 font-medium">Arquivo</th>
+                <th className="px-4 py-2.5 font-medium">Tipo</th>
+                <th className="px-4 py-2.5 font-medium">Tamanho</th>
+                <th className="px-4 py-2.5 font-medium">Enviado em</th>
+                <th className="px-4 py-2.5" />
+              </tr>
+            </thead>
+            <tbody>
+              {files.map((f) => (
+                <tr key={f.id} className="border-b last:border-0">
+                  <td className="px-4 py-2.5">
+                    <span className="flex items-center gap-2 font-medium text-slate-800">
+                      <FileText className="size-4 shrink-0 text-slate-400" />
+                      <span className="truncate">{f.name}</span>
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <Badge variant="secondary" className="bg-slate-100 text-slate-600">
+                      {f.name.toLowerCase().endsWith(".docx") ? "DOCX" : "PDF"}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-500">{formatBytes(f.size)}</td>
+                  <td className="px-4 py-2.5 text-slate-500">
+                    {format(new Date(f.createdAt), "dd MMM yyyy, HH:mm", { locale: ptBR })}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => onDownload(f)}
+                        className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                        title="Baixar"
+                      >
+                        <Download className="size-4" />
+                      </button>
+                      <button
+                        onClick={() => onDelete(f)}
+                        className="rounded p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                        title="Excluir"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -832,7 +1238,6 @@ function RelatoriosTab() {
 
 export default function PagamentosPage() {
   const [tab, setTab] = useState("Integrações");
-  const [docTab, setDocTab] = useState("Rascunho");
 
   return (
     <div>
@@ -874,69 +1279,7 @@ export default function PagamentosPage() {
             </div>
           </>
         ) : tab === "Arquivos e contratos" ? (
-          <>
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h1 className="text-lg font-bold text-slate-900">Documentos e contratos</h1>
-                <p className="text-xs text-slate-500">Propostas, estimativas e contratos com assinatura eletrônica</p>
-              </div>
-              <Button size="sm" className="h-8 text-xs" onClick={() => toast.info("Editor de documentos chega em breve")}>
-                + Novo
-              </Button>
-            </div>
-            <div className="mb-3 flex gap-1">
-              {DOC_STATUS.map((s) => (
-                <button
-                  key={s.label}
-                  onClick={() => setDocTab(s.label)}
-                  className={cn(
-                    "rounded-full px-3 py-1 text-[11px] font-medium",
-                    docTab === s.label ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"
-                  )}
-                >
-                  {s.label} ({s.count})
-                </button>
-              ))}
-            </div>
-            <div className="rounded-xl border bg-white">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b text-[11px] text-slate-400">
-                    <th className="px-4 py-2.5 font-medium">Título</th>
-                    <th className="px-4 py-2.5 font-medium">Status</th>
-                    <th className="px-4 py-2.5 font-medium">Cliente</th>
-                    <th className="px-4 py-2.5 font-medium">Modificado</th>
-                    <th className="px-4 py-2.5 font-medium">Valor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {DOCS.filter((d) => docTab === "Pagamentos" ? d.value !== "R$ 0,00" : d.status === docTab || docTab === "Todos").map((d) => (
-                    <tr key={d.title} className="border-b last:border-0">
-                      <td className="px-4 py-2.5 font-medium text-slate-800">{d.title}</td>
-                      <td className="px-4 py-2.5">
-                        <Badge
-                          variant="secondary"
-                          className={cn(
-                            d.status === "Concluído" && "bg-emerald-100 text-emerald-700",
-                            d.status === "Aguardando por outros" && "bg-amber-100 text-amber-700"
-                          )}
-                        >
-                          {d.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className="flex size-6 items-center justify-center rounded-full bg-slate-200 text-[9px] font-bold text-slate-600">
-                          {d.client}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-500">{d.date}</td>
-                      <td className="px-4 py-2.5 font-semibold text-emerald-600">{d.value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
+          <ArquivosTab />
         ) : tab === "Vendas" ? (
           <TransacoesTab />
         ) : tab === "Assinaturas" ? (
