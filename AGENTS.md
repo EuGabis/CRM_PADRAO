@@ -299,10 +299,11 @@ venda/assinatura é vista de novo a cada mudança de status):
    `api_token` do corpo (= Account Token da conta, obtido em Minha Conta → API no
    painel da Guru), comparado com `payment_credentials.webhook_token`.
 2. **Sincronização ativa** (`/api/integrations/guru/sync`) — `pg_cron` chama a cada
-   minuto (migração `0013`); a rota consulta `digitalmanager.guru/api/v2/{transactions,subscriptions}`
-   (header `Authorization: Bearer {user_token}` — o **User Token**, obtido em Meu
-   Perfil → Tokens API, diferente do Account Token) pra cada empresa conectada e faz
-   upsert. Primeira sincronização: assinaturas sem filtro de data (tudo) e vendas dos
+   minuto (`private.guru_sync_tick()`, migração `0014`); a rota consulta
+   `digitalmanager.guru/api/v2/{transactions,subscriptions}` (header
+   `Authorization: Bearer {user_token}` — o **User Token**, obtido em Meu Perfil →
+   Tokens API, diferente do Account Token) pra cada empresa conectada e faz upsert.
+   Primeira sincronização: assinaturas sem filtro de data (tudo) e vendas dos
    últimos 175 dias (máximo que a API da Guru permite por filtro de data); depois disso,
    só o que mudou desde o último sync. Protegida por `x-guru-sync-secret`.
 
@@ -318,13 +319,28 @@ venda/assinatura é vista de novo a cada mudança de status):
   `usePaymentEvents`, `usePaymentSubscriptions`), Realtime nas duas tabelas.
 - Migrações: `0008` (`payment_credentials`, `payment_events`, webhook), `0012`
   (`payment_subscriptions`), `0013` (colunas de sync + `last_synced_at`/`sync_started_at`
-  como trava anti-corrida + `cron.schedule('lito-guru-sync', '* * * * *', ...)`).
-- Env: `GURU_SYNC_SECRET` (privada, gerada por sessão — não é a mesma coisa que o
-  Account/User Token da Guru, que ficam por empresa em `payment_credentials`).
+  como trava anti-corrida), `0014` (**mesmo padrão de `private.automation_config`** —
+  `private.guru_sync_config` guarda `sync_url`/`secret` fora de qualquer arquivo
+  versionado; `private.guru_sync_tick()` lê de lá e chama a rota via `net.http_post`;
+  o `cron.schedule('lito-guru-sync', ...)` só referencia a função, sem segredo em texto
+  puro no SQL. **Segredo real setado à mão** via
+  `update private.guru_sync_config set secret = '<valor>';` no SQL Editor — nunca commitar.
+- Env: `GURU_SYNC_SECRET` no Next (Vercel) — precisa ser **o mesmo valor** salvo em
+  `private.guru_sync_config.secret`; se um lado rotar sem o outro, o sync volta a
+  falhar com 401 (já aconteceu — checar `net._http_response.status_code` no Supabase
+  ao investigar "dados da Guru não atualizam").
 
 **Conectar:** Pagamentos → Integrações → card Guru → cola a URL do webhook no painel
 da Guru + os dois tokens no diálogo do CRM. Sem o User Token, só o webhook funciona
 (sem a sincronização de 1 minuto).
+
+### Como diagnosticar a sincronização
+
+```sql
+-- Cada chamada do cron e o status HTTP que a rota respondeu:
+select status_code, created, content from net._http_response order by created desc limit 5;
+-- Deve ser 200. 401 quase sempre é GURU_SYNC_SECRET (Vercel) != guru_sync_config.secret (Supabase).
+```
 
 ### Como pausar a sincronização
 

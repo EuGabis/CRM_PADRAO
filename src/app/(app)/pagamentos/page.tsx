@@ -81,21 +81,27 @@ function GuruProviderCard() {
         <span className="flex size-9 items-center justify-center rounded-lg bg-slate-100 text-sm font-black text-slate-600">
           G
         </span>
-        {guru.connected && <Badge className="bg-emerald-100 text-emerald-700">Conectado</Badge>}
+        {loaded && guru.connected && (
+          <Badge className="bg-emerald-100 text-emerald-700">Conectado</Badge>
+        )}
       </div>
       <p className="text-sm font-semibold text-slate-800">Guru</p>
       <p className="mt-1 flex-1 text-[11px] text-slate-500">
         Checkout, vendas e assinaturas da Digital Manager Guru — sincronizado a cada minuto.
       </p>
-      {guru.connected && (
-        <p className="mt-1 text-[10px] text-slate-400">
-          {guru.lastSyncedAt
-            ? `Última sincronização: ${format(new Date(guru.lastSyncedAt), "dd MMM, HH:mm:ss", { locale: ptBR })}`
-            : "Aguardando a primeira sincronização (roda a cada minuto)..."}
-        </p>
+      {!loaded ? (
+        <p className="mt-1 text-[10px] text-slate-400">Verificando conexão...</p>
+      ) : (
+        guru.connected && (
+          <p className="mt-1 text-[10px] text-slate-400">
+            {guru.lastSyncedAt
+              ? `Última sincronização: ${format(new Date(guru.lastSyncedAt), "dd MMM, HH:mm:ss", { locale: ptBR })}`
+              : "Aguardando a primeira sincronização (roda a cada minuto)..."}
+          </p>
+        )
       )}
       <Button
-        variant={guru.connected ? "outline" : "default"}
+        variant={loaded && guru.connected ? "outline" : "default"}
         size="sm"
         className="mt-3 h-7 text-xs"
         disabled={!loaded}
@@ -107,7 +113,7 @@ function GuruProviderCard() {
           setOpen(true);
         }}
       >
-        {guru.connected ? "Gerenciar" : "Conectar"}
+        {!loaded ? "..." : guru.connected ? "Gerenciar" : "Conectar"}
       </Button>
       <GuruDialog open={open} onOpenChange={setOpen} />
     </div>
