@@ -7,8 +7,16 @@ import { mapGuruSubscription, mapGuruTransaction } from "@/lib/integrations/guru
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** A API da Guru não deixa filtrar por data com janela maior que 180 dias. */
-const MAX_BACKFILL_DAYS = 175;
+/**
+ * Janela do PRIMEIRO backfill de vendas (last_synced_at nulo). A Guru permite
+ * até 180 dias por filtro de data, mas essa conta vende muito (2500+ vendas
+ * no total) — paginar 175 dias x 3 campos de data (ordered/confirmed/cancelled)
+ * sempre passava dos 60s do Vercel e a sincronização nunca avançava (confirmado
+ * nos logs: "Task timed out after 60 seconds" em toda chamada). 3 dias garante
+ * que o primeiro tick termine e o cursor incremental assuma — vendas mais
+ * antigas que isso não entram automaticamente por ora.
+ */
+const MAX_BACKFILL_DAYS = 3;
 /** Margem de segurança pra não perder atualizações entre um tick e outro. */
 const OVERLAP_MS = 60 * 60 * 1000;
 const UPSERT_CHUNK = 200;
