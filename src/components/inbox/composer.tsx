@@ -170,6 +170,10 @@ export function Composer({ conversationId }: { conversationId: string }) {
   };
 
   const send = async (scheduledFor?: string) => {
+    if (conversation?.channel === "whatsapp" && !conversation?.channelId && !internal && !scheduledFor) {
+      toast.error("Cadastre um canal de WhatsApp em Canais de atendimento para enviar.");
+      return;
+    }
     // WhatsApp real: envia pela Cloud API (a mensagem volta pelo Realtime)
     if (isWhatsapp && !internal && !scheduledFor) {
       const text = body.trim();

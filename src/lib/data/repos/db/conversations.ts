@@ -359,9 +359,26 @@ export const conversationActions = {
     const location = loc();
     if (!location) return null;
     const supabase = createClient();
+    let channelId: string | null = null;
+    if (channel === "whatsapp") {
+      const { data: ch } = await supabase
+        .from("whatsapp_channels")
+        .select("id")
+        .eq("location_id", location)
+        .eq("active", true)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      channelId = (ch as { id: string } | null)?.id ?? null;
+    }
     const { data, error } = await supabase
       .from("conversations")
-      .insert({ location_id: location, contact_id: contactId, channel })
+      .insert({
+        location_id: location,
+        contact_id: contactId,
+        channel,
+        ...(channelId ? { channel_id: channelId } : {}),
+      })
       .select()
       .single();
     if (error || !data) return null;
