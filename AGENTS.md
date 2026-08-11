@@ -304,8 +304,16 @@ venda/assinatura é vista de novo a cada mudança de status):
    `Authorization: Bearer {user_token}` — o **User Token**, obtido em Meu Perfil →
    Tokens API, diferente do Account Token) pra cada empresa conectada e faz upsert.
    Primeira sincronização: assinaturas sem filtro de data (tudo) e vendas dos
-   últimos 175 dias (máximo que a API da Guru permite por filtro de data); depois disso,
-   só o que mudou desde o último sync. Protegida por `x-guru-sync-secret`.
+   últimos 3 dias (175 dias — o máximo que a API da Guru permite por filtro de
+   data — estourava os 60s do Vercel numa conta com histórico grande; ver
+   `MAX_BACKFILL_DAYS` na rota); depois disso, só o que mudou desde o último
+   sync. Protegida por `x-guru-sync-secret`.
+3. **Backfill histórico** (retroativo, além dos 3 dias iniciais) — a partir de
+   onde o incremental já cobre, anda pra trás 7 dias por tick
+   (`HISTORY_CHUNK_DAYS`) até `HISTORY_START` (01/06/2024, fixo no código —
+   ajustar lá se precisar de outra data). Progresso em
+   `payment_credentials.history_backfill_cursor`/`history_backfill_done`
+   (migração `0017`), visível no card da Guru na aba Integrações.
 
 **Peças:**
 - `src/lib/integrations/guru.ts` — cliente REST (paginação por cursor, backoff em 429).

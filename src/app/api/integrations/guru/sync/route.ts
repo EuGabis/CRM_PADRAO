@@ -22,6 +22,15 @@ const OVERLAP_MS = 60 * 60 * 1000;
 const UPSERT_CHUNK = 200;
 
 /**
+ * Backfill histórico (retroativo, além do que o backfill inicial de 3 dias
+ * cobre): a partir de onde a cobertura incremental já começa, anda pra trás
+ * em pedaços de 7 dias por tick até chegar em HISTORY_START. 7 dias cabe
+ * folgado nos 60s mesmo pra essa conta com muitas vendas — ver migração 0017.
+ */
+const HISTORY_START = new Date("2024-06-01T00:00:00Z");
+const HISTORY_CHUNK_DAYS = 7;
+
+/**
  * Puxa vendas e assinaturas da API da Guru (REST, não webhook) pra cada
  * empresa conectada e grava/atualiza em payment_events/payment_subscriptions.
  * Chamada todo minuto pelo pg_cron (via pg_net, ver migração 0010),
@@ -55,7 +64,9 @@ export async function POST(request: Request) {
 
   const { data: credentials, error } = await db
     .from("payment_credentials")
-    .select("location_id, api_key, last_synced_at, sync_started_at")
+    .select(
+      "location_id, api_key, last_synced_at, sync_started_at, history_backfill_cursor, history_backfill_done"
+    )
     .eq("provider", "guru")
     .not("api_key", "is", null);
 
@@ -107,7 +118,13 @@ async function upsertMany(db: any, table: string, rows: any[]) {
 
 async function syncAccount(
   db: any,
-  cred: { location_id: string; api_key: string; last_synced_at: string | null }
+  cred: {
+    location_id: string;
+    api_key: string;
+    last_synced_at: string | null;
+    history_backfill_cursor: string | null;
+    history_backfill_done: boolean;
+  }
 ) {
   const userToken = cred.api_key;
   const now = new Date();
@@ -190,11 +207,76 @@ async function syncAccount(
     .eq("location_id", cred.location_id)
     .eq("provider", "guru");
 
+  // Backfill retroativo: melhor-esforço, roda depois do incremental e nunca
+  // impede o resto — se falhar, o próximo tick tenta o mesmo pedaço de novo.
+  let history: { historyRangeStart: string; historyRangeEnd: string; count: number } | null = null;
+  if (!cred.history_backfill_done) {
+    try {
+      history = await historyBackfillChunk(db, cred, userToken, windowStart);
+    } catch (e) {
+      console.error(
+        `[guru-sync] backfill histórico falhou p/ ${cred.location_id}:`,
+        e instanceof Error ? e.message : e
+      );
+    }
+  }
+
   return {
     locationId: cred.location_id,
     subscriptions: subs.length,
     transactions: byId.size,
     transactionsError,
     truncated: subsTruncated || txnsTruncated,
+    history,
+  };
+}
+
+/**
+ * Um pedaço do backfill retroativo (7 dias). `incrementalCoverageStart` é o
+ * início da janela que o sync incremental já cobriu nesta mesma chamada —
+ * usado só na primeira vez (cursor nulo) pra começar exatamente daí pra
+ * trás, sem sobrepor nem deixar buraco entre o incremental e o histórico.
+ */
+async function historyBackfillChunk(
+  db: any,
+  cred: { location_id: string; history_backfill_cursor: string | null },
+  userToken: string,
+  incrementalCoverageStart: Date
+) {
+  const chunkEnd = cred.history_backfill_cursor
+    ? new Date(cred.history_backfill_cursor)
+    : incrementalCoverageStart;
+  const chunkStartMs = chunkEnd.getTime() - HISTORY_CHUNK_DAYS * 24 * 60 * 60 * 1000;
+  const chunkStart = new Date(Math.max(HISTORY_START.getTime(), chunkStartMs));
+
+  const { items } = await fetchGuruTransactions(userToken, {
+    ordered_at_ini: toGuruDate(chunkStart),
+    ordered_at_end: toGuruDate(chunkEnd),
+  });
+
+  await upsertMany(
+    db,
+    "payment_events",
+    items.map((t: any) => ({
+      location_id: cred.location_id,
+      provider: "guru",
+      ...mapGuruTransaction(t),
+    }))
+  );
+
+  const done = chunkStart.getTime() <= HISTORY_START.getTime();
+  await db
+    .from("payment_credentials")
+    .update({
+      history_backfill_cursor: chunkStart.toISOString(),
+      history_backfill_done: done,
+    })
+    .eq("location_id", cred.location_id)
+    .eq("provider", "guru");
+
+  return {
+    historyRangeStart: toGuruDate(chunkStart),
+    historyRangeEnd: toGuruDate(chunkEnd),
+    count: items.length,
   };
 }
