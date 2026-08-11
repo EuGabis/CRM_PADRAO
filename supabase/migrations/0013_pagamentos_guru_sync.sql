@@ -57,6 +57,11 @@ alter table public.payment_subscriptions
 
 -- ============================================================
 -- Agendamento — roda a cada minuto
+--
+-- Superseded pela migração 0014: o segredo passa a morar em
+-- private.guru_sync_config (fora de qualquer arquivo versionado) em vez
+-- de escrito direto aqui. Rode 0013 e 0014 juntos, em ordem; 0014 troca
+-- o job por uma versão que não expõe o segredo em texto puro.
 -- ============================================================
 select cron.unschedule('lito-guru-sync')
 where exists (select 1 from cron.job where jobname = 'lito-guru-sync');
@@ -69,7 +74,7 @@ select cron.schedule(
     url := 'https://lito-crm.vercel.app/api/integrations/guru/sync',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'x-guru-sync-secret', '066b7b12be23992b80b8208a5c5d365a22c8e56c1b2b9bf5'
+      'x-guru-sync-secret', 'SUBSTITUIDO_PELA_MIGRACAO_0014'
     ),
     body := '{}'::jsonb
   );

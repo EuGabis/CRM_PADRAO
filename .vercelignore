@@ -1,0 +1,6 @@
+# Nunca subir env locais no deploy via CLI — Vercel já injeta as env vars
+# configuradas no dashboard; um .env local desatualizado sobrescrevendo
+# secrets de produção é exatamente o tipo de bug difícil de rastrear.
+.env
+.env.local
+.env.*.local

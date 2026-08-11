@@ -105,17 +105,39 @@ async function syncAccount(
   const now = new Date();
   const since = cred.last_synced_at ? new Date(cred.last_synced_at) : null;
 
-  // ---------- Assinaturas ----------
+  // Assinaturas e as 3 janelas de vendas (ordered_at/confirmed_at/cancelled_at) são
+  // consultas independentes na API da Guru — buscar tudo em paralelo em vez de
+  // sequencial. Uma conta com histórico grande passa fácil de 60s se isso rodar
+  // um pedido depois do outro.
   const subFilters: Record<string, string> = since
     ? {
         last_status_at_ini: toGuruDate(new Date(since.getTime() - OVERLAP_MS)),
         last_status_at_end: toGuruDate(now),
       }
     : {};
-  const { items: subs, truncated: subsTruncated } = await fetchGuruSubscriptions(
-    userToken,
-    subFilters
-  );
+  const windowStart = since
+    ? new Date(since.getTime() - OVERLAP_MS)
+    : new Date(now.getTime() - MAX_BACKFILL_DAYS * 24 * 60 * 60 * 1000);
+  const windowStartStr = toGuruDate(windowStart);
+  const windowEndStr = toGuruDate(now);
+
+  const [subsResult, ...txnResults] = await Promise.all([
+    fetchGuruSubscriptions(userToken, subFilters),
+    ...["ordered_at", "confirmed_at", "cancelled_at"].map((field) =>
+      fetchGuruTransactions(userToken, {
+        [`${field}_ini`]: windowStartStr,
+        [`${field}_end`]: windowEndStr,
+      })
+    ),
+  ]);
+
+  const { items: subs, truncated: subsTruncated } = subsResult;
+
+  // Assinaturas são o caminho crítico: grava PRIMEIRO e sozinho, pra que uma
+  // falha nas vendas (ex.: erro na API/upsert) não trave a atualização das
+  // assinaturas — antes as duas iam juntas num Promise.all e um erro nas vendas
+  // deixava o last_synced_at nulo pra sempre (re-backfill infinito, estourando
+  // o teto de 60s da função).
   await upsertMany(
     db,
     "payment_subscriptions",
@@ -126,33 +148,34 @@ async function syncAccount(
     }))
   );
 
-  // ---------- Vendas ----------
-  const windowStart = since
-    ? new Date(since.getTime() - OVERLAP_MS)
-    : new Date(now.getTime() - MAX_BACKFILL_DAYS * 24 * 60 * 60 * 1000);
-  const windowStartStr = toGuruDate(windowStart);
-  const windowEndStr = toGuruDate(now);
-
+  // Vendas: melhor-esforço e isolado. Se falhar, registramos o erro na resposta
+  // (visível em net._http_response no Supabase) e seguimos — sem bloquear o
+  // avanço do last_synced_at nem a atualização das assinaturas.
   const byId = new Map<string, any>();
   let txnsTruncated = false;
-  for (const field of ["ordered_at", "confirmed_at", "cancelled_at"]) {
-    const { items, truncated } = await fetchGuruTransactions(userToken, {
-      [`${field}_ini`]: windowStartStr,
-      [`${field}_end`]: windowEndStr,
-    });
+  let transactionsError: string | null = null;
+  for (const { items, truncated } of txnResults) {
     if (truncated) txnsTruncated = true;
     for (const t of items) byId.set(t.id, t);
   }
-  await upsertMany(
-    db,
-    "payment_events",
-    Array.from(byId.values()).map((t) => ({
-      location_id: cred.location_id,
-      provider: "guru",
-      ...mapGuruTransaction(t),
-    }))
-  );
+  try {
+    await upsertMany(
+      db,
+      "payment_events",
+      Array.from(byId.values()).map((t) => ({
+        location_id: cred.location_id,
+        provider: "guru",
+        ...mapGuruTransaction(t),
+      }))
+    );
+  } catch (e) {
+    transactionsError = e instanceof Error ? e.message : String(e);
+    console.error(`[guru-sync] upsert de vendas falhou p/ ${cred.location_id}:`, transactionsError);
+  }
 
+  // Avança a marca d'água sempre que as assinaturas gravaram — isso tira a conta
+  // do modo backfill (janela de 175 dias) e a coloca no incremental (janela
+  // curta), que cabe folgado nos 60s. Uma falha só nas vendas não impede isso.
   await db
     .from("payment_credentials")
     .update({ last_synced_at: now.toISOString() })
@@ -163,6 +186,7 @@ async function syncAccount(
     locationId: cred.location_id,
     subscriptions: subs.length,
     transactions: byId.size,
+    transactionsError,
     truncated: subsTruncated || txnsTruncated,
   };
 }

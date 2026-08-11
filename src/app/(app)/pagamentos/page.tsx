@@ -1,9 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import {
+  Bar,
+  BarChart,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip as RTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { SubNav } from "@/components/layout/subnav";
 import { KpiCard } from "@/components/shared/kpi-card";
 import { Badge } from "@/components/ui/badge";
@@ -17,16 +28,19 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
+import { EmptyState } from "@/components/shared/empty-state";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useContacts, useUsers, contactName } from "@/lib/data/repos/contacts";
+  Users2,
+  UserPlus,
+  Radar,
+  BarChart3,
+  FileText,
+  Upload,
+  Download,
+  Trash2,
+  Loader2,
+} from "lucide-react";
+import { useContacts, contactName } from "@/lib/data/repos/contacts";
 import { formatBRL } from "@/lib/data/repos/opportunities";
 import {
   paymentsActions,
@@ -37,24 +51,31 @@ import {
   type PaymentEvent,
   type PaymentSubscription,
 } from "@/lib/data/repos/db/payments";
+import {
+  ALLOWED_FILES,
+  paymentFilesActions,
+  usePaymentFiles,
+  type PaymentFile,
+} from "@/lib/data/repos/db/payment-files";
+import {
+  CONTACTS_PAGE_SIZE,
+  usePaymentContactsPage,
+  usePaymentContactsSummary,
+} from "@/lib/data/repos/db/payment-contacts";
 import { useMyMembership } from "@/lib/data/repos/db/team";
 import { classifyGuruStatus, guruStatusLabel } from "@/lib/data/guru";
-import { brand } from "@/lib/config/brand";
 import { cn } from "@/lib/utils";
 
 const TABS = [
   { label: "Integrações" },
   { label: "Arquivos e contratos" },
-  { label: "Pagamentos" },
-  { label: "Faturas e estimativas" },
-  { label: "Pedidos" },
-  { label: "Assinaturas" },
-  { label: "Links de pagamento" },
   { label: "Vendas" },
+  { label: "Assinaturas" },
+  { label: "Contatos" },
+  { label: "Leads" },
   { label: "Produtos" },
-  { label: "Cupons" },
-  { label: "Gift Cards" },
-  { label: "Configurações" },
+  { label: "R.P.P.C." },
+  { label: "Relatórios" },
 ];
 
 const PROVIDERS = [
@@ -81,21 +102,27 @@ function GuruProviderCard() {
         <span className="flex size-9 items-center justify-center rounded-lg bg-slate-100 text-sm font-black text-slate-600">
           G
         </span>
-        {guru.connected && <Badge className="bg-emerald-100 text-emerald-700">Conectado</Badge>}
+        {loaded && guru.connected && (
+          <Badge className="bg-emerald-100 text-emerald-700">Conectado</Badge>
+        )}
       </div>
       <p className="text-sm font-semibold text-slate-800">Guru</p>
       <p className="mt-1 flex-1 text-[11px] text-slate-500">
         Checkout, vendas e assinaturas da Digital Manager Guru — sincronizado a cada minuto.
       </p>
-      {guru.connected && (
-        <p className="mt-1 text-[10px] text-slate-400">
-          {guru.lastSyncedAt
-            ? `Última sincronização: ${format(new Date(guru.lastSyncedAt), "dd MMM, HH:mm:ss", { locale: ptBR })}`
-            : "Aguardando a primeira sincronização (roda a cada minuto)..."}
-        </p>
+      {!loaded ? (
+        <p className="mt-1 text-[10px] text-slate-400">Verificando conexão...</p>
+      ) : (
+        guru.connected && (
+          <p className="mt-1 text-[10px] text-slate-400">
+            {guru.lastSyncedAt
+              ? `Última sincronização: ${format(new Date(guru.lastSyncedAt), "dd MMM, HH:mm:ss", { locale: ptBR })}`
+              : "Aguardando a primeira sincronização (roda a cada minuto)..."}
+          </p>
+        )
       )}
       <Button
-        variant={guru.connected ? "outline" : "default"}
+        variant={loaded && guru.connected ? "outline" : "default"}
         size="sm"
         className="mt-3 h-7 text-xs"
         disabled={!loaded}
@@ -107,7 +134,7 @@ function GuruProviderCard() {
           setOpen(true);
         }}
       >
-        {guru.connected ? "Gerenciar" : "Conectar"}
+        {!loaded ? "..." : guru.connected ? "Gerenciar" : "Conectar"}
       </Button>
       <GuruDialog open={open} onOpenChange={setOpen} />
     </div>
@@ -318,21 +345,6 @@ function GuruLiveBadge() {
   return <Badge className="bg-emerald-100 text-emerald-700">● Ao vivo</Badge>;
 }
 
-const DOC_STATUS = [
-  { label: "Rascunho", count: 1 },
-  { label: "Aguardando por outros", count: 1 },
-  { label: "Concluído", count: 2 },
-  { label: "Pagamentos", count: 2 },
-  { label: "Arquivado", count: 0 },
-];
-
-const DOCS = [
-  { title: "Contrato de assinatura — Maurício Magalhães", status: "Concluído", client: "MM", date: "30 jun 2026", value: "R$ 147,00" },
-  { title: "Proposta implementação — Linx Consultoria", status: "Aguardando por outros", client: "TS", date: "28 jul 2026", value: "R$ 2.000,00" },
-  { title: "Contrato de assinatura — Carla Santos", status: "Concluído", client: "CS", date: "22 jul 2026", value: "R$ 197,00" },
-  { title: "Novo Documento", status: "Rascunho", client: "GR", date: "1 ago 2026", value: "R$ 0,00" },
-];
-
 function statusBadgeClass(status: string) {
   switch (status) {
     case "Pago":
@@ -455,7 +467,7 @@ function TransacoesMockTab() {
   return (
     <>
       <SectionHeader
-        title="Pagamentos"
+        title="Vendas"
         subtitle="Transações processadas pelos provedores conectados"
         action="Registrar pagamento"
         onAction={() => toast.info("Registro manual de pagamento chega com o backend")}
@@ -510,7 +522,7 @@ function TransacoesGuruTab() {
     <>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-bold text-slate-900">Pagamentos</h1>
+          <h1 className="text-lg font-bold text-slate-900">Vendas</h1>
           <p className="text-xs text-slate-500">Vendas sincronizadas da Guru (webhook + API)</p>
         </div>
         <GuruLiveBadge />
@@ -549,78 +561,6 @@ function TransacoesGuruTab() {
         />
       )}
       <RawPayloadDialog raw={rawEvent?.raw ?? null} onClose={() => setRawEvent(null)} />
-    </>
-  );
-}
-
-/* -------------------------- Faturas e estimativas ------------------------ */
-
-function FaturasTab() {
-  const nome = useClienteNome();
-  const rows = useMemo(
-    () => [
-      { num: "LT-2026-014", cliente: nome(1), valor: 2000, venc: "15 ago 2026", status: "Enviada" },
-      { num: "LT-2026-013", cliente: nome(4), valor: 590, venc: "12 ago 2026", status: "Enviada" },
-      { num: "LT-2026-012", cliente: nome(7), valor: 147, venc: "05 ago 2026", status: "Paga" },
-      { num: "LT-2026-011", cliente: nome(10), valor: 1470, venc: "30 jul 2026", status: "Paga" },
-      { num: "LT-2026-010", cliente: nome(13), valor: 297, venc: "25 jul 2026", status: "Vencida" },
-      { num: "LT-2026-009", cliente: nome(15), valor: 147, venc: "20 jul 2026", status: "Paga" },
-    ],
-    [nome]
-  );
-  return (
-    <>
-      <SectionHeader
-        title="Faturas e estimativas"
-        subtitle="Cobranças avulsas enviadas por e-mail e WhatsApp"
-        action="+ Nova fatura"
-        onAction={() => toast.info("Criação de faturas chega com o backend")}
-      />
-      <MiniTable
-        headers={["Nº", "Cliente", "Valor", "Vencimento", "Status"]}
-        rows={rows.map((r) => [
-          <span key="n" className="font-medium text-slate-800">{r.num}</span>,
-          <span key="c" className="text-slate-600">{r.cliente}</span>,
-          <span key="v" className="font-semibold text-slate-800">{formatBRL(r.valor)}</span>,
-          <span key="d" className="text-slate-500">{r.venc}</span>,
-          <StatusBadge key="s" status={r.status} />,
-        ])}
-      />
-    </>
-  );
-}
-
-/* --------------------------------- Pedidos ------------------------------- */
-
-function PedidosTab() {
-  const nome = useClienteNome();
-  const rows = useMemo(
-    () => [
-      { num: "#1042", cliente: nome(2), itens: "Plano Anual", total: 1470, status: "Concluído", data: "05 ago 2026" },
-      { num: "#1041", cliente: nome(6), itens: "Plano Mensal + Implementação", total: 2147, status: "Processando", data: "04 ago 2026" },
-      { num: "#1040", cliente: nome(9), itens: "Curso CRM na Prática", total: 297, status: "Concluído", data: "03 ago 2026" },
-      { num: "#1039", cliente: nome(12), itens: "Plano Mensal", total: 147, status: "Concluído", data: "01 ago 2026" },
-      { num: "#1038", cliente: nome(18), itens: "Implementação", total: 2000, status: "Processando", data: "30 jul 2026" },
-    ],
-    [nome]
-  );
-  return (
-    <>
-      <SectionHeader
-        title="Pedidos"
-        subtitle="Pedidos gerados por links de pagamento, faturas e checkout"
-      />
-      <MiniTable
-        headers={["Pedido", "Cliente", "Itens", "Total", "Status", "Data"]}
-        rows={rows.map((r) => [
-          <span key="n" className="font-medium text-slate-800">{r.num}</span>,
-          <span key="c" className="text-slate-600">{r.cliente}</span>,
-          <span key="i" className="text-slate-600">{r.itens}</span>,
-          <span key="t" className="font-semibold text-slate-800">{formatBRL(r.total)}</span>,
-          <StatusBadge key="s" status={r.status} />,
-          <span key="d" className="text-slate-500">{r.data}</span>,
-        ])}
-      />
     </>
   );
 }
@@ -732,88 +672,9 @@ function AssinaturasGuruTab() {
   );
 }
 
-/* --------------------------- Links de pagamento -------------------------- */
-
-const LINKS = [
-  { nome: "Plano Mensal — checkout", url: "pay.litocrm.com.br/mensal", valor: 147, cliques: 312, conversoes: 41 },
-  { nome: "Plano Anual — oferta", url: "pay.litocrm.com.br/anual", valor: 1470, cliques: 187, conversoes: 12 },
-  { nome: "Curso CRM na Prática", url: "pay.litocrm.com.br/curso", valor: 297, cliques: 96, conversoes: 18 },
-  { nome: "Implementação assistida", url: "pay.litocrm.com.br/impl", valor: 2000, cliques: 44, conversoes: 5 },
-];
-
-function LinksTab() {
-  return (
-    <>
-      <SectionHeader
-        title="Links de pagamento"
-        subtitle="Links de checkout compartilháveis por WhatsApp, e-mail e redes"
-        action="+ Novo link"
-        onAction={() => toast.info("Criação de links de pagamento chega com o backend")}
-      />
-      <MiniTable
-        headers={["Nome", "URL", "Valor", "Cliques", "Conversões"]}
-        rows={LINKS.map((l) => [
-          <span key="n" className="font-medium text-slate-800">{l.nome}</span>,
-          <span key="u" className="font-mono text-[11px] text-indigo-600">{l.url}</span>,
-          <span key="v" className="font-semibold text-slate-800">{formatBRL(l.valor)}</span>,
-          <span key="c" className="text-slate-600">{l.cliques}</span>,
-          <span key="cv" className="text-slate-600">
-            {l.conversoes} ({Math.round((l.conversoes / l.cliques) * 100)}%)
-          </span>,
-        ])}
-      />
-    </>
-  );
-}
-
-/* --------------------------------- Vendas -------------------------------- */
-
-function VendasTab() {
-  const nome = useClienteNome();
-  const users = useUsers();
-  const vendedor = useMemo(
-    () => (i: number) => (users.length > 0 ? users[i % users.length].name : "—"),
-    [users]
-  );
-  const rows = useMemo(
-    () => [
-      { cliente: nome(0), produto: "Plano Mensal", valor: 147, vendedor: vendedor(1), data: "06 ago 2026" },
-      { cliente: nome(3), produto: "Plano Mensal", valor: 147, vendedor: vendedor(3), data: "06 ago 2026" },
-      { cliente: nome(5), produto: "Curso CRM na Prática", valor: 297, vendedor: vendedor(2), data: "06 ago 2026" },
-      { cliente: nome(8), produto: "Plano Anual", valor: 1470, vendedor: vendedor(1), data: "05 ago 2026" },
-      { cliente: nome(11), produto: "Implementação", valor: 2000, vendedor: vendedor(0), data: "04 ago 2026" },
-      { cliente: nome(14), produto: "Plano Mensal", valor: 147, vendedor: vendedor(4), data: "03 ago 2026" },
-    ],
-    [nome, vendedor]
-  );
-  return (
-    <>
-      <SectionHeader
-        title="Vendas"
-        subtitle="Resumo de vendas fechadas pelo time"
-      />
-      <div className="mb-4 grid gap-3 md:grid-cols-3">
-        <KpiCard label="Vendas hoje" value="R$ 591,00" hint="3 vendas" />
-        <KpiCard label="Vendas na semana" value="R$ 4.208,00" delta={15} />
-        <KpiCard label="Vendas no mês" value="R$ 12.480,00" delta={12} />
-      </div>
-      <MiniTable
-        headers={["Cliente", "Produto", "Valor", "Vendedor", "Data"]}
-        rows={rows.map((r) => [
-          <span key="c" className="font-medium text-slate-800">{r.cliente}</span>,
-          <span key="p" className="text-slate-600">{r.produto}</span>,
-          <span key="v" className="font-semibold text-slate-800">{formatBRL(r.valor)}</span>,
-          <span key="vd" className="text-slate-600">{r.vendedor}</span>,
-          <span key="d" className="text-slate-500">{r.data}</span>,
-        ])}
-      />
-    </>
-  );
-}
-
 /* -------------------------------- Produtos ------------------------------- */
 
-const PRODUTOS = [
+const PRODUTOS_MOCK = [
   { nome: "Plano Mensal", desc: "Acesso completo à plataforma com cobrança mensal.", preco: 147, tipo: "Recorrente", ativo: true },
   { nome: "Plano Anual", desc: "12 meses com 2 meses de desconto na adesão.", preco: 1470, tipo: "Recorrente", ativo: true },
   { nome: "Implementação", desc: "Setup assistido: funis, automações e integrações.", preco: 2000, tipo: "Único", ativo: true },
@@ -821,16 +682,20 @@ const PRODUTOS = [
 ];
 
 function ProdutosTab() {
+  const { guru, loaded } = useGuruIntegration();
+  if (!loaded) return null;
+  return guru.connected ? <ProdutosGuruTab /> : <ProdutosMockTab />;
+}
+
+function ProdutosMockTab() {
   return (
     <>
       <SectionHeader
         title="Produtos"
         subtitle="Catálogo usado em faturas, links de pagamento e checkout"
-        action="+ Novo produto"
-        onAction={() => toast.info("Criação de produtos chega com o backend")}
       />
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {PRODUTOS.map((p) => (
+        {PRODUTOS_MOCK.map((p) => (
           <div key={p.nome} className="flex flex-col rounded-xl border bg-white p-4">
             <div className="mb-2 flex items-center justify-between">
               <Badge variant="secondary" className="bg-slate-100 text-slate-600">
@@ -855,136 +720,525 @@ function ProdutosTab() {
   );
 }
 
-/* --------------------------------- Cupons -------------------------------- */
-
-const CUPONS = [
-  { codigo: "AUTOMACAO70", desconto: "70%", usos: "34 / 100", validade: "31 ago 2026", status: "Ativo" },
-  { codigo: "BEMVINDO50", desconto: "R$ 50,00", usos: "112 / ∞", validade: "Sem expiração", status: "Ativo" },
-  { codigo: "ANUAL20", desconto: "20%", usos: "8 / 50", validade: "30 set 2026", status: "Ativo" },
-  { codigo: "BLACK2025", desconto: "40%", usos: "230 / 230", validade: "01 dez 2025", status: "Expirado" },
-];
-
-function CuponsTab() {
-  return (
-    <>
-      <SectionHeader
-        title="Cupons"
-        subtitle="Descontos aplicáveis em links de pagamento e checkout"
-        action="+ Novo cupom"
-        onAction={() => toast.info("Criação de cupons chega com o backend")}
-      />
-      <MiniTable
-        headers={["Código", "Desconto", "Usos / Limite", "Validade", "Status"]}
-        rows={CUPONS.map((c) => [
-          <span key="c" className="font-mono text-[11px] font-semibold text-slate-800">{c.codigo}</span>,
-          <span key="d" className="font-semibold text-indigo-600">{c.desconto}</span>,
-          <span key="u" className="text-slate-600">{c.usos}</span>,
-          <span key="v" className="text-slate-500">{c.validade}</span>,
-          <StatusBadge key="s" status={c.status} />,
-        ])}
-      />
-    </>
-  );
+interface GuruProductRow {
+  id: string;
+  name: string;
+  type: string;
+  is_hidden?: number;
+  marketplace_name?: string;
+  group?: { name?: string };
+  created_at?: number;
 }
 
-/* ------------------------------- Gift Cards ------------------------------ */
+function ProdutosGuruTab() {
+  const [state, setState] = useState<{
+    loading: boolean;
+    error: string | null;
+    products: GuruProductRow[];
+  }>({ loading: true, error: null, products: [] });
 
-function GiftCardsTab() {
-  const nome = useClienteNome();
-  const rows = useMemo(
-    () => [
-      { codigo: "GIFT-••••-8341", saldo: 150, comprador: nome(2), validade: "31 dez 2026", status: "Ativo" },
-      { codigo: "GIFT-••••-5127", saldo: 62.5, comprador: nome(7), validade: "31 out 2026", status: "Ativo" },
-      { codigo: "GIFT-••••-9904", saldo: 0, comprador: nome(13), validade: "30 jun 2026", status: "Expirado" },
-    ],
-    [nome]
-  );
+  useEffect(() => {
+    let active = true;
+    fetch("/api/integrations/guru/products")
+      .then(async (res) => {
+        const json = await res.json();
+        if (!active) return;
+        if (!res.ok) {
+          setState({ loading: false, error: json.error ?? "Falha ao carregar produtos", products: [] });
+          return;
+        }
+        setState({ loading: false, error: null, products: json.products ?? [] });
+      })
+      .catch((e) => {
+        if (active) setState({ loading: false, error: e instanceof Error ? e.message : "Falha ao carregar", products: [] });
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <>
-      <SectionHeader
-        title="Gift Cards"
-        subtitle="Cartões-presente emitidos e saldos disponíveis"
-        action="+ Emitir gift card"
-        onAction={() => toast.info("Emissão de gift cards chega com o backend")}
-      />
-      <MiniTable
-        headers={["Código", "Saldo", "Comprador", "Validade", "Status"]}
-        rows={rows.map((g) => [
-          <span key="c" className="font-mono text-[11px] font-semibold text-slate-800">{g.codigo}</span>,
-          <span key="s" className="font-semibold text-slate-800">{formatBRL(g.saldo)}</span>,
-          <span key="b" className="text-slate-600">{g.comprador}</span>,
-          <span key="v" className="text-slate-500">{g.validade}</span>,
-          <StatusBadge key="st" status={g.status} />,
-        ])}
-      />
-    </>
-  );
-}
-
-/* ------------------------------ Configurações ---------------------------- */
-
-const MOEDAS: Record<string, string> = {
-  BRL: "Real brasileiro (BRL)",
-  USD: "Dólar americano (USD)",
-  EUR: "Euro (EUR)",
-};
-
-function ConfigPagamentosTab() {
-  const [moeda, setMoeda] = useState("BRL");
-  const [reciboAuto, setReciboAuto] = useState(true);
-  const [textoRecibo, setTextoRecibo] = useState(
-    `Obrigado pela sua compra! Este é o recibo emitido pela ${brand.name}. Em caso de dúvidas, responda este e-mail ou fale com a gente no WhatsApp.`
-  );
-  return (
-    <>
-      <SectionHeader
-        title="Configurações de pagamento"
-        subtitle="Moeda, recibos e preferências de cobrança"
-      />
-      <div className="max-w-2xl space-y-4 rounded-xl border bg-white p-5">
-        <div className="space-y-1">
-          <Label className="text-xs">Moeda padrão</Label>
-          <Select value={moeda} onValueChange={(v) => v && setMoeda(v)}>
-            <SelectTrigger className="h-8 w-64 text-xs">
-              <SelectValue>{MOEDAS[moeda]}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(MOEDAS).map(([value, label]) => (
-                <SelectItem key={value} value={value} className="text-xs">
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <SectionHeader title="Produtos" subtitle="Catálogo de produtos da Guru (GET /api/v2/products)" />
+      {state.loading ? (
+        <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
+          Carregando produtos da Guru...
         </div>
-        <div className="flex items-center justify-between rounded-lg border p-3">
-          <div>
-            <p className="text-xs font-semibold text-slate-700">Recibo automático por e-mail</p>
-            <p className="text-[11px] text-slate-500">
-              Envia um recibo ao cliente após cada pagamento confirmado
-            </p>
+      ) : state.error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center text-xs text-red-600">
+          {state.error}
+        </div>
+      ) : state.products.length === 0 ? (
+        <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
+          Nenhum produto encontrado na conta da Guru.
+        </div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {state.products.map((p) => (
+            <div key={p.id} className="flex flex-col rounded-xl border bg-white p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <Badge variant="secondary" className="bg-slate-100 text-slate-600">
+                  {p.type === "plan" ? "Assinatura" : "Produto"}
+                </Badge>
+                {p.is_hidden ? (
+                  <Badge variant="secondary" className="bg-slate-100 text-slate-500">Oculto</Badge>
+                ) : (
+                  <Badge className="bg-emerald-100 text-emerald-700">Visível</Badge>
+                )}
+              </div>
+              <p className="text-sm font-semibold text-slate-800">{p.name}</p>
+              <p className="mt-1 flex-1 text-[11px] text-slate-500">
+                {p.group?.name ?? "Sem grupo"} · {p.marketplace_name ?? "—"}
+              </p>
+              <p className="mt-3 text-[11px] text-slate-400">
+                {p.created_at
+                  ? `Criado em ${format(new Date(p.created_at * 1000), "dd MMM yyyy", { locale: ptBR })}`
+                  : "—"}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* -------------------------------- Contatos ------------------------------- */
+
+function ContatosTab() {
+  const { guru, loaded } = useGuruIntegration();
+  if (!loaded) return null;
+  return guru.connected ? (
+    <ContatosGuruTab />
+  ) : (
+    <EmptyState
+      icon={Users2}
+      title="Contatos da Guru"
+      description="Conecte a Guru na aba Integrações. Assim que os dados sincronizarem, seus contatos aparecem aqui automaticamente."
+    />
+  );
+}
+
+/** Paginação estilo Guru: Anterior / números / Próxima. */
+function Pager({ page, pageCount, onChange }: { page: number; pageCount: number; onChange: (p: number) => void }) {
+  if (pageCount <= 1) return null;
+  // janela de até 5 números em volta da página atual
+  const start = Math.max(0, Math.min(page - 2, pageCount - 5));
+  const nums = Array.from({ length: Math.min(5, pageCount) }, (_, i) => start + i);
+  const btn = "flex h-7 min-w-7 items-center justify-center rounded-md border px-2 text-[11px] font-medium";
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        className={cn(btn, "text-slate-600 disabled:opacity-40")}
+        disabled={page === 0}
+        onClick={() => onChange(page - 1)}
+      >
+        Anterior
+      </button>
+      {start > 0 && <span className="px-1 text-[11px] text-slate-400">…</span>}
+      {nums.map((n) => (
+        <button
+          key={n}
+          onClick={() => onChange(n)}
+          className={cn(btn, n === page ? "border-indigo-500 bg-indigo-500 text-white" : "text-slate-600 hover:bg-slate-100")}
+        >
+          {n + 1}
+        </button>
+      ))}
+      {start + nums.length < pageCount && <span className="px-1 text-[11px] text-slate-400">…</span>}
+      <button
+        className={cn(btn, "text-slate-600 disabled:opacity-40")}
+        disabled={page >= pageCount - 1}
+        onClick={() => onChange(page + 1)}
+      >
+        Próxima
+      </button>
+    </div>
+  );
+}
+
+function ContatosGuruTab() {
+  const [page, setPage] = useState(0);
+  const summary = usePaymentContactsSummary();
+  const { rows, total, loading } = usePaymentContactsPage(page);
+
+  const pageCount = Math.max(1, Math.ceil(total / CONTACTS_PAGE_SIZE));
+  const firstOnPage = total === 0 ? 0 : page * CONTACTS_PAGE_SIZE + 1;
+  const lastOnPage = Math.min(total, (page + 1) * CONTACTS_PAGE_SIZE);
+  const contacts = summary?.contacts ?? total;
+  const revenue = summary?.revenue ?? 0;
+
+  return (
+    <>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-slate-900">Contatos</h1>
+          <p className="text-xs text-slate-500">Todos os contatos da Guru (vendas e assinaturas), com histórico completo</p>
+        </div>
+        <GuruLiveBadge />
+      </div>
+      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Contatos" value={summary ? String(contacts) : "…"} />
+        <KpiCard label="Receita total" value={summary ? formatBRL(revenue) : "…"} />
+        <KpiCard label="Ticket por contato" value={summary ? formatBRL(contacts ? revenue / contacts : 0) : "…"} />
+        <KpiCard label="Com assinatura ativa" value={summary ? String(summary.withSubs) : "…"} />
+      </div>
+      {total === 0 && !loading ? (
+        <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
+          Nenhum contato ainda. Eles aparecem aqui conforme as vendas e assinaturas sincronizam da Guru.
+        </div>
+      ) : (
+        <>
+          <div className={cn("transition-opacity", loading && "opacity-50")}>
+            <MiniTable
+              headers={["Contato", "E-mail", "Compras", "Total gasto", "Assinaturas", "Última atividade"]}
+              rows={rows.map((b) => [
+                <span key="n" className="font-medium text-slate-800">{b.name ?? b.email ?? "—"}</span>,
+                <span key="e" className="text-slate-500">{b.email ?? "—"}</span>,
+                <span key="p" className="text-slate-600">{b.purchases}</span>,
+                <span key="t" className="font-semibold text-slate-800">{formatBRL(b.totalSpent)}</span>,
+                <span key="s" className="text-slate-600">
+                  {b.activeSubs > 0 ? (
+                    <Badge className="bg-emerald-100 text-emerald-700">
+                      {b.activeSubs} ativa{b.activeSubs > 1 ? "s" : ""}
+                    </Badge>
+                  ) : (
+                    "—"
+                  )}
+                </span>,
+                <span key="d" className="text-slate-500">
+                  {b.lastActivity ? format(new Date(b.lastActivity), "dd MMM yyyy", { locale: ptBR }) : "—"}
+                </span>,
+              ])}
+            />
           </div>
-          <Switch checked={reciboAuto} onCheckedChange={(v) => setReciboAuto(!!v)} />
+          <div className="mt-3 flex items-center justify-between">
+            <p className="text-[11px] text-slate-400">
+              {firstOnPage}–{lastOnPage} de {total.toLocaleString("pt-BR")} contatos
+            </p>
+            <Pager page={page} pageCount={pageCount} onChange={setPage} />
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/* ------------------------------- Relatórios ------------------------------ */
+
+const CHART_INDIGO = "#6366f1";
+const SUB_COLORS = { ativa: "#10b981", atrasado: "#f59e0b", cancelado: "#ef4444", outro: "#94a3b8" };
+
+function RelatoriosTab() {
+  const { guru, loaded } = useGuruIntegration();
+  if (!loaded) return null;
+  return guru.connected ? (
+    <RelatoriosGuruTab />
+  ) : (
+    <EmptyState
+      icon={BarChart3}
+      title="Relatórios"
+      description="Conecte a Guru para ver receita por mês, os produtos que mais vendem e o estado das assinaturas."
+    />
+  );
+}
+
+function RelatoriosGuruTab() {
+  const events = usePaymentEvents();
+  const subscriptions = usePaymentSubscriptions();
+
+  const data = useMemo(() => {
+    const approved = events.filter((e) => classifyGuruStatus(e.status) === "aprovado");
+    const revenue = approved.reduce((s, e) => s + (e.amount ?? 0), 0);
+
+    // Receita dos últimos 6 meses
+    const now = new Date();
+    const months: { key: string; label: string; total: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: format(d, "MMM/yy", { locale: ptBR }), total: 0 });
+    }
+    const idxByKey = new Map(months.map((m, i) => [m.key, i]));
+    for (const e of approved) {
+      if (!e.guruCreatedAt) continue;
+      const d = new Date(e.guruCreatedAt);
+      const idx = idxByKey.get(`${d.getFullYear()}-${d.getMonth()}`);
+      if (idx !== undefined) months[idx].total += e.amount ?? 0;
+    }
+
+    // Top produtos por receita
+    const prod = new Map<string, number>();
+    for (const e of approved) {
+      const name = e.productName ?? "Sem produto";
+      prod.set(name, (prod.get(name) ?? 0) + (e.amount ?? 0));
+    }
+    const topProducts = Array.from(prod.entries())
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 6);
+    const topMax = Math.max(1, ...topProducts.map((p) => p.total));
+
+    // Assinaturas por status
+    const subCounts = { ativa: 0, atrasado: 0, cancelado: 0, outro: 0 };
+    for (const s of subscriptions) {
+      const cat = classifyGuruStatus(s.status);
+      if (cat === "aprovado") subCounts.ativa++;
+      else if (cat === "atrasado") subCounts.atrasado++;
+      else if (cat === "cancelado" || cat === "expirado") subCounts.cancelado++;
+      else subCounts.outro++;
+    }
+    const pie = [
+      { name: "Ativas", value: subCounts.ativa, color: SUB_COLORS.ativa },
+      { name: "Atrasadas", value: subCounts.atrasado, color: SUB_COLORS.atrasado },
+      { name: "Canceladas", value: subCounts.cancelado, color: SUB_COLORS.cancelado },
+      { name: "Outras", value: subCounts.outro, color: SUB_COLORS.outro },
+    ].filter((d) => d.value > 0);
+
+    return {
+      revenue,
+      salesCount: approved.length,
+      ticket: approved.length ? revenue / approved.length : 0,
+      activeSubs: subCounts.ativa,
+      months,
+      topProducts,
+      topMax,
+      pie,
+    };
+  }, [events, subscriptions]);
+
+  return (
+    <>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-slate-900">Relatórios</h1>
+          <p className="text-xs text-slate-500">Consolidado de vendas e assinaturas da Guru</p>
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Texto padrão do recibo</Label>
-          <Textarea
-            value={textoRecibo}
-            onChange={(e) => setTextoRecibo(e.target.value)}
-            rows={4}
-            className="text-xs"
-          />
+        <GuruLiveBadge />
+      </div>
+      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Receita aprovada" value={formatBRL(data.revenue)} />
+        <KpiCard label="Vendas aprovadas" value={String(data.salesCount)} />
+        <KpiCard label="Ticket médio" value={formatBRL(data.ticket)} />
+        <KpiCard label="Assinaturas ativas" value={String(data.activeSubs)} />
+      </div>
+      <div className="grid gap-3 lg:grid-cols-3">
+        <div className="rounded-xl border bg-white p-4 lg:col-span-2">
+          <p className="mb-3 text-xs font-semibold text-slate-700">Receita por mês (aprovadas)</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={data.months} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+              <YAxis
+                tick={{ fontSize: 11, fill: "#94a3b8" }}
+                axisLine={false}
+                tickLine={false}
+                width={64}
+                tickFormatter={(v) => formatBRL(Number(v)).replace(/\s?R\$\s?/, "R$")}
+              />
+              <RTooltip
+                formatter={(v) => formatBRL(Number(v))}
+                contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
+              />
+              <Bar dataKey="total" fill={CHART_INDIGO} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => toast.success("Configurações de pagamento salvas")}
-          >
-            Salvar
-          </Button>
+        <div className="rounded-xl border bg-white p-4">
+          <p className="mb-3 text-xs font-semibold text-slate-700">Assinaturas por status</p>
+          {data.pie.length === 0 ? (
+            <p className="py-12 text-center text-xs text-slate-400">Sem assinaturas ainda.</p>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie data={data.pie} dataKey="value" nameKey="name" innerRadius={44} outerRadius={70} paddingAngle={2}>
+                    {data.pie.map((d) => (
+                      <Cell key={d.name} fill={d.color} />
+                    ))}
+                  </Pie>
+                  <RTooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="mt-2 space-y-1">
+                {data.pie.map((d) => (
+                  <div key={d.name} className="flex items-center justify-between text-[11px]">
+                    <span className="flex items-center gap-1.5 text-slate-600">
+                      <span className="size-2 rounded-full" style={{ background: d.color }} />
+                      {d.name}
+                    </span>
+                    <span className="font-medium text-slate-800">{d.value}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
+      <div className="mt-3 rounded-xl border bg-white p-4">
+        <p className="mb-3 text-xs font-semibold text-slate-700">Produtos que mais faturam</p>
+        {data.topProducts.length === 0 ? (
+          <p className="py-8 text-center text-xs text-slate-400">Nenhuma venda aprovada ainda.</p>
+        ) : (
+          <div className="space-y-2">
+            {data.topProducts.map((p) => (
+              <div key={p.name} className="flex items-center gap-3">
+                <span className="w-40 shrink-0 truncate text-xs text-slate-700" title={p.name}>{p.name}</span>
+                <div className="h-4 flex-1 overflow-hidden rounded bg-slate-100">
+                  <div className="h-full rounded bg-indigo-500" style={{ width: `${(p.total / data.topMax) * 100}%` }} />
+                </div>
+                <span className="w-24 shrink-0 text-right text-xs font-semibold text-slate-800">{formatBRL(p.total)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/* -------------------------------- Placeholders ---------------------------- */
+
+function LeadsTab() {
+  return (
+    <EmptyState
+      icon={UserPlus}
+      title="Leads"
+      description="A API pública da Guru não expõe um recurso de leads separado — só de contatos (quem já comprou aparece na aba Contatos). Esta aba fica reservada para quando decidirmos puxar todos os contatos capturados da Guru (incl. quem ainda não comprou)."
+    />
+  );
+}
+
+function RPPCTab() {
+  return (
+    <EmptyState
+      icon={Radar}
+      title="R.P.P.C."
+      description="Rastreamento de campanhas, checkouts, grupos e custo de tráfego da Guru — o domínio mais complexo dos que faltam, com vários sub-recursos na API. Ainda não construído."
+    />
+  );
+}
+
+/* -------------------------- Arquivos e contratos ------------------------- */
+
+function formatBytes(n: number | null): string {
+  if (!n) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+const FILE_ACCEPT = [
+  ".pdf",
+  ".docx",
+  ...ALLOWED_FILES.map((a) => a.mime),
+].join(",");
+
+function ArquivosTab() {
+  const { files, ready } = usePaymentFiles();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setBusy(true);
+    const res = await paymentFilesActions.upload(file);
+    setBusy(false);
+    if (res.ok) toast.success("Arquivo enviado");
+    else toast.error(res.error ?? "Falha no upload");
+  };
+
+  const onDownload = async (f: PaymentFile) => {
+    const url = await paymentFilesActions.signedUrl(f.path);
+    if (url) window.open(url, "_blank", "noopener");
+    else toast.error("Não foi possível gerar o link de download");
+  };
+
+  const onDelete = async (f: PaymentFile) => {
+    if (!window.confirm(`Excluir "${f.name}"? Essa ação não pode ser desfeita.`)) return;
+    const ok = await paymentFilesActions.remove(f.id, f.path);
+    if (ok) toast.success("Arquivo excluído");
+    else toast.error("Não foi possível excluir");
+  };
+
+  return (
+    <>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-slate-900">Arquivos e contratos</h1>
+          <p className="text-xs text-slate-500">Guarde contratos e propostas em PDF ou DOCX (até 15 MB)</p>
+        </div>
+        <input ref={inputRef} type="file" accept={FILE_ACCEPT} className="hidden" onChange={onFile} />
+        <Button size="sm" className="h-8 text-xs" disabled={busy} onClick={() => inputRef.current?.click()}>
+          {busy ? (
+            <><Loader2 className="mr-1.5 size-3.5 animate-spin" /> Enviando...</>
+          ) : (
+            <><Upload className="mr-1.5 size-3.5" /> Enviar arquivo</>
+          )}
+        </Button>
+      </div>
+      {!ready ? (
+        <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">Carregando arquivos...</div>
+      ) : files.length === 0 ? (
+        <EmptyState
+          icon={FileText}
+          title="Nenhum arquivo ainda"
+          description="Envie contratos e propostas em PDF ou DOCX. Ficam guardados com segurança, visíveis só para a sua empresa."
+        />
+      ) : (
+        <div className="overflow-hidden rounded-xl border bg-white">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b text-[11px] text-slate-400">
+                <th className="px-4 py-2.5 font-medium">Arquivo</th>
+                <th className="px-4 py-2.5 font-medium">Tipo</th>
+                <th className="px-4 py-2.5 font-medium">Tamanho</th>
+                <th className="px-4 py-2.5 font-medium">Enviado em</th>
+                <th className="px-4 py-2.5" />
+              </tr>
+            </thead>
+            <tbody>
+              {files.map((f) => (
+                <tr key={f.id} className="border-b last:border-0">
+                  <td className="px-4 py-2.5">
+                    <span className="flex items-center gap-2 font-medium text-slate-800">
+                      <FileText className="size-4 shrink-0 text-slate-400" />
+                      <span className="truncate">{f.name}</span>
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <Badge variant="secondary" className="bg-slate-100 text-slate-600">
+                      {f.name.toLowerCase().endsWith(".docx") ? "DOCX" : "PDF"}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-500">{formatBytes(f.size)}</td>
+                  <td className="px-4 py-2.5 text-slate-500">
+                    {format(new Date(f.createdAt), "dd MMM yyyy, HH:mm", { locale: ptBR })}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => onDownload(f)}
+                        className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                        title="Baixar"
+                      >
+                        <Download className="size-4" />
+                      </button>
+                      <button
+                        onClick={() => onDelete(f)}
+                        className="rounded p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                        title="Excluir"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   );
 }
@@ -993,7 +1247,6 @@ function ConfigPagamentosTab() {
 
 export default function PagamentosPage() {
   const [tab, setTab] = useState("Integrações");
-  const [docTab, setDocTab] = useState("Rascunho");
 
   return (
     <div>
@@ -1035,89 +1288,21 @@ export default function PagamentosPage() {
             </div>
           </>
         ) : tab === "Arquivos e contratos" ? (
-          <>
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h1 className="text-lg font-bold text-slate-900">Documentos e contratos</h1>
-                <p className="text-xs text-slate-500">Propostas, estimativas e contratos com assinatura eletrônica</p>
-              </div>
-              <Button size="sm" className="h-8 text-xs" onClick={() => toast.info("Editor de documentos chega em breve")}>
-                + Novo
-              </Button>
-            </div>
-            <div className="mb-3 flex gap-1">
-              {DOC_STATUS.map((s) => (
-                <button
-                  key={s.label}
-                  onClick={() => setDocTab(s.label)}
-                  className={cn(
-                    "rounded-full px-3 py-1 text-[11px] font-medium",
-                    docTab === s.label ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"
-                  )}
-                >
-                  {s.label} ({s.count})
-                </button>
-              ))}
-            </div>
-            <div className="rounded-xl border bg-white">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b text-[11px] text-slate-400">
-                    <th className="px-4 py-2.5 font-medium">Título</th>
-                    <th className="px-4 py-2.5 font-medium">Status</th>
-                    <th className="px-4 py-2.5 font-medium">Cliente</th>
-                    <th className="px-4 py-2.5 font-medium">Modificado</th>
-                    <th className="px-4 py-2.5 font-medium">Valor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {DOCS.filter((d) => docTab === "Pagamentos" ? d.value !== "R$ 0,00" : d.status === docTab || docTab === "Todos").map((d) => (
-                    <tr key={d.title} className="border-b last:border-0">
-                      <td className="px-4 py-2.5 font-medium text-slate-800">{d.title}</td>
-                      <td className="px-4 py-2.5">
-                        <Badge
-                          variant="secondary"
-                          className={cn(
-                            d.status === "Concluído" && "bg-emerald-100 text-emerald-700",
-                            d.status === "Aguardando por outros" && "bg-amber-100 text-amber-700"
-                          )}
-                        >
-                          {d.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className="flex size-6 items-center justify-center rounded-full bg-slate-200 text-[9px] font-bold text-slate-600">
-                          {d.client}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-500">{d.date}</td>
-                      <td className="px-4 py-2.5 font-semibold text-emerald-600">{d.value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        ) : tab === "Pagamentos" ? (
+          <ArquivosTab />
+        ) : tab === "Vendas" ? (
           <TransacoesTab />
-        ) : tab === "Faturas e estimativas" ? (
-          <FaturasTab />
-        ) : tab === "Pedidos" ? (
-          <PedidosTab />
         ) : tab === "Assinaturas" ? (
           <AssinaturasTab />
-        ) : tab === "Links de pagamento" ? (
-          <LinksTab />
-        ) : tab === "Vendas" ? (
-          <VendasTab />
+        ) : tab === "Contatos" ? (
+          <ContatosTab />
+        ) : tab === "Leads" ? (
+          <LeadsTab />
         ) : tab === "Produtos" ? (
           <ProdutosTab />
-        ) : tab === "Cupons" ? (
-          <CuponsTab />
-        ) : tab === "Gift Cards" ? (
-          <GiftCardsTab />
+        ) : tab === "R.P.P.C." ? (
+          <RPPCTab />
         ) : (
-          <ConfigPagamentosTab />
+          <RelatoriosTab />
         )}
       </div>
     </div>
