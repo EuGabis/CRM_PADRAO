@@ -115,6 +115,19 @@ function mapPaymentSubscription(row: any): PaymentSubscription {
 
 const MAX_EVENTS = 100;
 
+/**
+ * Insere mantendo a ordem (mais recente primeiro pela chave de data) — um
+ * INSERT/UPDATE em tempo real chega fora de ordem em relação ao que já está
+ * na tela (ex.: o sync ainda preenchendo o backfill grava vendas antigas
+ * depois de vendas novas). Um prepend simples quebrava a ordenação.
+ */
+function insertSorted<T>(list: T[], item: T, key: (x: T) => string | null): T[] {
+  const time = (v: string | null) => (v ? new Date(v).getTime() : -Infinity);
+  const t = time(key(item));
+  const idx = list.findIndex((x) => time(key(x)) < t);
+  return idx === -1 ? [...list, item] : [...list.slice(0, idx), item, ...list.slice(idx)];
+}
+
 interface PaymentsState {
   loaded: boolean;
   loading: boolean;
@@ -185,7 +198,9 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
           const event = mapPaymentEvent(payload.new);
           const s = get();
           if (s.events.some((e) => e.id === event.id)) return;
-          set({ events: [event, ...s.events].slice(0, MAX_EVENTS) });
+          set({
+            events: insertSorted(s.events, event, (e) => e.guruCreatedAt).slice(0, MAX_EVENTS),
+          });
         }
       )
       .on(
@@ -208,7 +223,9 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
           const sub = mapPaymentSubscription(payload.new);
           const s = get();
           if (s.subscriptions.some((x) => x.id === sub.id)) return;
-          set({ subscriptions: [sub, ...s.subscriptions] });
+          set({
+            subscriptions: insertSorted(s.subscriptions, sub, (x) => x.guruUpdatedAt),
+          });
         }
       )
       .on(
@@ -217,10 +234,9 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
         (payload) => {
           const sub = mapPaymentSubscription(payload.new);
           const s = get();
+          const withoutOld = s.subscriptions.filter((x) => x.id !== sub.id);
           set({
-            subscriptions: s.subscriptions.some((x) => x.id === sub.id)
-              ? s.subscriptions.map((x) => (x.id === sub.id ? sub : x))
-              : [sub, ...s.subscriptions],
+            subscriptions: insertSorted(withoutOld, sub, (x) => x.guruUpdatedAt),
           });
         }
       )
