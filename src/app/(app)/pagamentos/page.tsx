@@ -356,6 +356,20 @@ function GuruLiveBadge() {
   return <Badge className="bg-emerald-100 text-emerald-700">● Ao vivo</Badge>;
 }
 
+/**
+ * "YYYY-MM" de um ISO — usado pra casar `SalesMonthlyRow.month` (vem de
+ * `date_trunc('month', ...)` no Postgres, sempre em UTC, ex.
+ * "2026-08-01T00:00:00+00:00") com o mês corrente. Comparar via
+ * `new Date(iso).getMonth()` quebra em fuso negativo (Brasil, UTC-3): meia-
+ * noite UTC do dia 1º cai no dia anterior ainda no mês passado no horário
+ * local, e o mês inteiro fica de fora do filtro — foi por isso que Receita
+ * do mês/Vendas aprovadas (mês) apareciam zeradas mesmo com vendas reais
+ * naquele mês. Comparar a string evita qualquer conversão de fuso.
+ */
+function monthKey(iso: string): string {
+  return iso.slice(0, 7);
+}
+
 /** As listas já vêm ordenadas por data (mais recente primeiro) do store; isto só inverte a exibição. */
 function SortToggle({
   ascending,
@@ -535,11 +549,8 @@ function TransacoesGuruTab() {
   // milhares de vendas sincronizadas, o mês corrente sozinho já passa
   // disso e os números ficavam bem abaixo do que a Guru mostra.
   const kpis = useMemo(() => {
-    const now = new Date();
-    const thisMonth = salesReport.rows.filter((r) => {
-      const d = new Date(r.month);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    });
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const thisMonth = salesReport.rows.filter((r) => monthKey(r.month) === currentMonth);
     const approved = thisMonth.filter((r) => classifyGuruStatus(r.status) === "aprovado");
     const revenue = approved.reduce((sum, r) => sum + r.revenue, 0);
     const count = approved.reduce((sum, r) => sum + r.salesCount, 0);
@@ -1034,17 +1045,18 @@ function RelatoriosGuruTab() {
     const revenue = approved.reduce((s, r) => s + r.revenue, 0);
     const salesCount = approved.reduce((s, r) => s + r.salesCount, 0);
 
-    // Receita dos últimos 6 meses
+    // Receita dos últimos 6 meses — chave em "YYYY-MM" (ver monthKey) pra
+    // casar com o mês UTC de `date_trunc` sem passar por conversão de fuso;
+    // o label usa o mês local (só exibição, não afeta o agrupamento).
     const now = new Date();
     const months: { key: string; label: string; total: number }[] = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: format(d, "MMM/yy", { locale: ptBR }), total: 0 });
+      months.push({ key: monthKey(d.toISOString()), label: format(d, "MMM/yy", { locale: ptBR }), total: 0 });
     }
     const idxByKey = new Map(months.map((m, i) => [m.key, i]));
     for (const r of approved) {
-      const d = new Date(r.month);
-      const idx = idxByKey.get(`${d.getFullYear()}-${d.getMonth()}`);
+      const idx = idxByKey.get(monthKey(r.month));
       if (idx !== undefined) months[idx].total += r.revenue;
     }
 
