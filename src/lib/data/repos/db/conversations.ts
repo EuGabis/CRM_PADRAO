@@ -23,6 +23,7 @@ const mapConversation = (r: any): Conversation => ({
   lastMessagePreview: r.last_message_preview ?? "",
   starred: r.starred,
   slaDays: r.sla_days,
+  channelId: r.channel_id ?? undefined,
 });
 
 const mapMessage = (r: any): Message => ({
@@ -39,6 +40,8 @@ const mapMessage = (r: any): Message => ({
   mediaName: r.media_name ?? undefined,
   mediaMime: r.media_mime ?? undefined,
   mediaSize: r.media_size ?? undefined,
+  waMessageId: r.wa_message_id ?? undefined,
+  status: r.status ?? undefined,
 });
 
 export const MEDIA_BUCKET = "conversation-media";
