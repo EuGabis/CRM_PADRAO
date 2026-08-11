@@ -39,6 +39,7 @@ import {
   Download,
   Trash2,
   Loader2,
+  ArrowUpDown,
 } from "lucide-react";
 import { useContacts, contactName } from "@/lib/data/repos/contacts";
 import { formatBRL } from "@/lib/data/repos/opportunities";
@@ -345,6 +346,22 @@ function GuruLiveBadge() {
   return <Badge className="bg-emerald-100 text-emerald-700">● Ao vivo</Badge>;
 }
 
+/** As listas já vêm ordenadas por data (mais recente primeiro) do store; isto só inverte a exibição. */
+function SortToggle({
+  ascending,
+  onToggle,
+}: {
+  ascending: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={onToggle}>
+      <ArrowUpDown className="size-3.5" />
+      {ascending ? "Mais antigas primeiro" : "Mais recentes primeiro"}
+    </Button>
+  );
+}
+
 function statusBadgeClass(status: string) {
   switch (status) {
     case "Pago":
@@ -495,6 +512,12 @@ function TransacoesMockTab() {
 function TransacoesGuruTab() {
   const events = usePaymentEvents();
   const [rawEvent, setRawEvent] = useState<PaymentEvent | null>(null);
+  const [sortAsc, setSortAsc] = useState(false);
+
+  const sortedEvents = useMemo(
+    () => (sortAsc ? [...events].reverse() : events),
+    [events, sortAsc]
+  );
 
   const kpis = useMemo(() => {
     const now = new Date();
@@ -525,7 +548,10 @@ function TransacoesGuruTab() {
           <h1 className="text-lg font-bold text-slate-900">Vendas</h1>
           <p className="text-xs text-slate-500">Vendas sincronizadas da Guru (webhook + API)</p>
         </div>
-        <GuruLiveBadge />
+        <div className="flex items-center gap-2">
+          <GuruLiveBadge />
+          <SortToggle ascending={sortAsc} onToggle={() => setSortAsc((v) => !v)} />
+        </div>
       </div>
       <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Receita do mês" value={formatBRL(kpis.revenue)} />
@@ -545,7 +571,7 @@ function TransacoesGuruTab() {
       ) : (
         <MiniTable
           headers={["Código", "Contato", "Produto", "Criada em", "Status", "Valor", ""]}
-          rows={events.map((e) => [
+          rows={sortedEvents.map((e) => [
             <span key="cd" className="font-mono text-[11px] text-slate-500">{e.code ?? "—"}</span>,
             <span key="c" className="text-slate-600">{e.contactName ?? e.contactEmail ?? "—"}</span>,
             <span key="p" className="text-slate-600">{e.productName ?? "—"}</span>,
@@ -610,6 +636,12 @@ function AssinaturasMockTab() {
 function AssinaturasGuruTab() {
   const subscriptions = usePaymentSubscriptions();
   const [rawSub, setRawSub] = useState<PaymentSubscription | null>(null);
+  const [sortAsc, setSortAsc] = useState(false);
+
+  const sortedSubscriptions = useMemo(
+    () => (sortAsc ? [...subscriptions].reverse() : subscriptions),
+    [subscriptions, sortAsc]
+  );
 
   const counts = useMemo(() => {
     const byCategory = { ativa: 0, atrasado: 0, cancelado: 0, outro: 0 };
@@ -630,7 +662,10 @@ function AssinaturasGuruTab() {
           <h1 className="text-lg font-bold text-slate-900">Assinaturas</h1>
           <p className="text-xs text-slate-500">Estado atual de cada assinante da Guru</p>
         </div>
-        <GuruLiveBadge />
+        <div className="flex items-center gap-2">
+          <GuruLiveBadge />
+          <SortToggle ascending={sortAsc} onToggle={() => setSortAsc((v) => !v)} />
+        </div>
       </div>
       <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Ativas" value={String(counts.ativa)} />
@@ -646,7 +681,7 @@ function AssinaturasGuruTab() {
       ) : (
         <MiniTable
           headers={["Código", "Contato", "Produto", "Iniciada em", "Atualizada em", "Status", "Qtd cobranças", "Cobrada a cada", ""]}
-          rows={subscriptions.map((s) => [
+          rows={sortedSubscriptions.map((s) => [
             <span key="cd" className="font-mono text-[11px] text-slate-500">{s.code ?? "—"}</span>,
             <span key="c" className="font-medium text-slate-800">
               {s.contactName ?? s.contactEmail ?? "—"}
