@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState } from "@/components/shared/empty-state";
 import {
   Users2,
@@ -44,9 +45,11 @@ import {
 import { useContacts, contactName } from "@/lib/data/repos/contacts";
 import { formatBRL } from "@/lib/data/repos/opportunities";
 import {
+  EVENTS_PAGE_SIZE,
+  EVENTS_PAGE_SIZE_OPTIONS,
   paymentsActions,
   useGuruIntegration,
-  usePaymentEvents,
+  usePaymentEventsPage,
   usePaymentSalesReport,
   usePaymentSubscriptions,
   usePaymentsRealtimeStatus,
@@ -534,15 +537,12 @@ function TransacoesMockTab() {
 }
 
 function TransacoesGuruTab() {
-  const events = usePaymentEvents();
   const salesReport = usePaymentSalesReport();
   const [rawEvent, setRawEvent] = useState<PaymentEvent | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
-
-  const sortedEvents = useMemo(
-    () => (sortAsc ? [...events].reverse() : events),
-    [events, sortAsc]
-  );
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState<number>(EVENTS_PAGE_SIZE);
+  const { rows: events, total, loading } = usePaymentEventsPage(page, sortAsc, pageSize);
 
   // KPIs vêm de payment_sales_monthly (histórico completo agregado no
   // banco), não do array `events` (só as 100 vendas mais recentes) — com
@@ -577,7 +577,31 @@ function TransacoesGuruTab() {
         </div>
         <div className="flex items-center gap-2">
           <GuruLiveBadge />
-          <SortToggle ascending={sortAsc} onToggle={() => setSortAsc((v) => !v)} />
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => {
+              setPageSize(Number(v ?? EVENTS_PAGE_SIZE));
+              setPage(0);
+            }}
+          >
+            <SelectTrigger className="h-7 w-[110px] text-xs">
+              <SelectValue>{pageSize} / página</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {EVENTS_PAGE_SIZE_OPTIONS.map((n) => (
+                <SelectItem key={n} value={String(n)} className="text-xs">
+                  {n} / página
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <SortToggle
+            ascending={sortAsc}
+            onToggle={() => {
+              setSortAsc((v) => !v);
+              setPage(0);
+            }}
+          />
         </div>
       </div>
       <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -590,28 +614,39 @@ function TransacoesGuruTab() {
           hint={`${kpis.refundCount} transações`}
         />
       </div>
-      {events.length === 0 ? (
+      {total === 0 && !loading ? (
         <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
           Nenhuma venda sincronizada ainda. A primeira sincronização roda no próximo minuto após
           conectar — as vendas aparecem aqui automaticamente.
         </div>
       ) : (
-        <MiniTable
-          headers={["Código", "Contato", "Produto", "Criada em", "Status", "Valor", ""]}
-          rows={sortedEvents.map((e) => [
-            <span key="cd" className="font-mono text-[11px] text-slate-500">{e.code ?? "—"}</span>,
-            <span key="c" className="text-slate-600">{e.contactName ?? e.contactEmail ?? "—"}</span>,
-            <span key="p" className="text-slate-600">{e.productName ?? "—"}</span>,
-            <span key="d" className="text-slate-500">
-              {e.guruCreatedAt ? format(new Date(e.guruCreatedAt), "dd MMM yyyy, HH:mm", { locale: ptBR }) : "—"}
-            </span>,
-            <GuruStatusBadge key="s" status={e.status} />,
-            <span key="v" className="font-semibold text-slate-800">
-              {e.amount !== null ? formatBRL(e.amount) : "—"}
-            </span>,
-            <RawPayloadButton key="raw" onClick={() => setRawEvent(e)} />,
-          ])}
-        />
+        <>
+          <div className={cn("transition-opacity", loading && "opacity-50")}>
+            <MiniTable
+              headers={["Código", "Contato", "Produto", "Criada em", "Status", "Valor", ""]}
+              rows={events.map((e) => [
+                <span key="cd" className="font-mono text-[11px] text-slate-500">{e.code ?? "—"}</span>,
+                <span key="c" className="text-slate-600">{e.contactName ?? e.contactEmail ?? "—"}</span>,
+                <span key="p" className="text-slate-600">{e.productName ?? "—"}</span>,
+                <span key="d" className="text-slate-500">
+                  {e.guruCreatedAt ? format(new Date(e.guruCreatedAt), "dd MMM yyyy, HH:mm", { locale: ptBR }) : "—"}
+                </span>,
+                <GuruStatusBadge key="s" status={e.status} />,
+                <span key="v" className="font-semibold text-slate-800">
+                  {e.amount !== null ? formatBRL(e.amount) : "—"}
+                </span>,
+                <RawPayloadButton key="raw" onClick={() => setRawEvent(e)} />,
+              ])}
+            />
+          </div>
+          <div className="mt-3 flex items-center justify-between">
+            <p className="text-[11px] text-slate-400">
+              {total === 0 ? 0 : page * pageSize + 1}–{Math.min(total, (page + 1) * pageSize)} de{" "}
+              {total.toLocaleString("pt-BR")} vendas
+            </p>
+            <Pager page={page} pageCount={Math.max(1, Math.ceil(total / pageSize))} onChange={setPage} />
+          </div>
+        </>
       )}
       <RawPayloadDialog raw={rawEvent?.raw ?? null} onClose={() => setRawEvent(null)} />
     </>
