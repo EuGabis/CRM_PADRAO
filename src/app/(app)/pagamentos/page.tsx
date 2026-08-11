@@ -47,6 +47,7 @@ import {
   paymentsActions,
   useGuruIntegration,
   usePaymentEvents,
+  usePaymentSalesReport,
   usePaymentSubscriptions,
   usePaymentsRealtimeStatus,
   type PaymentEvent,
@@ -520,6 +521,7 @@ function TransacoesMockTab() {
 
 function TransacoesGuruTab() {
   const events = usePaymentEvents();
+  const salesReport = usePaymentSalesReport();
   const [rawEvent, setRawEvent] = useState<PaymentEvent | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
 
@@ -528,27 +530,32 @@ function TransacoesGuruTab() {
     [events, sortAsc]
   );
 
+  // KPIs vêm de payment_sales_monthly (histórico completo agregado no
+  // banco), não do array `events` (só as 100 vendas mais recentes) — com
+  // milhares de vendas sincronizadas, o mês corrente sozinho já passa
+  // disso e os números ficavam bem abaixo do que a Guru mostra.
   const kpis = useMemo(() => {
     const now = new Date();
-    const thisMonth = events.filter((e) => {
-      if (!e.guruCreatedAt) return false;
-      const d = new Date(e.guruCreatedAt);
+    const thisMonth = salesReport.rows.filter((r) => {
+      const d = new Date(r.month);
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     });
-    const approved = thisMonth.filter((e) => classifyGuruStatus(e.status) === "aprovado");
-    const revenue = approved.reduce((sum, e) => sum + (e.amount ?? 0), 0);
-    const refunded = events.filter((e) =>
-      ["reembolsado", "chargeback"].includes(classifyGuruStatus(e.status))
+    const approved = thisMonth.filter((r) => classifyGuruStatus(r.status) === "aprovado");
+    const revenue = approved.reduce((sum, r) => sum + r.revenue, 0);
+    const count = approved.reduce((sum, r) => sum + r.salesCount, 0);
+    const refunded = salesReport.rows.filter((r) =>
+      ["reembolsado", "chargeback"].includes(classifyGuruStatus(r.status))
     );
-    const refundTotal = refunded.reduce((sum, e) => sum + (e.amount ?? 0), 0);
+    const refundTotal = refunded.reduce((sum, r) => sum + r.revenue, 0);
+    const refundCount = refunded.reduce((sum, r) => sum + r.salesCount, 0);
     return {
       revenue,
-      count: approved.length,
-      ticket: approved.length ? revenue / approved.length : 0,
+      count,
+      ticket: count ? revenue / count : 0,
       refundTotal,
-      refundCount: refunded.length,
+      refundCount,
     };
-  }, [events]);
+  }, [salesReport.rows]);
 
   return (
     <>
@@ -1014,12 +1021,18 @@ function RelatoriosTab() {
 }
 
 function RelatoriosGuruTab() {
-  const events = usePaymentEvents();
+  const salesReport = usePaymentSalesReport();
   const subscriptions = usePaymentSubscriptions();
 
+  // Receita/produtos/ticket vêm de payment_sales_monthly (histórico
+  // completo agregado no banco) em vez do array `usePaymentEvents` (só as
+  // 100 vendas mais recentes) — com milhares de vendas desde 2024, os
+  // últimos 6 meses sozinhos já passavam desse limite e os números do
+  // relatório ficavam bem abaixo dos da Guru.
   const data = useMemo(() => {
-    const approved = events.filter((e) => classifyGuruStatus(e.status) === "aprovado");
-    const revenue = approved.reduce((s, e) => s + (e.amount ?? 0), 0);
+    const approved = salesReport.rows.filter((r) => classifyGuruStatus(r.status) === "aprovado");
+    const revenue = approved.reduce((s, r) => s + r.revenue, 0);
+    const salesCount = approved.reduce((s, r) => s + r.salesCount, 0);
 
     // Receita dos últimos 6 meses
     const now = new Date();
@@ -1029,18 +1042,16 @@ function RelatoriosGuruTab() {
       months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: format(d, "MMM/yy", { locale: ptBR }), total: 0 });
     }
     const idxByKey = new Map(months.map((m, i) => [m.key, i]));
-    for (const e of approved) {
-      if (!e.guruCreatedAt) continue;
-      const d = new Date(e.guruCreatedAt);
+    for (const r of approved) {
+      const d = new Date(r.month);
       const idx = idxByKey.get(`${d.getFullYear()}-${d.getMonth()}`);
-      if (idx !== undefined) months[idx].total += e.amount ?? 0;
+      if (idx !== undefined) months[idx].total += r.revenue;
     }
 
     // Top produtos por receita
     const prod = new Map<string, number>();
-    for (const e of approved) {
-      const name = e.productName ?? "Sem produto";
-      prod.set(name, (prod.get(name) ?? 0) + (e.amount ?? 0));
+    for (const r of approved) {
+      prod.set(r.productName, (prod.get(r.productName) ?? 0) + r.revenue);
     }
     const topProducts = Array.from(prod.entries())
       .map(([name, total]) => ({ name, total }))
@@ -1066,15 +1077,15 @@ function RelatoriosGuruTab() {
 
     return {
       revenue,
-      salesCount: approved.length,
-      ticket: approved.length ? revenue / approved.length : 0,
+      salesCount,
+      ticket: salesCount ? revenue / salesCount : 0,
       activeSubs: subCounts.ativa,
       months,
       topProducts,
       topMax,
       pie,
     };
-  }, [events, subscriptions]);
+  }, [salesReport.rows, subscriptions]);
 
   return (
     <>
