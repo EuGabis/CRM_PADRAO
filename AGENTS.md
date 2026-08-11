@@ -357,6 +357,48 @@ select cron.unschedule('lito-guru-sync');
 select * from public.payment_credentials where provider = 'guru';
 ```
 
+## WhatsApp — Meta Cloud API (número real, inbox de 2 vias)
+
+Módulo **`/whatsapp`** ("Canais de atendimento") integrado à Cloud API oficial da
+Meta (não é Evolution API/QR code). Fluxo: mensagem do celular → webhook → grava em
+Conversas → aparece no inbox via Realtime; resposta pelo inbox → rota de envio →
+Cloud API → celular.
+
+**Peças:**
+- `POST /api/whatsapp/webhook` — recebe mensagens/status da Meta. Fora do matcher
+  do proxy (chamada máquina-a-máquina, sem sessão). GET faz o handshake
+  (`hub.verify_token` = `WHATSAPP_VERIFY_TOKEN`); POST valida a assinatura HMAC do
+  corpo cru (`x-hub-signature-256`, chave `WHATSAPP_APP_SECRET`), resolve o canal
+  pelo `phone_number_id` do payload, cria/atualiza contato e conversa e grava a
+  mensagem com a service role — idempotente (índice único parcial em
+  `wa_message_id`). Eventos de status (`sent`/`delivered`/`read`) atualizam
+  `messages.status` pelo mesmo `wa_message_id` (a tabela é `replica identity full`
+  pra isso chegar ao vivo no inbox).
+- `POST /api/whatsapp/send` — autenticada (RLS garante membership). Texto livre
+  só dentro da janela de 24h (última mensagem de entrada); fora dela responde 409
+  `needsTemplate` e exige `template`. Respeita `whatsapp_channels.daily_limit`
+  (conta saídas do canal no dia).
+- `GET|POST /api/whatsapp/templates` — lista/consulta templates aprovados na Meta.
+- `src/lib/whatsapp/client.ts` — cliente da Cloud API (`sendText`, `sendTemplate`).
+- Repo `db/whatsapp.ts`; UI do módulo `/whatsapp` (criar/editar canal) e composer
+  do inbox (envia de verdade, mostra tique de status, pede template fora da janela).
+- Migração `0020_whatsapp.sql` — tabela `whatsapp_channels` (RLS padrão membership;
+  `phone_number_id` único) e colunas `messages.wa_message_id|status|channel_id`.
+  **Migração livre a partir de agora: 0021.**
+- Env (privadas, nunca `NEXT_PUBLIC_`): `WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`,
+  `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` (default `v21.0`).
+
+**Passos manuais que FALTAM para ligar em produção (Gabriel):**
+1. Envs acima na Vercel (production+preview+development) + confirmar que
+   `SUPABASE_SERVICE_ROLE_KEY` já está lá (o webhook depende dela).
+2. Meta App → WhatsApp → Configuration → Webhook: callback
+   `https://lito-crm.vercel.app/api/whatsapp/webhook`, verify token =
+   `WHATSAPP_VERIFY_TOKEN`, assinar o campo `messages`. ⚠️ Isso tira o número do
+   RVOPS — a partir daí ele recebe no Lito, não mais lá.
+3. Criar o canal em `/whatsapp` com `phone_number_id`/`waba_id` (painel da Meta →
+   WhatsApp → API Setup) e testar ponta a ponta (mensagem do celular → inbox;
+   resposta pelo inbox → celular; template fora da janela de 24h).
+
 ## Padrão de migração módulo a módulo (IMPORTANTE)
 
 A estratégia é deixar **uma tela inteira funcional por vez**. Repos reais ficam em
@@ -400,8 +442,8 @@ os módulos ainda não migrados continuam importando dos repos mock em
   0019): bucket privado `conversation-media` (path `{location_id}/{conversation_id}/
   {uuid}.{ext}`, policies no padrão membership), envio de imagem/PDF/DOCX (15 MB) e
   gravação por `MediaRecorder`; exibição via URL assinada (`conversationActions.
-  sendMedia`/`mediaUrl`). **Migração livre a partir de agora: 0020** (Pagamentos foi
-  até 0018, Conversas usou 0019).
+  sendMedia`/`mediaUrl`). Migração 0020 foi usada pelo WhatsApp (ver seção própria
+  abaixo). **Migração livre a partir de agora: 0021.**
 - ✅ Backend F2e: **Dashboard** com widgets calculando sobre dados reais
   (adapters `useDbPipelines/useDbOpportunities/useDbPipeline` em `db/pipeline.ts`).
 - ✅ Backend F2f: módulo **Calendários** real — compromissos do banco (repo
@@ -424,7 +466,8 @@ os módulos ainda não migrados continuam importando dos repos mock em
   minuto (ver seção própria acima).
 - ⏳ **Email Marketing** — código pronto, faltam passos manuais de produção (ver
   seção própria acima).
+- ⏳ **WhatsApp (Meta Cloud API)** — código pronto, faltam passos manuais de
+  produção (envs na Vercel, webhook na Meta, criar canal — ver seção própria acima).
 - ⏳ Próximo: Automações reais (Edge Functions) tarefas 5–8, Agentes de IA.
 - ⏳ Backlog: personalizar template/remetente dos e-mails de auth do Supabase
-  (pedido do Gabriel), storage (Mídia Drive/arquivos), dark mode, mobile,
-  WhatsApp (Cloud API / Evolution API).
+  (pedido do Gabriel), storage (Mídia Drive/arquivos), dark mode, mobile.

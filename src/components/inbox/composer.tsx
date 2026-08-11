@@ -34,6 +34,8 @@ import {
 import { ScheduleDialog } from "./schedule-dialog";
 import { channelLabel } from "@/components/shared/channel-icon";
 import { conversationActions, useConversation, useSnippets } from "@/lib/data/repos/db/conversations";
+import { whatsappActions } from "@/lib/data/repos/db/whatsapp";
+import { TemplatePicker } from "@/components/whatsapp/template-picker";
 import { dbContactActions } from "@/lib/data/repos/db/contacts";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -70,6 +72,7 @@ export function Composer({ conversationId }: { conversationId: string }) {
   const [uploading, setUploading] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recSecs, setRecSecs] = useState(0);
+  const [templateOpen, setTemplateOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -79,6 +82,7 @@ export function Composer({ conversationId }: { conversationId: string }) {
   const snippets = useSnippets();
   const conversation = useConversation(conversationId);
   const contactId = conversation?.contactId ?? null;
+  const isWhatsapp = conversation?.channel === "whatsapp" && !!conversation?.channelId;
 
   const fmtSecs = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
@@ -166,6 +170,34 @@ export function Composer({ conversationId }: { conversationId: string }) {
   };
 
   const send = async (scheduledFor?: string) => {
+    if (conversation?.channel === "whatsapp" && !conversation?.channelId && !internal && !scheduledFor) {
+      toast.error("Cadastre um canal de WhatsApp em Canais de atendimento para enviar.");
+      return;
+    }
+    // WhatsApp real: envia pela Cloud API (a mensagem volta pelo Realtime)
+    if (isWhatsapp && !internal && !scheduledFor) {
+      const text = body.trim();
+      if (!text) {
+        toast.error("Escreva uma mensagem antes de enviar");
+        return;
+      }
+      setSending(true);
+      const res = await whatsappActions.send({
+        conversationId,
+        channelId: conversation?.channelId,
+        text,
+      });
+      setSending(false);
+      if (res.ok) {
+        setBody("");
+        toast.success("Mensagem enviada via WhatsApp");
+      } else if (res.needsTemplate) {
+        setTemplateOpen(true);
+      } else {
+        toast.error(res.error ?? "Não foi possível enviar");
+      }
+      return;
+    }
     const text = channel === "email" && subject ? `[${subject}] ${body}` : body;
     if (!text.trim()) {
       toast.error("Escreva uma mensagem antes de enviar");
@@ -440,6 +472,22 @@ export function Composer({ conversationId }: { conversationId: string }) {
         open={scheduleOpen}
         onOpenChange={setScheduleOpen}
         onSchedule={(iso) => send(iso)}
+      />
+      <TemplatePicker
+        open={templateOpen}
+        onOpenChange={setTemplateOpen}
+        channelId={conversation?.channelId ?? null}
+        onPick={async (tpl) => {
+          setSending(true);
+          const res = await whatsappActions.send({
+            conversationId,
+            channelId: conversation?.channelId,
+            template: tpl,
+          });
+          setSending(false);
+          if (res.ok) toast.success("Template enviado");
+          else toast.error(res.error ?? "Falha ao enviar template");
+        }}
       />
     </div>
   );

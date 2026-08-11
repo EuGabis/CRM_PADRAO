@@ -5,6 +5,8 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   CalendarDays,
+  Check,
+  CheckCheck,
   Download,
   FileText,
   Pause,
@@ -221,6 +223,19 @@ function MessageBubble({ message }: { message: Message }) {
           )}
         >
           {format(new Date(message.at), "HH:mm")}
+          {isOut && message.status && (
+            <span className="ml-1 inline-flex align-middle">
+              {message.status === "read" ? (
+                <CheckCheck className="size-3 text-sky-300" />
+              ) : message.status === "delivered" ? (
+                <CheckCheck className="size-3 text-indigo-200" />
+              ) : message.status === "failed" ? (
+                <span className="text-[9px] text-rose-300">falhou</span>
+              ) : (
+                <Check className="size-3 text-indigo-200" />
+              )}
+            </span>
+          )}
         </p>
       </div>
     </div>

@@ -67,6 +67,9 @@ export interface Message {
   mediaName?: string;
   mediaMime?: string;
   mediaSize?: number;
+  /** WhatsApp: id da mensagem na Meta (casa status) e estado de entrega. */
+  waMessageId?: string;
+  status?: "sent" | "delivered" | "read" | "failed";
 }
 
 export interface Conversation {
@@ -78,6 +81,8 @@ export interface Conversation {
   lastMessagePreview: string;
   starred: boolean;
   slaDays: number;
+  /** WhatsApp: canal/número que originou a conversa (nulo p/ outros canais). */
+  channelId?: string;
 }
 
 export type NodeCategory =

@@ -23,6 +23,7 @@ const mapConversation = (r: any): Conversation => ({
   lastMessagePreview: r.last_message_preview ?? "",
   starred: r.starred,
   slaDays: r.sla_days,
+  channelId: r.channel_id ?? undefined,
 });
 
 const mapMessage = (r: any): Message => ({
@@ -39,6 +40,8 @@ const mapMessage = (r: any): Message => ({
   mediaName: r.media_name ?? undefined,
   mediaMime: r.media_mime ?? undefined,
   mediaSize: r.media_size ?? undefined,
+  waMessageId: r.wa_message_id ?? undefined,
+  status: r.status ?? undefined,
 });
 
 export const MEDIA_BUCKET = "conversation-media";
@@ -92,6 +95,15 @@ export const useConvStore = create<ConvState>((set, get) => ({
           const s = get();
           if (s.messages.some((m) => m.id === msg.id)) return; // já inserida (otimista)
           set({ messages: [...s.messages, msg] });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages" },
+        (payload) => {
+          const msg = mapMessage(payload.new);
+          const s = get();
+          set({ messages: s.messages.map((m) => (m.id === msg.id ? msg : m)) });
         }
       )
       .on(
@@ -347,9 +359,26 @@ export const conversationActions = {
     const location = loc();
     if (!location) return null;
     const supabase = createClient();
+    let channelId: string | null = null;
+    if (channel === "whatsapp") {
+      const { data: ch } = await supabase
+        .from("whatsapp_channels")
+        .select("id")
+        .eq("location_id", location)
+        .eq("active", true)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      channelId = (ch as { id: string } | null)?.id ?? null;
+    }
     const { data, error } = await supabase
       .from("conversations")
-      .insert({ location_id: location, contact_id: contactId, channel })
+      .insert({
+        location_id: location,
+        contact_id: contactId,
+        channel,
+        ...(channelId ? { channel_id: channelId } : {}),
+      })
       .select()
       .single();
     if (error || !data) return null;
