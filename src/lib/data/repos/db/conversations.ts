@@ -99,6 +99,15 @@ export const useConvStore = create<ConvState>((set, get) => ({
       )
       .on(
         "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages" },
+        (payload) => {
+          const msg = mapMessage(payload.new);
+          const s = get();
+          set({ messages: s.messages.map((m) => (m.id === msg.id ? msg : m)) });
+        }
+      )
+      .on(
+        "postgres_changes",
         { event: "INSERT", schema: "public", table: "conversations" },
         (payload) => {
           const conv = mapConversation(payload.new);
