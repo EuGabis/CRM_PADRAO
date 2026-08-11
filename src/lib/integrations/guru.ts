@@ -13,6 +13,7 @@
 const TRANSACTIONS_URL = "https://digitalmanager.guru/api/v2/transactions";
 const SUBSCRIPTIONS_URL = "https://digitalmanager.guru/api/v2/subscriptions";
 const PRODUCTS_URL = "https://digitalmanager.guru/api/v2/products";
+const CONTACTS_URL = "https://digitalmanager.guru/api/v2/contacts";
 const MAX_PAGES = 200;
 
 export interface GuruTransaction {
@@ -66,6 +67,25 @@ export interface GuruProduct {
   producer?: { id?: string; name?: string };
   created_at?: number;
   updated_at?: number;
+}
+
+export interface GuruContact {
+  id: string;
+  name?: string;
+  email?: string;
+  doc?: string;
+  phone_full_number?: string;
+  phone_local_code?: string;
+  phone_number?: string;
+  created_at?: number;
+  update_at?: number;
+}
+
+export interface GuruPage<T> {
+  items: T[];
+  nextCursor: string | null;
+  hasMorePages: boolean;
+  totalRows: number | null;
 }
 
 type Filters = Record<string, string | string[]>;
@@ -124,6 +144,32 @@ export function fetchGuruSubscriptions(userToken: string, filters: Filters) {
 
 export function fetchGuruProducts(userToken: string, filters: Filters = {}) {
   return fetchAllPages<GuruProduct>(PRODUCTS_URL, userToken, filters);
+}
+
+/**
+ * Uma página de contatos (a lista completa é grande demais — 7000+ contatos
+ * numa conta ativa — pra buscar tudo numa chamada só; o chamador guarda o
+ * cursor entre execuções, ver contactsSyncChunk em .../guru/sync/route.ts).
+ */
+export async function fetchGuruContactsPage(
+  userToken: string,
+  cursor: string | null,
+  filters: Filters = {}
+): Promise<GuruPage<GuruContact>> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (Array.isArray(value)) value.forEach((v) => params.append(key, v));
+    else params.set(key, value);
+  }
+  if (cursor) params.set("cursor", cursor);
+
+  const json = await guruRequest(CONTACTS_URL, userToken, params);
+  return {
+    items: json.data ?? [],
+    nextCursor: json.has_more_pages ? json.next_cursor ?? null : null,
+    hasMorePages: !!json.has_more_pages,
+    totalRows: typeof json.total_rows === "number" ? json.total_rows : null,
+  };
 }
 
 /** YYYY-MM-DD no fuso de referência da API (os exemplos da doc usam UTC). */
