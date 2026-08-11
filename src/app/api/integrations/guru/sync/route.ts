@@ -132,24 +132,34 @@ async function syncAccount(
   ]);
 
   const { items: subs, truncated: subsTruncated } = subsResult;
+
+  // Assinaturas são o caminho crítico: grava PRIMEIRO e sozinho, pra que uma
+  // falha nas vendas (ex.: erro na API/upsert) não trave a atualização das
+  // assinaturas — antes as duas iam juntas num Promise.all e um erro nas vendas
+  // deixava o last_synced_at nulo pra sempre (re-backfill infinito, estourando
+  // o teto de 60s da função).
+  await upsertMany(
+    db,
+    "payment_subscriptions",
+    subs.map((s) => ({
+      location_id: cred.location_id,
+      provider: "guru",
+      ...mapGuruSubscription(s),
+    }))
+  );
+
+  // Vendas: melhor-esforço e isolado. Se falhar, registramos o erro na resposta
+  // (visível em net._http_response no Supabase) e seguimos — sem bloquear o
+  // avanço do last_synced_at nem a atualização das assinaturas.
   const byId = new Map<string, any>();
   let txnsTruncated = false;
+  let transactionsError: string | null = null;
   for (const { items, truncated } of txnResults) {
     if (truncated) txnsTruncated = true;
     for (const t of items) byId.set(t.id, t);
   }
-
-  await Promise.all([
-    upsertMany(
-      db,
-      "payment_subscriptions",
-      subs.map((s) => ({
-        location_id: cred.location_id,
-        provider: "guru",
-        ...mapGuruSubscription(s),
-      }))
-    ),
-    upsertMany(
+  try {
+    await upsertMany(
       db,
       "payment_events",
       Array.from(byId.values()).map((t) => ({
@@ -157,9 +167,15 @@ async function syncAccount(
         provider: "guru",
         ...mapGuruTransaction(t),
       }))
-    ),
-  ]);
+    );
+  } catch (e) {
+    transactionsError = e instanceof Error ? e.message : String(e);
+    console.error(`[guru-sync] upsert de vendas falhou p/ ${cred.location_id}:`, transactionsError);
+  }
 
+  // Avança a marca d'água sempre que as assinaturas gravaram — isso tira a conta
+  // do modo backfill (janela de 175 dias) e a coloca no incremental (janela
+  // curta), que cabe folgado nos 60s. Uma falha só nas vendas não impede isso.
   await db
     .from("payment_credentials")
     .update({ last_synced_at: now.toISOString() })
@@ -170,6 +186,7 @@ async function syncAccount(
     locationId: cred.location_id,
     subscriptions: subs.length,
     transactions: byId.size,
+    transactionsError,
     truncated: subsTruncated || txnsTruncated,
   };
 }
