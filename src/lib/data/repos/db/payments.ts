@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
 import { useDbStore } from "./contacts";
@@ -121,19 +121,6 @@ function mapPaymentSubscription(row: any): PaymentSubscription {
 
 const MAX_EVENTS = 100;
 
-/**
- * Insere mantendo a ordem (mais recente primeiro pela chave de data) — um
- * INSERT/UPDATE em tempo real chega fora de ordem em relação ao que já está
- * na tela (ex.: o sync ainda preenchendo o backfill grava vendas antigas
- * depois de vendas novas). Um prepend simples quebrava a ordenação.
- */
-function insertSorted<T>(list: T[], item: T, key: (x: T) => string | null): T[] {
-  const time = (v: string | null) => (v ? new Date(v).getTime() : -Infinity);
-  const t = time(key(item));
-  const idx = list.findIndex((x) => time(key(x)) < t);
-  return idx === -1 ? [...list, item] : [...list.slice(0, idx), item, ...list.slice(idx)];
-}
-
 interface PaymentsState {
   loaded: boolean;
   loading: boolean;
@@ -195,57 +182,42 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
       subscriptions: (subscriptions ?? []).map(mapPaymentSubscription),
     });
 
+    // Um INSERT/UPDATE em tempo real isolado não dá pra encaixar direto no
+    // array em memória sem arriscar furar a ordenação ou (pior) evictar uma
+    // linha legítima do topo quando o evento é de uma venda antiga fora da
+    // janela carregada (ex.: o sync ainda preenchendo o backfill histórico
+    // grava/atualiza vendas de 2024 o tempo todo). Em vez de emendar o
+    // array, qualquer evento só dispara um refetch (debounced) das mesmas
+    // consultas do load() — a lista em tela sempre reflete a ordenação real
+    // do banco, nunca "esvazia" nem embaralha.
+    let refetchTimer: ReturnType<typeof setTimeout> | null = null;
+    const refetch = () => {
+      if (refetchTimer) clearTimeout(refetchTimer);
+      refetchTimer = setTimeout(async () => {
+        const [{ data: freshEvents }, { data: freshSubs }] = await Promise.all([
+          supabase
+            .from("payment_events")
+            .select("*")
+            .eq("location_id", locationId)
+            .order("guru_created_at", { ascending: false, nullsFirst: false })
+            .limit(MAX_EVENTS),
+          supabase
+            .from("payment_subscriptions")
+            .select("*")
+            .eq("location_id", locationId)
+            .order("guru_updated_at", { ascending: false, nullsFirst: false }),
+        ]);
+        set({
+          events: (freshEvents ?? []).map(mapPaymentEvent),
+          subscriptions: (freshSubs ?? []).map(mapPaymentSubscription),
+        });
+      }, 800);
+    };
+
     supabase
       .channel("lito-pagamentos")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "payment_events" },
-        (payload) => {
-          const event = mapPaymentEvent(payload.new);
-          const s = get();
-          if (s.events.some((e) => e.id === event.id)) return;
-          set({
-            events: insertSorted(s.events, event, (e) => e.guruCreatedAt).slice(0, MAX_EVENTS),
-          });
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "payment_events" },
-        (payload) => {
-          const event = mapPaymentEvent(payload.new);
-          const s = get();
-          set({
-            events: s.events.some((e) => e.id === event.id)
-              ? s.events.map((e) => (e.id === event.id ? event : e))
-              : [event, ...s.events].slice(0, MAX_EVENTS),
-          });
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "payment_subscriptions" },
-        (payload) => {
-          const sub = mapPaymentSubscription(payload.new);
-          const s = get();
-          if (s.subscriptions.some((x) => x.id === sub.id)) return;
-          set({
-            subscriptions: insertSorted(s.subscriptions, sub, (x) => x.guruUpdatedAt),
-          });
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "payment_subscriptions" },
-        (payload) => {
-          const sub = mapPaymentSubscription(payload.new);
-          const s = get();
-          const withoutOld = s.subscriptions.filter((x) => x.id !== sub.id);
-          set({
-            subscriptions: insertSorted(withoutOld, sub, (x) => x.guruUpdatedAt),
-          });
-        }
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "payment_events" }, refetch)
+      .on("postgres_changes", { event: "*", schema: "public", table: "payment_subscriptions" }, refetch)
       .subscribe((status) => {
         if (status === "SUBSCRIBED") set({ realtime: "on" });
       });
@@ -283,6 +255,60 @@ export function usePaymentSubscriptions() {
 
 export function usePaymentsRealtimeStatus() {
   return usePaymentsStore((s) => s.realtime);
+}
+
+export interface SalesMonthlyRow {
+  month: string;
+  productName: string;
+  status: string | null;
+  salesCount: number;
+  revenue: number;
+}
+
+function mapSalesMonthlyRow(r: any): SalesMonthlyRow {
+  return {
+    month: r.month,
+    productName: r.product_name,
+    status: r.status ?? null,
+    salesCount: Number(r.sales_count ?? 0),
+    revenue: Number(r.revenue ?? 0),
+  };
+}
+
+/**
+ * Vendas agregadas por mês x produto x status, direto de `payment_sales_monthly`
+ * (migração 0020) — cobre TODO o histórico, não só as 100 vendas mais
+ * recentes carregadas por `usePaymentEvents`. Usado nos KPIs/gráficos de
+ * Vendas e Relatórios, que precisam bater com os números reais da Guru.
+ */
+export function usePaymentSalesReport() {
+  const [rows, setRows] = useState<SalesMonthlyRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      await useDbStore.getState().load();
+      const loc = useDbStore.getState().locationId;
+      if (!loc) {
+        if (active) {
+          setRows([]);
+          setLoading(false);
+        }
+        return;
+      }
+      const supabase = createClient();
+      const { data } = await supabase.from("payment_sales_monthly").select("*").eq("location_id", loc);
+      if (!active) return;
+      setRows((data ?? []).map(mapSalesMonthlyRow));
+      setLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return { rows, loading };
 }
 
 const locationId = () => useDbStore.getState().locationId;
