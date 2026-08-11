@@ -382,9 +382,10 @@ Cloud API → celular.
 - `src/lib/whatsapp/client.ts` — cliente da Cloud API (`sendText`, `sendTemplate`).
 - Repo `db/whatsapp.ts`; UI do módulo `/whatsapp` (criar/editar canal) e composer
   do inbox (envia de verdade, mostra tique de status, pede template fora da janela).
-- Migração `0020_whatsapp.sql` — tabela `whatsapp_channels` (RLS padrão membership;
-  `phone_number_id` único) e colunas `messages.wa_message_id|status|channel_id`.
-  **Migração livre a partir de agora: 0021.**
+- Migração `0022_whatsapp.sql` — tabela `whatsapp_channels` (RLS padrão membership;
+  `phone_number_id` único), colunas `messages.wa_message_id|status|channel_id` e
+  `conversations.channel_id`. **Migração livre a partir de agora: 0023**
+  (0020/0021 = Pagamentos, 0022 = WhatsApp).
 - Env (privadas, nunca `NEXT_PUBLIC_`): `WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`,
   `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` (default `v21.0`).
 
@@ -442,8 +443,8 @@ os módulos ainda não migrados continuam importando dos repos mock em
   0019): bucket privado `conversation-media` (path `{location_id}/{conversation_id}/
   {uuid}.{ext}`, policies no padrão membership), envio de imagem/PDF/DOCX (15 MB) e
   gravação por `MediaRecorder`; exibição via URL assinada (`conversationActions.
-  sendMedia`/`mediaUrl`). Migração 0020 foi usada pelo WhatsApp (ver seção própria
-  abaixo). **Migração livre a partir de agora: 0021.**
+  sendMedia`/`mediaUrl`). WhatsApp usou a migração 0022 (ver seção própria
+  abaixo). **Migração livre a partir de agora: 0023.**
 - ✅ Backend F2e: **Dashboard** com widgets calculando sobre dados reais
   (adapters `useDbPipelines/useDbOpportunities/useDbPipeline` em `db/pipeline.ts`).
 - ✅ Backend F2f: módulo **Calendários** real — compromissos do banco (repo
