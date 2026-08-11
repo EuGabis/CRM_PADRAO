@@ -61,7 +61,7 @@ import {
 import {
   CONTACTS_PAGE_SIZE,
   usePaymentContactsPage,
-  usePaymentContactsSyncStatus,
+  usePaymentContactsSummary,
 } from "@/lib/data/repos/db/payment-contacts";
 import { useMyMembership } from "@/lib/data/repos/db/team";
 import { classifyGuruStatus, guruStatusLabel } from "@/lib/data/guru";
@@ -905,47 +905,47 @@ function ContatosGuruTab() {
   const [page, setPage] = useState(0);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const status = usePaymentContactsSyncStatus();
+  const summary = usePaymentContactsSummary();
   const { rows, total, loading } = usePaymentContactsPage(page, search);
 
-  // Debounce: só busca 350ms depois da última tecla, e sempre volta pra
-  // página 1 quando o termo muda (a página atual pode não existir mais).
+  // Debounce curto: 180ms depois da última tecla já busca (a consulta usa
+  // índices em lower(contact_email)/lower(email), fica rápida mesmo assim).
+  // Sempre volta pra página 1 quando o termo muda (a página atual pode não
+  // existir mais no resultado filtrado).
   useEffect(() => {
     const t = setTimeout(() => {
       setSearch(searchInput);
       setPage(0);
-    }, 350);
+    }, 180);
     return () => clearTimeout(t);
   }, [searchInput]);
 
   const pageCount = Math.max(1, Math.ceil(total / CONTACTS_PAGE_SIZE));
   const firstOnPage = total === 0 ? 0 : page * CONTACTS_PAGE_SIZE + 1;
   const lastOnPage = Math.min(total, (page + 1) * CONTACTS_PAGE_SIZE);
+  const contacts = summary?.contacts ?? total;
+  const revenue = summary?.revenue ?? 0;
 
   return (
     <>
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-slate-900">Contatos</h1>
-          <p className="text-xs text-slate-500">
-            Cadastro de contatos da Guru (GET /api/v2/contacts), com telefone e documento
-          </p>
+          <p className="text-xs text-slate-500">Todos os contatos da Guru (vendas e assinaturas), com histórico completo</p>
         </div>
         <GuruLiveBadge />
       </div>
-      <div className="mb-4 grid gap-3 md:grid-cols-2">
-        <KpiCard label="Total na Guru" value={status?.totalRows != null ? status.totalRows.toLocaleString("pt-BR") : "…"} />
-        <KpiCard
-          label="Sincronizados no CRM"
-          value={status ? status.synced.toLocaleString("pt-BR") : "…"}
-          hint={status && !status.done ? "Importando aos poucos, a cada minuto..." : undefined}
-        />
+      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard label="Contatos" value={summary ? String(contacts) : "…"} />
+        <KpiCard label="Receita total" value={summary ? formatBRL(revenue) : "…"} />
+        <KpiCard label="Ticket por contato" value={summary ? formatBRL(contacts ? revenue / contacts : 0) : "…"} />
+        <KpiCard label="Com assinatura ativa" value={summary ? String(summary.withSubs) : "…"} />
       </div>
       <div className="mb-3">
         <Input
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Buscar por nome, telefone ou documento (CPF)..."
+          placeholder="Buscar por nome, e-mail, telefone ou documento (CPF)..."
           className="h-8 max-w-sm text-xs"
         />
       </div>
@@ -953,18 +953,32 @@ function ContatosGuruTab() {
         <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
           {search
             ? "Nenhum contato encontrado com esse termo."
-            : "Nenhum contato sincronizado ainda — a importação roda a cada minuto após conectar."}
+            : "Nenhum contato ainda. Eles aparecem aqui conforme as vendas e assinaturas sincronizam da Guru."}
         </div>
       ) : (
         <>
           <div className={cn("transition-opacity", loading && "opacity-50")}>
             <MiniTable
-              headers={["Nome", "E-mail", "Telefone", "Documento"]}
-              rows={rows.map((c) => [
-                <span key="n" className="font-medium text-slate-800">{c.name ?? "—"}</span>,
-                <span key="e" className="text-slate-500">{c.email ?? "—"}</span>,
-                <span key="p" className="text-slate-600">{c.phone ?? "—"}</span>,
-                <span key="d" className="font-mono text-[11px] text-slate-600">{c.doc ?? "—"}</span>,
+              headers={["Contato", "E-mail", "Telefone", "Documento", "Compras", "Total gasto", "Assinaturas", "Última atividade"]}
+              rows={rows.map((b) => [
+                <span key="n" className="font-medium text-slate-800">{b.name ?? b.email ?? "—"}</span>,
+                <span key="e" className="text-slate-500">{b.email ?? "—"}</span>,
+                <span key="p" className="text-slate-600">{b.phone ?? "—"}</span>,
+                <span key="d" className="font-mono text-[11px] text-slate-600">{b.doc ?? "—"}</span>,
+                <span key="c" className="text-slate-600">{b.purchases}</span>,
+                <span key="t" className="font-semibold text-slate-800">{formatBRL(b.totalSpent)}</span>,
+                <span key="s" className="text-slate-600">
+                  {b.activeSubs > 0 ? (
+                    <Badge className="bg-emerald-100 text-emerald-700">
+                      {b.activeSubs} ativa{b.activeSubs > 1 ? "s" : ""}
+                    </Badge>
+                  ) : (
+                    "—"
+                  )}
+                </span>,
+                <span key="a" className="text-slate-500">
+                  {b.lastActivity ? format(new Date(b.lastActivity), "dd MMM yyyy", { locale: ptBR }) : "—"}
+                </span>,
               ])}
             />
           </div>
