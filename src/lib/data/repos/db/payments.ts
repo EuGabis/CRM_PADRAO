@@ -310,9 +310,27 @@ export function usePaymentSalesReport() {
         return;
       }
       const supabase = createClient();
-      const { data } = await supabase.from("payment_sales_monthly").select("*").eq("location_id", loc);
+      // A view agrupa por mês x produto x status — cresce sem limite
+      // conforme o histórico e o catálogo de produtos aumentam (já passa de
+      // 1.800 linhas). Sem paginar, o PostgREST corta silenciosamente em
+      // 1000 linhas (limite padrão): "Vendas aprovadas (mês)" e "Receita do
+      // mês" ficavam bem abaixo do real porque parte das linhas do mês
+      // corrente nunca chegava no client.
+      const CHUNK = 1000;
+      const all: any[] = [];
+      let from = 0;
+      while (true) {
+        const { data } = await supabase
+          .from("payment_sales_monthly")
+          .select("*")
+          .eq("location_id", loc)
+          .range(from, from + CHUNK - 1);
+        all.push(...(data ?? []));
+        if (!data || data.length < CHUNK) break;
+        from += CHUNK;
+      }
       if (!active) return;
-      setRows((data ?? []).map(mapSalesMonthlyRow));
+      setRows(all.map(mapSalesMonthlyRow));
       setLoading(false);
     })();
     return () => {
