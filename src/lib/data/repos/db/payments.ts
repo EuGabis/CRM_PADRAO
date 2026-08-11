@@ -119,19 +119,14 @@ function mapPaymentSubscription(row: any): PaymentSubscription {
   };
 }
 
-const MAX_EVENTS = 100;
-
 interface PaymentsState {
   loaded: boolean;
   loading: boolean;
   realtime: "off" | "on";
   guru: GuruCredential;
-  events: PaymentEvent[];
   subscriptions: PaymentSubscription[];
   load: () => Promise<void>;
-  patch: (
-    p: Partial<Pick<PaymentsState, "guru" | "events" | "subscriptions" | "realtime">>
-  ) => void;
+  patch: (p: Partial<Pick<PaymentsState, "guru" | "subscriptions" | "realtime">>) => void;
 }
 
 export const usePaymentsStore = create<PaymentsState>((set, get) => ({
@@ -139,7 +134,6 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
   loading: false,
   realtime: "off",
   guru: EMPTY_GURU,
-  events: [],
   subscriptions: [],
 
   load: async () => {
@@ -152,21 +146,13 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
       return;
     }
     const supabase = createClient();
-    const [{ data: credential }, { data: events }, { data: subscriptions }] = await Promise.all([
+    const [{ data: credential }, { data: subscriptions }] = await Promise.all([
       supabase
         .from("payment_credentials")
         .select("*")
         .eq("location_id", locationId)
         .eq("provider", "guru")
         .maybeSingle(),
-      supabase
-        .from("payment_events")
-        .select("*")
-        .eq("location_id", locationId)
-        // guru_created_at é a data real da venda; received_at é só quando o
-        // nosso banco viu a linha (irrelevante para dados trazidos por sync).
-        .order("guru_created_at", { ascending: false, nullsFirst: false })
-        .limit(MAX_EVENTS),
       supabase
         .from("payment_subscriptions")
         .select("*")
@@ -178,45 +164,28 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
       loaded: true,
       loading: false,
       guru: credential ? mapGuruCredential(credential) : EMPTY_GURU,
-      events: (events ?? []).map(mapPaymentEvent),
       subscriptions: (subscriptions ?? []).map(mapPaymentSubscription),
     });
 
-    // Um INSERT/UPDATE em tempo real isolado não dá pra encaixar direto no
-    // array em memória sem arriscar furar a ordenação ou (pior) evictar uma
-    // linha legítima do topo quando o evento é de uma venda antiga fora da
-    // janela carregada (ex.: o sync ainda preenchendo o backfill histórico
-    // grava/atualiza vendas de 2024 o tempo todo). Em vez de emendar o
-    // array, qualquer evento só dispara um refetch (debounced) das mesmas
-    // consultas do load() — a lista em tela sempre reflete a ordenação real
-    // do banco, nunca "esvazia" nem embaralha.
+    // Assinaturas cabem inteiras em memória (poucos milhares); um
+    // INSERT/UPDATE isolado emendado no array arrisca furar a ordenação —
+    // por isso qualquer mudança só dispara um refetch (debounced) da mesma
+    // consulta do load(), nunca uma emenda manual no array.
     let refetchTimer: ReturnType<typeof setTimeout> | null = null;
     const refetch = () => {
       if (refetchTimer) clearTimeout(refetchTimer);
       refetchTimer = setTimeout(async () => {
-        const [{ data: freshEvents }, { data: freshSubs }] = await Promise.all([
-          supabase
-            .from("payment_events")
-            .select("*")
-            .eq("location_id", locationId)
-            .order("guru_created_at", { ascending: false, nullsFirst: false })
-            .limit(MAX_EVENTS),
-          supabase
-            .from("payment_subscriptions")
-            .select("*")
-            .eq("location_id", locationId)
-            .order("guru_updated_at", { ascending: false, nullsFirst: false }),
-        ]);
-        set({
-          events: (freshEvents ?? []).map(mapPaymentEvent),
-          subscriptions: (freshSubs ?? []).map(mapPaymentSubscription),
-        });
+        const { data: freshSubs } = await supabase
+          .from("payment_subscriptions")
+          .select("*")
+          .eq("location_id", locationId)
+          .order("guru_updated_at", { ascending: false, nullsFirst: false });
+        set({ subscriptions: (freshSubs ?? []).map(mapPaymentSubscription) });
       }, 800);
     };
 
     supabase
       .channel("lito-pagamentos")
-      .on("postgres_changes", { event: "*", schema: "public", table: "payment_events" }, refetch)
       .on("postgres_changes", { event: "*", schema: "public", table: "payment_subscriptions" }, refetch)
       .subscribe((status) => {
         if (status === "SUBSCRIBED") set({ realtime: "on" });
@@ -235,15 +204,6 @@ export function useGuruIntegration() {
   return { guru, loaded };
 }
 
-export function usePaymentEvents() {
-  const { events, load } = usePaymentsStore();
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return useMemo(() => events, [events]);
-}
-
 export function usePaymentSubscriptions() {
   const { subscriptions, load } = usePaymentsStore();
   useEffect(() => {
@@ -251,6 +211,58 @@ export function usePaymentSubscriptions() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return useMemo(() => subscriptions, [subscriptions]);
+}
+
+export const EVENTS_PAGE_SIZE = 50;
+export const EVENTS_PAGE_SIZE_OPTIONS = [50, 100, 150] as const;
+
+/**
+ * Uma página de vendas direto de payment_events (índice em
+ * (location_id, guru_created_at) da migração 0020) — cobre TODO o
+ * histórico, com paginação real (50/100/150 por página) em vez de manter
+ * um cache fixo em memória. Sem isso, os KPIs de payment_sales_monthly
+ * (histórico completo) não tinham como bater com o que a tabela mostrava
+ * — não dava pra conferir na tela se os números eram reais.
+ */
+export function usePaymentEventsPage(page: number, ascending: boolean, pageSize: number = EVENTS_PAGE_SIZE) {
+  const [rows, setRows] = useState<PaymentEvent[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    (async () => {
+      await useDbStore.getState().load();
+      const loc = useDbStore.getState().locationId;
+      if (!loc) {
+        if (active) {
+          setRows([]);
+          setTotal(0);
+          setLoading(false);
+        }
+        return;
+      }
+      const supabase = createClient();
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
+      const { data, count } = await supabase
+        .from("payment_events")
+        .select("*", { count: "exact" })
+        .eq("location_id", loc)
+        .order("guru_created_at", { ascending, nullsFirst: false })
+        .range(from, to);
+      if (!active) return;
+      setRows((data ?? []).map(mapPaymentEvent));
+      if (typeof count === "number") setTotal(count);
+      setLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [page, ascending, pageSize]);
+
+  return { rows, total, loading };
 }
 
 export function usePaymentsRealtimeStatus() {

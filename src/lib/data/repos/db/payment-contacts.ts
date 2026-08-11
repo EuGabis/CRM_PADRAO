@@ -7,13 +7,22 @@ import { useDbStore } from "./contacts";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
- * Contatos da Guru = compradores/assinantes agregados no banco pelas views
- * `payment_contacts` / `payment_contacts_summary` (migração 0016, com
- * telefone/documento adicionados na 0018+0019 via join com
- * `payment_guru_contacts`, o cadastro real de contatos da Guru). NÃO deriva
- * do store em memória (que carrega só as 100 vendas mais recentes) — aqui
- * paginamos direto no Postgres pra cobrir todo o histórico, como o painel
- * da Guru.
+ * Contatos da Guru: listagem/busca vem de `payment_guru_contacts` (migração
+ * 0018 — cadastro real da Guru, com índices simples em name/phone/doc, ~7ms
+ * por busca). Compras/total gasto/assinaturas/última atividade vêm de
+ * `payment_contacts` (view agregada de payment_events+payment_subscriptions,
+ * migração 0016/0019) — mas só pra os ≤20 contatos da página visível,
+ * filtrando por contact_key (índices funcionais da migração 0021).
+ *
+ * Antes buscava/paginava direto em `payment_contacts`: o ILIKE roda DEPOIS
+ * do group by, então cada tecla digitada forçava agregar as ~24k vendas +
+ * 2,4k assinaturas da conta inteira (~680ms medido). Com a busca em
+ * payment_guru_contacts e o enriquecimento de valores só pela página atual,
+ * o mesmo fluxo cai pra poucos ms.
+ *
+ * Efeito colateral: a ordenação padrão deixou de ser "quem mais gastou
+ * primeiro" (isso exigiria materializar a agregação) e passou a ser por
+ * nome — mas os valores continuam aparecendo em cada linha.
  */
 
 export const CONTACTS_PAGE_SIZE = 20;
@@ -36,13 +45,13 @@ export interface GuruContactsSummary {
   withSubs: number;
 }
 
-function mapRow(r: any): GuruContact {
+function mapValuesRow(r: any): {
+  purchases: number;
+  totalSpent: number;
+  activeSubs: number;
+  lastActivity: string | null;
+} {
   return {
-    contactKey: r.contact_key,
-    name: r.name ?? null,
-    email: r.email ?? null,
-    phone: r.phone ?? null,
-    doc: r.doc ?? null,
     purchases: Number(r.purchases ?? 0),
     totalSpent: Number(r.total_spent ?? 0),
     activeSubs: Number(r.active_subs ?? 0),
@@ -88,7 +97,11 @@ export function usePaymentContactsSummary(): GuruContactsSummary | null {
   return summary;
 }
 
-/** Uma página de contatos, ordenada por total gasto e assinaturas, com busca opcional por nome/email/telefone/documento. */
+/**
+ * Uma página de contatos (busca/paginação em payment_guru_contacts, rápido
+ * e indexado), com compras/total gasto/assinaturas/última atividade
+ * enriquecidos só para essa página a partir de payment_contacts.
+ */
 export function usePaymentContactsPage(page: number, search: string) {
   const [rows, setRows] = useState<GuruContact[]>([]);
   const [total, setTotal] = useState(0);
@@ -111,7 +124,10 @@ export function usePaymentContactsPage(page: number, search: string) {
       const supabase = createClient();
       const from = page * CONTACTS_PAGE_SIZE;
       const to = from + CONTACTS_PAGE_SIZE - 1;
-      let query = supabase.from("payment_contacts").select("*", { count: "exact" }).eq("location_id", loc);
+      let query = supabase
+        .from("payment_guru_contacts")
+        .select("*", { count: "exact" })
+        .eq("location_id", loc);
 
       const term = sanitizeSearch(search);
       if (term) {
@@ -120,13 +136,47 @@ export function usePaymentContactsPage(page: number, search: string) {
         );
       }
 
-      const { data, count } = await query
-        .order("total_spent", { ascending: false })
-        .order("active_subs", { ascending: false })
-        .order("contact_key", { ascending: true })
+      const { data: guruRows, count } = await query
+        .order("name", { ascending: true, nullsFirst: false })
         .range(from, to);
+
       if (!active) return;
-      setRows((data ?? []).map(mapRow));
+
+      const keys = Array.from(
+        new Set(
+          (guruRows ?? [])
+            .map((r: any) => (r.email ? String(r.email).toLowerCase().trim() : null))
+            .filter((k: string | null): k is string => !!k)
+        )
+      );
+      const valuesByKey = new Map<string, ReturnType<typeof mapValuesRow>>();
+      if (keys.length > 0) {
+        const { data: valueRows } = await supabase
+          .from("payment_contacts")
+          .select("contact_key, purchases, total_spent, active_subs, last_activity")
+          .eq("location_id", loc)
+          .in("contact_key", keys);
+        for (const v of valueRows ?? []) valuesByKey.set(v.contact_key, mapValuesRow(v));
+      }
+
+      const merged: GuruContact[] = (guruRows ?? []).map((r: any) => {
+        const key = r.email ? String(r.email).toLowerCase().trim() : null;
+        const values = key ? valuesByKey.get(key) : undefined;
+        return {
+          contactKey: key ?? r.id,
+          name: r.name ?? null,
+          email: r.email ?? null,
+          phone: r.phone ?? null,
+          doc: r.doc ?? null,
+          purchases: values?.purchases ?? 0,
+          totalSpent: values?.totalSpent ?? 0,
+          activeSubs: values?.activeSubs ?? 0,
+          lastActivity: values?.lastActivity ?? null,
+        };
+      });
+
+      if (!active) return;
+      setRows(merged);
       if (typeof count === "number") setTotal(count);
       setLoading(false);
     })();
