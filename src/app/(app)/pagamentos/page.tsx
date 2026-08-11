@@ -115,11 +115,20 @@ function GuruProviderCard() {
         <p className="mt-1 text-[10px] text-slate-400">Verificando conexão...</p>
       ) : (
         guru.connected && (
-          <p className="mt-1 text-[10px] text-slate-400">
-            {guru.lastSyncedAt
-              ? `Última sincronização: ${format(new Date(guru.lastSyncedAt), "dd MMM, HH:mm:ss", { locale: ptBR })}`
-              : "Aguardando a primeira sincronização (roda a cada minuto)..."}
-          </p>
+          <>
+            <p className="mt-1 text-[10px] text-slate-400">
+              {guru.lastSyncedAt
+                ? `Última sincronização: ${format(new Date(guru.lastSyncedAt), "dd MMM, HH:mm:ss", { locale: ptBR })}`
+                : "Aguardando a primeira sincronização (roda a cada minuto)..."}
+            </p>
+            <p className="text-[10px] text-slate-400">
+              {guru.historyBackfillDone
+                ? "Histórico completo importado (desde 01/06/2024)."
+                : guru.historyBackfillCursor
+                  ? `Importando histórico: já coberto até ${format(new Date(guru.historyBackfillCursor), "dd MMM yyyy", { locale: ptBR })}...`
+                  : "Histórico completo começa a ser importado no próximo minuto..."}
+            </p>
+          </>
         )
       )}
       <Button

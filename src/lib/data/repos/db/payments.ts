@@ -13,6 +13,8 @@ export interface GuruCredential {
   webhookToken: string;
   connectedAt: string | null;
   lastSyncedAt: string | null;
+  historyBackfillCursor: string | null;
+  historyBackfillDone: boolean;
 }
 
 export interface PaymentEvent {
@@ -59,6 +61,8 @@ const EMPTY_GURU: GuruCredential = {
   webhookToken: "",
   connectedAt: null,
   lastSyncedAt: null,
+  historyBackfillCursor: null,
+  historyBackfillDone: false,
 };
 
 function mapGuruCredential(row: any): GuruCredential {
@@ -68,6 +72,8 @@ function mapGuruCredential(row: any): GuruCredential {
     webhookToken: row.webhook_token,
     connectedAt: row.created_at,
     lastSyncedAt: row.last_synced_at ?? null,
+    historyBackfillCursor: row.history_backfill_cursor ?? null,
+    historyBackfillDone: row.history_backfill_done ?? false,
   };
 }
 
