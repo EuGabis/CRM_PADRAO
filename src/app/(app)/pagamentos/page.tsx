@@ -57,6 +57,11 @@ import {
   usePaymentFiles,
   type PaymentFile,
 } from "@/lib/data/repos/db/payment-files";
+import {
+  CONTACTS_PAGE_SIZE,
+  usePaymentContactsPage,
+  usePaymentContactsSummary,
+} from "@/lib/data/repos/db/payment-contacts";
 import { useMyMembership } from "@/lib/data/repos/db/team";
 import { classifyGuruStatus, guruStatusLabel } from "@/lib/data/guru";
 import { cn } from "@/lib/utils";
@@ -800,55 +805,6 @@ function ProdutosGuruTab() {
 
 /* -------------------------------- Contatos ------------------------------- */
 
-interface BuyerRow {
-  key: string;
-  name: string;
-  email: string | null;
-  purchases: number;
-  totalSpent: number;
-  activeSubs: number;
-  lastPurchase: string | null;
-}
-
-/** Compradores únicos derivados das vendas + assinaturas já sincronizadas. */
-function useBuyers(events: PaymentEvent[], subscriptions: PaymentSubscription[]): BuyerRow[] {
-  return useMemo(() => {
-    const map = new Map<string, BuyerRow>();
-    const keyOf = (name: string | null, email: string | null) =>
-      (email?.toLowerCase() || name?.toLowerCase() || "").trim();
-    const ensure = (name: string | null, email: string | null): BuyerRow | null => {
-      const key = keyOf(name, email);
-      if (!key) return null;
-      let row = map.get(key);
-      if (!row) {
-        row = { key, name: name ?? email ?? "—", email, purchases: 0, totalSpent: 0, activeSubs: 0, lastPurchase: null };
-        map.set(key, row);
-      }
-      if (!row.email && email) row.email = email;
-      if ((row.name === "—" || !row.name) && name) row.name = name;
-      return row;
-    };
-
-    for (const e of events) {
-      const row = ensure(e.contactName, e.contactEmail);
-      if (!row) continue;
-      if (classifyGuruStatus(e.status) === "aprovado") {
-        row.purchases += 1;
-        row.totalSpent += e.amount ?? 0;
-      }
-      if (e.guruCreatedAt && (!row.lastPurchase || e.guruCreatedAt > row.lastPurchase)) {
-        row.lastPurchase = e.guruCreatedAt;
-      }
-    }
-    for (const s of subscriptions) {
-      const row = ensure(s.contactName, s.contactEmail);
-      if (!row) continue;
-      if (classifyGuruStatus(s.status) === "aprovado") row.activeSubs += 1;
-    }
-    return Array.from(map.values()).sort((a, b) => b.totalSpent - a.totalSpent);
-  }, [events, subscriptions]);
-}
-
 function ContatosTab() {
   const { guru, loaded } = useGuruIntegration();
   if (!loaded) return null;
@@ -858,58 +814,111 @@ function ContatosTab() {
     <EmptyState
       icon={Users2}
       title="Contatos da Guru"
-      description="Conecte a Guru na aba Integrações. Assim que as vendas sincronizarem, seus compradores aparecem aqui automaticamente."
+      description="Conecte a Guru na aba Integrações. Assim que os dados sincronizarem, seus contatos aparecem aqui automaticamente."
     />
   );
 }
 
-function ContatosGuruTab() {
-  const events = usePaymentEvents();
-  const subscriptions = usePaymentSubscriptions();
-  const buyers = useBuyers(events, subscriptions);
+/** Paginação estilo Guru: Anterior / números / Próxima. */
+function Pager({ page, pageCount, onChange }: { page: number; pageCount: number; onChange: (p: number) => void }) {
+  if (pageCount <= 1) return null;
+  // janela de até 5 números em volta da página atual
+  const start = Math.max(0, Math.min(page - 2, pageCount - 5));
+  const nums = Array.from({ length: Math.min(5, pageCount) }, (_, i) => start + i);
+  const btn = "flex h-7 min-w-7 items-center justify-center rounded-md border px-2 text-[11px] font-medium";
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        className={cn(btn, "text-slate-600 disabled:opacity-40")}
+        disabled={page === 0}
+        onClick={() => onChange(page - 1)}
+      >
+        Anterior
+      </button>
+      {start > 0 && <span className="px-1 text-[11px] text-slate-400">…</span>}
+      {nums.map((n) => (
+        <button
+          key={n}
+          onClick={() => onChange(n)}
+          className={cn(btn, n === page ? "border-indigo-500 bg-indigo-500 text-white" : "text-slate-600 hover:bg-slate-100")}
+        >
+          {n + 1}
+        </button>
+      ))}
+      {start + nums.length < pageCount && <span className="px-1 text-[11px] text-slate-400">…</span>}
+      <button
+        className={cn(btn, "text-slate-600 disabled:opacity-40")}
+        disabled={page >= pageCount - 1}
+        onClick={() => onChange(page + 1)}
+      >
+        Próxima
+      </button>
+    </div>
+  );
+}
 
-  const revenue = buyers.reduce((s, b) => s + b.totalSpent, 0);
-  const withSub = buyers.filter((b) => b.activeSubs > 0).length;
+function ContatosGuruTab() {
+  const [page, setPage] = useState(0);
+  const summary = usePaymentContactsSummary();
+  const { rows, total, loading } = usePaymentContactsPage(page);
+
+  const pageCount = Math.max(1, Math.ceil(total / CONTACTS_PAGE_SIZE));
+  const firstOnPage = total === 0 ? 0 : page * CONTACTS_PAGE_SIZE + 1;
+  const lastOnPage = Math.min(total, (page + 1) * CONTACTS_PAGE_SIZE);
+  const contacts = summary?.contacts ?? total;
+  const revenue = summary?.revenue ?? 0;
 
   return (
     <>
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-slate-900">Contatos</h1>
-          <p className="text-xs text-slate-500">Compradores derivados das vendas e assinaturas da Guru</p>
+          <p className="text-xs text-slate-500">Todos os contatos da Guru (vendas e assinaturas), com histórico completo</p>
         </div>
         <GuruLiveBadge />
       </div>
       <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Contatos" value={String(buyers.length)} />
-        <KpiCard label="Receita total" value={formatBRL(revenue)} />
-        <KpiCard label="Ticket por contato" value={formatBRL(buyers.length ? revenue / buyers.length : 0)} />
-        <KpiCard label="Com assinatura ativa" value={String(withSub)} />
+        <KpiCard label="Contatos" value={summary ? String(contacts) : "…"} />
+        <KpiCard label="Receita total" value={summary ? formatBRL(revenue) : "…"} />
+        <KpiCard label="Ticket por contato" value={summary ? formatBRL(contacts ? revenue / contacts : 0) : "…"} />
+        <KpiCard label="Com assinatura ativa" value={summary ? String(summary.withSubs) : "…"} />
       </div>
-      {buyers.length === 0 ? (
+      {total === 0 && !loading ? (
         <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
-          Nenhum contato ainda. Os compradores aparecem aqui conforme as vendas sincronizam da Guru.
+          Nenhum contato ainda. Eles aparecem aqui conforme as vendas e assinaturas sincronizam da Guru.
         </div>
       ) : (
-        <MiniTable
-          headers={["Contato", "E-mail", "Compras", "Total gasto", "Assinaturas", "Última compra"]}
-          rows={buyers.map((b) => [
-            <span key="n" className="font-medium text-slate-800">{b.name}</span>,
-            <span key="e" className="text-slate-500">{b.email ?? "—"}</span>,
-            <span key="p" className="text-slate-600">{b.purchases}</span>,
-            <span key="t" className="font-semibold text-slate-800">{formatBRL(b.totalSpent)}</span>,
-            <span key="s" className="text-slate-600">
-              {b.activeSubs > 0 ? (
-                <Badge className="bg-emerald-100 text-emerald-700">{b.activeSubs} ativa{b.activeSubs > 1 ? "s" : ""}</Badge>
-              ) : (
-                "—"
-              )}
-            </span>,
-            <span key="d" className="text-slate-500">
-              {b.lastPurchase ? format(new Date(b.lastPurchase), "dd MMM yyyy", { locale: ptBR }) : "—"}
-            </span>,
-          ])}
-        />
+        <>
+          <div className={cn("transition-opacity", loading && "opacity-50")}>
+            <MiniTable
+              headers={["Contato", "E-mail", "Compras", "Total gasto", "Assinaturas", "Última atividade"]}
+              rows={rows.map((b) => [
+                <span key="n" className="font-medium text-slate-800">{b.name ?? b.email ?? "—"}</span>,
+                <span key="e" className="text-slate-500">{b.email ?? "—"}</span>,
+                <span key="p" className="text-slate-600">{b.purchases}</span>,
+                <span key="t" className="font-semibold text-slate-800">{formatBRL(b.totalSpent)}</span>,
+                <span key="s" className="text-slate-600">
+                  {b.activeSubs > 0 ? (
+                    <Badge className="bg-emerald-100 text-emerald-700">
+                      {b.activeSubs} ativa{b.activeSubs > 1 ? "s" : ""}
+                    </Badge>
+                  ) : (
+                    "—"
+                  )}
+                </span>,
+                <span key="d" className="text-slate-500">
+                  {b.lastActivity ? format(new Date(b.lastActivity), "dd MMM yyyy", { locale: ptBR }) : "—"}
+                </span>,
+              ])}
+            />
+          </div>
+          <div className="mt-3 flex items-center justify-between">
+            <p className="text-[11px] text-slate-400">
+              {firstOnPage}–{lastOnPage} de {total.toLocaleString("pt-BR")} contatos
+            </p>
+            <Pager page={page} pageCount={pageCount} onChange={setPage} />
+          </div>
+        </>
       )}
     </>
   );
