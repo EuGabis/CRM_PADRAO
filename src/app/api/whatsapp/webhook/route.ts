@@ -160,7 +160,7 @@ async function handleIncoming(db: any, channel: any, value: any, m: any) {
   }
   if (!conv) return;
 
-  await db.from("messages").insert({
+  const { error: insErr } = await db.from("messages").insert({
     location_id: channel.location_id,
     conversation_id: conv.id,
     direction: "in",
@@ -171,4 +171,6 @@ async function handleIncoming(db: any, channel: any, value: any, m: any) {
     wa_message_id: waId,
     status: "delivered",
   });
+  // corrida: entrega duplicada da Meta — o índice único barra o 2º insert; ignore
+  if (insErr && (insErr as any).code !== "23505") throw insErr;
 }

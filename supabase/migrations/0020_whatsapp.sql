@@ -57,8 +57,10 @@ alter table public.messages add column if not exists status text
   check (status in ('sent', 'delivered', 'read', 'failed'));
 alter table public.messages add column if not exists channel_id uuid
   references public.whatsapp_channels (id) on delete set null;
-create index if not exists messages_wa_message_id_idx
-  on public.messages (wa_message_id);
+drop index if exists messages_wa_message_id_idx;
+create unique index if not exists messages_wa_message_id_key
+  on public.messages (wa_message_id)
+  where wa_message_id is not null;
 
 -- Realtime: precisamos do row completo no UPDATE (status entregue/lido ao vivo)
 alter table public.messages replica identity full;
