@@ -135,3 +135,33 @@ export function mapGuruSubscription(sub: any): PaymentSubscriptionRow {
 export function extractNestedSubscription(txn: any): any | null {
   return txn?.subscription ?? null;
 }
+
+export interface PaymentGuruContactRow {
+  external_id: string;
+  name: string | null;
+  email: string | null;
+  doc: string | null;
+  phone: string | null;
+  guru_created_at: string | null;
+  guru_updated_at: string | null;
+  raw: unknown;
+}
+
+/** `c` é um item de GET /api/v2/contacts (referencia-api/contacts.yaml). */
+export function mapGuruContact(c: any): PaymentGuruContactRow {
+  const phone = firstDefined(
+    c?.phone_full_number,
+    c?.phone_local_code && c?.phone_number ? `${c.phone_local_code}${c.phone_number}` : null,
+    c?.phone_number
+  );
+  return {
+    external_id: firstDefined(c?.id) ?? crypto.randomUUID(),
+    name: firstDefined(c?.name),
+    email: firstDefined(c?.email),
+    doc: firstDefined(c?.doc),
+    phone,
+    guru_created_at: parseGuruDate(c?.created_at),
+    guru_updated_at: parseGuruDate(c?.update_at),
+    raw: c,
+  };
+}

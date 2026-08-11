@@ -7,79 +7,95 @@ import { useDbStore } from "./contacts";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
- * Contatos da Guru = compradores/assinantes agregados no banco pelas views
- * `payment_contacts` / `payment_contacts_summary` (migração 0016). Diferente
- * das outras abas, NÃO deriva do store em memória (que carrega só as 100
- * vendas mais recentes) — aqui paginamos direto no Postgres pra cobrir todo o
- * histórico, como o painel da Guru.
+ * Contatos reais da Guru (GET /api/v2/contacts, migração 0018) — sincronizados
+ * em `payment_guru_contacts` por /api/integrations/guru/sync (contactsSyncChunk).
+ * Diferente da v1 (que agregava a partir de vendas/assinaturas e não tinha
+ * telefone/documento), aqui é o cadastro de contatos da própria Guru, com a
+ * mesma contagem total que aparece no painel dela.
  */
 
 export const CONTACTS_PAGE_SIZE = 20;
 
-export interface GuruContact {
-  contactKey: string;
+export interface GuruContactRow {
+  id: string;
+  externalId: string;
   name: string | null;
   email: string | null;
-  purchases: number;
-  totalSpent: number;
-  activeSubs: number;
-  lastActivity: string | null;
+  doc: string | null;
+  phone: string | null;
+  guruCreatedAt: string | null;
+  guruUpdatedAt: string | null;
 }
 
-export interface GuruContactsSummary {
-  contacts: number;
-  revenue: number;
-  withSubs: number;
+export interface GuruContactsSyncStatus {
+  totalRows: number | null;
+  synced: number;
+  done: boolean;
 }
 
-function mapRow(r: any): GuruContact {
+function mapRow(r: any): GuruContactRow {
   return {
-    contactKey: r.contact_key,
+    id: r.id,
+    externalId: r.external_id,
     name: r.name ?? null,
     email: r.email ?? null,
-    purchases: Number(r.purchases ?? 0),
-    totalSpent: Number(r.total_spent ?? 0),
-    activeSubs: Number(r.active_subs ?? 0),
-    lastActivity: r.last_activity ?? null,
+    doc: r.doc ?? null,
+    phone: r.phone ?? null,
+    guruCreatedAt: r.guru_created_at ?? null,
+    guruUpdatedAt: r.guru_updated_at ?? null,
   };
 }
 
-/** Totais da empresa inteira (pros KPIs) — uma linha da view de resumo. */
-export function usePaymentContactsSummary(): GuruContactsSummary | null {
-  const [summary, setSummary] = useState<GuruContactsSummary | null>(null);
+/** Remove caracteres que quebram a sintaxe de filtro do PostgREST (.or()). */
+function sanitizeSearch(term: string): string {
+  return term.replace(/[,()%]/g, "").trim();
+}
+
+/** Progresso da sincronização — pro card da Guru e pro cabeçalho da aba Contatos. */
+export function usePaymentContactsSyncStatus(): GuruContactsSyncStatus | null {
+  const [status, setStatus] = useState<GuruContactsSyncStatus | null>(null);
+
   useEffect(() => {
     let active = true;
     (async () => {
       await useDbStore.getState().load();
       const loc = useDbStore.getState().locationId;
       if (!loc) {
-        if (active) setSummary({ contacts: 0, revenue: 0, withSubs: 0 });
+        if (active) setStatus({ totalRows: null, synced: 0, done: false });
         return;
       }
       const supabase = createClient();
-      const { data } = await supabase
-        .from("payment_contacts_summary")
-        .select("*")
-        .eq("location_id", loc)
-        .maybeSingle();
+      const [{ data: cred }, { count }] = await Promise.all([
+        supabase
+          .from("payment_credentials")
+          .select("contacts_total_rows, contacts_sync_done")
+          .eq("location_id", loc)
+          .eq("provider", "guru")
+          .maybeSingle(),
+        supabase
+          .from("payment_guru_contacts")
+          .select("*", { count: "exact", head: true })
+          .eq("location_id", loc),
+      ]);
       if (active) {
-        setSummary(
-          data
-            ? { contacts: Number(data.contacts), revenue: Number(data.revenue), withSubs: Number(data.with_subs) }
-            : { contacts: 0, revenue: 0, withSubs: 0 }
-        );
+        setStatus({
+          totalRows: cred?.contacts_total_rows ?? null,
+          synced: count ?? 0,
+          done: cred?.contacts_sync_done ?? false,
+        });
       }
     })();
     return () => {
       active = false;
     };
   }, []);
-  return summary;
+
+  return status;
 }
 
-/** Uma página de contatos, ordenada por total gasto e assinaturas. */
-export function usePaymentContactsPage(page: number) {
-  const [rows, setRows] = useState<GuruContact[]>([]);
+/** Uma página de contatos, com busca opcional por nome/email/telefone/documento. */
+export function usePaymentContactsPage(page: number, search: string) {
+  const [rows, setRows] = useState<GuruContactRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
 
@@ -100,14 +116,22 @@ export function usePaymentContactsPage(page: number) {
       const supabase = createClient();
       const from = page * CONTACTS_PAGE_SIZE;
       const to = from + CONTACTS_PAGE_SIZE - 1;
-      const { data, count } = await supabase
-        .from("payment_contacts")
+      let query = supabase
+        .from("payment_guru_contacts")
         .select("*", { count: "exact" })
-        .eq("location_id", loc)
-        .order("total_spent", { ascending: false })
-        .order("active_subs", { ascending: false })
-        .order("contact_key", { ascending: true })
+        .eq("location_id", loc);
+
+      const term = sanitizeSearch(search);
+      if (term) {
+        query = query.or(
+          `name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%,doc.ilike.%${term}%`
+        );
+      }
+
+      const { data, count } = await query
+        .order("name", { ascending: true, nullsFirst: false })
         .range(from, to);
+
       if (!active) return;
       setRows((data ?? []).map(mapRow));
       if (typeof count === "number") setTotal(count);
@@ -116,7 +140,7 @@ export function usePaymentContactsPage(page: number) {
     return () => {
       active = false;
     };
-  }, [page]);
+  }, [page, search]);
 
   return { rows, total, loading };
 }

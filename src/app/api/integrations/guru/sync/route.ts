@@ -1,6 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fetchGuruSubscriptions, fetchGuruTransactions, toGuruDate } from "@/lib/integrations/guru";
-import { mapGuruSubscription, mapGuruTransaction } from "@/lib/integrations/guru-map";
+import {
+  fetchGuruContactsPage,
+  fetchGuruSubscriptions,
+  fetchGuruTransactions,
+  toGuruDate,
+} from "@/lib/integrations/guru";
+import { mapGuruContact, mapGuruSubscription, mapGuruTransaction } from "@/lib/integrations/guru-map";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -29,6 +34,14 @@ const UPSERT_CHUNK = 200;
  */
 const HISTORY_START = new Date("2024-06-01T00:00:00Z");
 const HISTORY_CHUNK_DAYS = 7;
+
+/**
+ * Contatos (GET /api/v2/contacts) — lista própria da Guru, com telefone/doc
+ * e uma contagem (total_rows) que é o número mostrado no painel dela. Cada
+ * página é uma chamada rápida; 10 por tick sincroniza uma conta com 7000+
+ * contatos em menos de 15 ticks, bem dentro dos 60s mesmo somado ao resto.
+ */
+const CONTACTS_PAGES_PER_TICK = 10;
 
 /**
  * Puxa vendas e assinaturas da API da Guru (REST, não webhook) pra cada
@@ -65,7 +78,7 @@ export async function POST(request: Request) {
   const { data: credentials, error } = await db
     .from("payment_credentials")
     .select(
-      "location_id, api_key, last_synced_at, sync_started_at, history_backfill_cursor, history_backfill_done"
+      "location_id, api_key, last_synced_at, sync_started_at, history_backfill_cursor, history_backfill_done, contacts_sync_cursor, contacts_sync_done"
     )
     .eq("provider", "guru")
     .not("api_key", "is", null);
@@ -124,6 +137,8 @@ async function syncAccount(
     last_synced_at: string | null;
     history_backfill_cursor: string | null;
     history_backfill_done: boolean;
+    contacts_sync_cursor: string | null;
+    contacts_sync_done: boolean;
   }
 ) {
   const userToken = cred.api_key;
@@ -221,6 +236,19 @@ async function syncAccount(
     }
   }
 
+  // Contatos: melhor-esforço, mesma lógica de isolamento do backfill histórico.
+  let contacts: { count: number; totalRows: number | null; done: boolean } | null = null;
+  if (!cred.contacts_sync_done) {
+    try {
+      contacts = await contactsSyncChunk(db, cred, userToken);
+    } catch (e) {
+      console.error(
+        `[guru-sync] sync de contatos falhou p/ ${cred.location_id}:`,
+        e instanceof Error ? e.message : e
+      );
+    }
+  }
+
   return {
     locationId: cred.location_id,
     subscriptions: subs.length,
@@ -228,7 +256,59 @@ async function syncAccount(
     transactionsError,
     truncated: subsTruncated || txnsTruncated,
     history,
+    contacts,
   };
+}
+
+/**
+ * Até CONTACTS_PAGES_PER_TICK páginas de /api/v2/contacts por tick, retomando
+ * do cursor salvo. Guarda cursor/done/total_rows numa atualização só ao final
+ * — se cair no meio, o próximo tick refaz as últimas páginas (upsert é
+ * idempotente) em vez de perder o progresso todo.
+ */
+async function contactsSyncChunk(
+  db: any,
+  cred: { location_id: string; contacts_sync_cursor: string | null },
+  userToken: string
+) {
+  let cursor = cred.contacts_sync_cursor;
+  let totalRows: number | null = null;
+  let done = false;
+  let count = 0;
+
+  for (let page = 0; page < CONTACTS_PAGES_PER_TICK; page++) {
+    const result = await fetchGuruContactsPage(userToken, cursor);
+    if (result.totalRows !== null) totalRows = result.totalRows;
+    count += result.items.length;
+
+    await upsertMany(
+      db,
+      "payment_guru_contacts",
+      result.items.map((c: any) => ({
+        location_id: cred.location_id,
+        provider: "guru",
+        ...mapGuruContact(c),
+      }))
+    );
+
+    cursor = result.nextCursor;
+    if (!result.hasMorePages) {
+      done = true;
+      break;
+    }
+  }
+
+  await db
+    .from("payment_credentials")
+    .update({
+      contacts_sync_cursor: cursor,
+      contacts_sync_done: done,
+      ...(totalRows !== null ? { contacts_total_rows: totalRows } : {}),
+    })
+    .eq("location_id", cred.location_id)
+    .eq("provider", "guru");
+
+  return { count, totalRows, done };
 }
 
 /**
