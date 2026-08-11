@@ -12,6 +12,7 @@
 
 const TRANSACTIONS_URL = "https://digitalmanager.guru/api/v2/transactions";
 const SUBSCRIPTIONS_URL = "https://digitalmanager.guru/api/v2/subscriptions";
+const PRODUCTS_URL = "https://digitalmanager.guru/api/v2/products";
 const MAX_PAGES = 200;
 
 export interface GuruTransaction {
@@ -51,6 +52,20 @@ export interface GuruSubscription {
   subscriber?: { id?: string; name?: string; email?: string };
   product?: { id?: string; name?: string };
   payment_method?: string;
+}
+
+export interface GuruProduct {
+  id: string;
+  name: string;
+  type: string;
+  is_hidden?: number;
+  is_trackable?: number;
+  marketplace_id?: string;
+  marketplace_name?: string;
+  group?: { id?: string; name?: string };
+  producer?: { id?: string; name?: string };
+  created_at?: number;
+  updated_at?: number;
 }
 
 type Filters = Record<string, string | string[]>;
@@ -105,6 +120,10 @@ export function fetchGuruTransactions(userToken: string, filters: Filters) {
 
 export function fetchGuruSubscriptions(userToken: string, filters: Filters) {
   return fetchAllPages<GuruSubscription>(SUBSCRIPTIONS_URL, userToken, filters);
+}
+
+export function fetchGuruProducts(userToken: string, filters: Filters = {}) {
+  return fetchAllPages<GuruProduct>(PRODUCTS_URL, userToken, filters);
 }
 
 /** YYYY-MM-DD no fuso de referência da API (os exemplos da doc usam UTC). */

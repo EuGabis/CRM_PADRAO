@@ -105,53 +105,60 @@ async function syncAccount(
   const now = new Date();
   const since = cred.last_synced_at ? new Date(cred.last_synced_at) : null;
 
-  // ---------- Assinaturas ----------
+  // Assinaturas e as 3 janelas de vendas (ordered_at/confirmed_at/cancelled_at) são
+  // consultas independentes na API da Guru — buscar tudo em paralelo em vez de
+  // sequencial. Uma conta com histórico grande passa fácil de 60s se isso rodar
+  // um pedido depois do outro.
   const subFilters: Record<string, string> = since
     ? {
         last_status_at_ini: toGuruDate(new Date(since.getTime() - OVERLAP_MS)),
         last_status_at_end: toGuruDate(now),
       }
     : {};
-  const { items: subs, truncated: subsTruncated } = await fetchGuruSubscriptions(
-    userToken,
-    subFilters
-  );
-  await upsertMany(
-    db,
-    "payment_subscriptions",
-    subs.map((s) => ({
-      location_id: cred.location_id,
-      provider: "guru",
-      ...mapGuruSubscription(s),
-    }))
-  );
-
-  // ---------- Vendas ----------
   const windowStart = since
     ? new Date(since.getTime() - OVERLAP_MS)
     : new Date(now.getTime() - MAX_BACKFILL_DAYS * 24 * 60 * 60 * 1000);
   const windowStartStr = toGuruDate(windowStart);
   const windowEndStr = toGuruDate(now);
 
+  const [subsResult, ...txnResults] = await Promise.all([
+    fetchGuruSubscriptions(userToken, subFilters),
+    ...["ordered_at", "confirmed_at", "cancelled_at"].map((field) =>
+      fetchGuruTransactions(userToken, {
+        [`${field}_ini`]: windowStartStr,
+        [`${field}_end`]: windowEndStr,
+      })
+    ),
+  ]);
+
+  const { items: subs, truncated: subsTruncated } = subsResult;
   const byId = new Map<string, any>();
   let txnsTruncated = false;
-  for (const field of ["ordered_at", "confirmed_at", "cancelled_at"]) {
-    const { items, truncated } = await fetchGuruTransactions(userToken, {
-      [`${field}_ini`]: windowStartStr,
-      [`${field}_end`]: windowEndStr,
-    });
+  for (const { items, truncated } of txnResults) {
     if (truncated) txnsTruncated = true;
     for (const t of items) byId.set(t.id, t);
   }
-  await upsertMany(
-    db,
-    "payment_events",
-    Array.from(byId.values()).map((t) => ({
-      location_id: cred.location_id,
-      provider: "guru",
-      ...mapGuruTransaction(t),
-    }))
-  );
+
+  await Promise.all([
+    upsertMany(
+      db,
+      "payment_subscriptions",
+      subs.map((s) => ({
+        location_id: cred.location_id,
+        provider: "guru",
+        ...mapGuruSubscription(s),
+      }))
+    ),
+    upsertMany(
+      db,
+      "payment_events",
+      Array.from(byId.values()).map((t) => ({
+        location_id: cred.location_id,
+        provider: "guru",
+        ...mapGuruTransaction(t),
+      }))
+    ),
+  ]);
 
   await db
     .from("payment_credentials")

@@ -17,16 +17,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useContacts, useUsers, contactName } from "@/lib/data/repos/contacts";
+import { EmptyState } from "@/components/shared/empty-state";
+import { Users2, UserPlus, Radar, BarChart3 } from "lucide-react";
+import { useContacts, contactName } from "@/lib/data/repos/contacts";
 import { formatBRL } from "@/lib/data/repos/opportunities";
 import {
   paymentsActions,
@@ -39,22 +32,18 @@ import {
 } from "@/lib/data/repos/db/payments";
 import { useMyMembership } from "@/lib/data/repos/db/team";
 import { classifyGuruStatus, guruStatusLabel } from "@/lib/data/guru";
-import { brand } from "@/lib/config/brand";
 import { cn } from "@/lib/utils";
 
 const TABS = [
   { label: "Integrações" },
   { label: "Arquivos e contratos" },
-  { label: "Pagamentos" },
-  { label: "Faturas e estimativas" },
-  { label: "Pedidos" },
-  { label: "Assinaturas" },
-  { label: "Links de pagamento" },
   { label: "Vendas" },
+  { label: "Assinaturas" },
+  { label: "Contatos" },
+  { label: "Leads" },
   { label: "Produtos" },
-  { label: "Cupons" },
-  { label: "Gift Cards" },
-  { label: "Configurações" },
+  { label: "R.P.P.C." },
+  { label: "Relatórios" },
 ];
 
 const PROVIDERS = [
@@ -461,7 +450,7 @@ function TransacoesMockTab() {
   return (
     <>
       <SectionHeader
-        title="Pagamentos"
+        title="Vendas"
         subtitle="Transações processadas pelos provedores conectados"
         action="Registrar pagamento"
         onAction={() => toast.info("Registro manual de pagamento chega com o backend")}
@@ -516,7 +505,7 @@ function TransacoesGuruTab() {
     <>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-bold text-slate-900">Pagamentos</h1>
+          <h1 className="text-lg font-bold text-slate-900">Vendas</h1>
           <p className="text-xs text-slate-500">Vendas sincronizadas da Guru (webhook + API)</p>
         </div>
         <GuruLiveBadge />
@@ -555,78 +544,6 @@ function TransacoesGuruTab() {
         />
       )}
       <RawPayloadDialog raw={rawEvent?.raw ?? null} onClose={() => setRawEvent(null)} />
-    </>
-  );
-}
-
-/* -------------------------- Faturas e estimativas ------------------------ */
-
-function FaturasTab() {
-  const nome = useClienteNome();
-  const rows = useMemo(
-    () => [
-      { num: "LT-2026-014", cliente: nome(1), valor: 2000, venc: "15 ago 2026", status: "Enviada" },
-      { num: "LT-2026-013", cliente: nome(4), valor: 590, venc: "12 ago 2026", status: "Enviada" },
-      { num: "LT-2026-012", cliente: nome(7), valor: 147, venc: "05 ago 2026", status: "Paga" },
-      { num: "LT-2026-011", cliente: nome(10), valor: 1470, venc: "30 jul 2026", status: "Paga" },
-      { num: "LT-2026-010", cliente: nome(13), valor: 297, venc: "25 jul 2026", status: "Vencida" },
-      { num: "LT-2026-009", cliente: nome(15), valor: 147, venc: "20 jul 2026", status: "Paga" },
-    ],
-    [nome]
-  );
-  return (
-    <>
-      <SectionHeader
-        title="Faturas e estimativas"
-        subtitle="Cobranças avulsas enviadas por e-mail e WhatsApp"
-        action="+ Nova fatura"
-        onAction={() => toast.info("Criação de faturas chega com o backend")}
-      />
-      <MiniTable
-        headers={["Nº", "Cliente", "Valor", "Vencimento", "Status"]}
-        rows={rows.map((r) => [
-          <span key="n" className="font-medium text-slate-800">{r.num}</span>,
-          <span key="c" className="text-slate-600">{r.cliente}</span>,
-          <span key="v" className="font-semibold text-slate-800">{formatBRL(r.valor)}</span>,
-          <span key="d" className="text-slate-500">{r.venc}</span>,
-          <StatusBadge key="s" status={r.status} />,
-        ])}
-      />
-    </>
-  );
-}
-
-/* --------------------------------- Pedidos ------------------------------- */
-
-function PedidosTab() {
-  const nome = useClienteNome();
-  const rows = useMemo(
-    () => [
-      { num: "#1042", cliente: nome(2), itens: "Plano Anual", total: 1470, status: "Concluído", data: "05 ago 2026" },
-      { num: "#1041", cliente: nome(6), itens: "Plano Mensal + Implementação", total: 2147, status: "Processando", data: "04 ago 2026" },
-      { num: "#1040", cliente: nome(9), itens: "Curso CRM na Prática", total: 297, status: "Concluído", data: "03 ago 2026" },
-      { num: "#1039", cliente: nome(12), itens: "Plano Mensal", total: 147, status: "Concluído", data: "01 ago 2026" },
-      { num: "#1038", cliente: nome(18), itens: "Implementação", total: 2000, status: "Processando", data: "30 jul 2026" },
-    ],
-    [nome]
-  );
-  return (
-    <>
-      <SectionHeader
-        title="Pedidos"
-        subtitle="Pedidos gerados por links de pagamento, faturas e checkout"
-      />
-      <MiniTable
-        headers={["Pedido", "Cliente", "Itens", "Total", "Status", "Data"]}
-        rows={rows.map((r) => [
-          <span key="n" className="font-medium text-slate-800">{r.num}</span>,
-          <span key="c" className="text-slate-600">{r.cliente}</span>,
-          <span key="i" className="text-slate-600">{r.itens}</span>,
-          <span key="t" className="font-semibold text-slate-800">{formatBRL(r.total)}</span>,
-          <StatusBadge key="s" status={r.status} />,
-          <span key="d" className="text-slate-500">{r.data}</span>,
-        ])}
-      />
     </>
   );
 }
@@ -738,88 +655,9 @@ function AssinaturasGuruTab() {
   );
 }
 
-/* --------------------------- Links de pagamento -------------------------- */
-
-const LINKS = [
-  { nome: "Plano Mensal — checkout", url: "pay.litocrm.com.br/mensal", valor: 147, cliques: 312, conversoes: 41 },
-  { nome: "Plano Anual — oferta", url: "pay.litocrm.com.br/anual", valor: 1470, cliques: 187, conversoes: 12 },
-  { nome: "Curso CRM na Prática", url: "pay.litocrm.com.br/curso", valor: 297, cliques: 96, conversoes: 18 },
-  { nome: "Implementação assistida", url: "pay.litocrm.com.br/impl", valor: 2000, cliques: 44, conversoes: 5 },
-];
-
-function LinksTab() {
-  return (
-    <>
-      <SectionHeader
-        title="Links de pagamento"
-        subtitle="Links de checkout compartilháveis por WhatsApp, e-mail e redes"
-        action="+ Novo link"
-        onAction={() => toast.info("Criação de links de pagamento chega com o backend")}
-      />
-      <MiniTable
-        headers={["Nome", "URL", "Valor", "Cliques", "Conversões"]}
-        rows={LINKS.map((l) => [
-          <span key="n" className="font-medium text-slate-800">{l.nome}</span>,
-          <span key="u" className="font-mono text-[11px] text-indigo-600">{l.url}</span>,
-          <span key="v" className="font-semibold text-slate-800">{formatBRL(l.valor)}</span>,
-          <span key="c" className="text-slate-600">{l.cliques}</span>,
-          <span key="cv" className="text-slate-600">
-            {l.conversoes} ({Math.round((l.conversoes / l.cliques) * 100)}%)
-          </span>,
-        ])}
-      />
-    </>
-  );
-}
-
-/* --------------------------------- Vendas -------------------------------- */
-
-function VendasTab() {
-  const nome = useClienteNome();
-  const users = useUsers();
-  const vendedor = useMemo(
-    () => (i: number) => (users.length > 0 ? users[i % users.length].name : "—"),
-    [users]
-  );
-  const rows = useMemo(
-    () => [
-      { cliente: nome(0), produto: "Plano Mensal", valor: 147, vendedor: vendedor(1), data: "06 ago 2026" },
-      { cliente: nome(3), produto: "Plano Mensal", valor: 147, vendedor: vendedor(3), data: "06 ago 2026" },
-      { cliente: nome(5), produto: "Curso CRM na Prática", valor: 297, vendedor: vendedor(2), data: "06 ago 2026" },
-      { cliente: nome(8), produto: "Plano Anual", valor: 1470, vendedor: vendedor(1), data: "05 ago 2026" },
-      { cliente: nome(11), produto: "Implementação", valor: 2000, vendedor: vendedor(0), data: "04 ago 2026" },
-      { cliente: nome(14), produto: "Plano Mensal", valor: 147, vendedor: vendedor(4), data: "03 ago 2026" },
-    ],
-    [nome, vendedor]
-  );
-  return (
-    <>
-      <SectionHeader
-        title="Vendas"
-        subtitle="Resumo de vendas fechadas pelo time"
-      />
-      <div className="mb-4 grid gap-3 md:grid-cols-3">
-        <KpiCard label="Vendas hoje" value="R$ 591,00" hint="3 vendas" />
-        <KpiCard label="Vendas na semana" value="R$ 4.208,00" delta={15} />
-        <KpiCard label="Vendas no mês" value="R$ 12.480,00" delta={12} />
-      </div>
-      <MiniTable
-        headers={["Cliente", "Produto", "Valor", "Vendedor", "Data"]}
-        rows={rows.map((r) => [
-          <span key="c" className="font-medium text-slate-800">{r.cliente}</span>,
-          <span key="p" className="text-slate-600">{r.produto}</span>,
-          <span key="v" className="font-semibold text-slate-800">{formatBRL(r.valor)}</span>,
-          <span key="vd" className="text-slate-600">{r.vendedor}</span>,
-          <span key="d" className="text-slate-500">{r.data}</span>,
-        ])}
-      />
-    </>
-  );
-}
-
 /* -------------------------------- Produtos ------------------------------- */
 
-const PRODUTOS = [
+const PRODUTOS_MOCK = [
   { nome: "Plano Mensal", desc: "Acesso completo à plataforma com cobrança mensal.", preco: 147, tipo: "Recorrente", ativo: true },
   { nome: "Plano Anual", desc: "12 meses com 2 meses de desconto na adesão.", preco: 1470, tipo: "Recorrente", ativo: true },
   { nome: "Implementação", desc: "Setup assistido: funis, automações e integrações.", preco: 2000, tipo: "Único", ativo: true },
@@ -827,16 +665,20 @@ const PRODUTOS = [
 ];
 
 function ProdutosTab() {
+  const { guru, loaded } = useGuruIntegration();
+  if (!loaded) return null;
+  return guru.connected ? <ProdutosGuruTab /> : <ProdutosMockTab />;
+}
+
+function ProdutosMockTab() {
   return (
     <>
       <SectionHeader
         title="Produtos"
         subtitle="Catálogo usado em faturas, links de pagamento e checkout"
-        action="+ Novo produto"
-        onAction={() => toast.info("Criação de produtos chega com o backend")}
       />
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {PRODUTOS.map((p) => (
+        {PRODUTOS_MOCK.map((p) => (
           <div key={p.nome} className="flex flex-col rounded-xl border bg-white p-4">
             <div className="mb-2 flex items-center justify-between">
               <Badge variant="secondary" className="bg-slate-100 text-slate-600">
@@ -861,137 +703,128 @@ function ProdutosTab() {
   );
 }
 
-/* --------------------------------- Cupons -------------------------------- */
+interface GuruProductRow {
+  id: string;
+  name: string;
+  type: string;
+  is_hidden?: number;
+  marketplace_name?: string;
+  group?: { name?: string };
+  created_at?: number;
+}
 
-const CUPONS = [
-  { codigo: "AUTOMACAO70", desconto: "70%", usos: "34 / 100", validade: "31 ago 2026", status: "Ativo" },
-  { codigo: "BEMVINDO50", desconto: "R$ 50,00", usos: "112 / ∞", validade: "Sem expiração", status: "Ativo" },
-  { codigo: "ANUAL20", desconto: "20%", usos: "8 / 50", validade: "30 set 2026", status: "Ativo" },
-  { codigo: "BLACK2025", desconto: "40%", usos: "230 / 230", validade: "01 dez 2025", status: "Expirado" },
-];
+function ProdutosGuruTab() {
+  const [state, setState] = useState<{
+    loading: boolean;
+    error: string | null;
+    products: GuruProductRow[];
+  }>({ loading: true, error: null, products: [] });
 
-function CuponsTab() {
+  useEffect(() => {
+    let active = true;
+    fetch("/api/integrations/guru/products")
+      .then(async (res) => {
+        const json = await res.json();
+        if (!active) return;
+        if (!res.ok) {
+          setState({ loading: false, error: json.error ?? "Falha ao carregar produtos", products: [] });
+          return;
+        }
+        setState({ loading: false, error: null, products: json.products ?? [] });
+      })
+      .catch((e) => {
+        if (active) setState({ loading: false, error: e instanceof Error ? e.message : "Falha ao carregar", products: [] });
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <>
-      <SectionHeader
-        title="Cupons"
-        subtitle="Descontos aplicáveis em links de pagamento e checkout"
-        action="+ Novo cupom"
-        onAction={() => toast.info("Criação de cupons chega com o backend")}
-      />
-      <MiniTable
-        headers={["Código", "Desconto", "Usos / Limite", "Validade", "Status"]}
-        rows={CUPONS.map((c) => [
-          <span key="c" className="font-mono text-[11px] font-semibold text-slate-800">{c.codigo}</span>,
-          <span key="d" className="font-semibold text-indigo-600">{c.desconto}</span>,
-          <span key="u" className="text-slate-600">{c.usos}</span>,
-          <span key="v" className="text-slate-500">{c.validade}</span>,
-          <StatusBadge key="s" status={c.status} />,
-        ])}
-      />
+      <SectionHeader title="Produtos" subtitle="Catálogo de produtos da Guru (GET /api/v2/products)" />
+      {state.loading ? (
+        <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
+          Carregando produtos da Guru...
+        </div>
+      ) : state.error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center text-xs text-red-600">
+          {state.error}
+        </div>
+      ) : state.products.length === 0 ? (
+        <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
+          Nenhum produto encontrado na conta da Guru.
+        </div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {state.products.map((p) => (
+            <div key={p.id} className="flex flex-col rounded-xl border bg-white p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <Badge variant="secondary" className="bg-slate-100 text-slate-600">
+                  {p.type === "plan" ? "Assinatura" : "Produto"}
+                </Badge>
+                {p.is_hidden ? (
+                  <Badge variant="secondary" className="bg-slate-100 text-slate-500">Oculto</Badge>
+                ) : (
+                  <Badge className="bg-emerald-100 text-emerald-700">Visível</Badge>
+                )}
+              </div>
+              <p className="text-sm font-semibold text-slate-800">{p.name}</p>
+              <p className="mt-1 flex-1 text-[11px] text-slate-500">
+                {p.group?.name ?? "Sem grupo"} · {p.marketplace_name ?? "—"}
+              </p>
+              <p className="mt-3 text-[11px] text-slate-400">
+                {p.created_at
+                  ? `Criado em ${format(new Date(p.created_at * 1000), "dd MMM yyyy", { locale: ptBR })}`
+                  : "—"}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }
 
-/* ------------------------------- Gift Cards ------------------------------ */
+/* -------------------------------- Placeholders ---------------------------- */
 
-function GiftCardsTab() {
-  const nome = useClienteNome();
-  const rows = useMemo(
-    () => [
-      { codigo: "GIFT-••••-8341", saldo: 150, comprador: nome(2), validade: "31 dez 2026", status: "Ativo" },
-      { codigo: "GIFT-••••-5127", saldo: 62.5, comprador: nome(7), validade: "31 out 2026", status: "Ativo" },
-      { codigo: "GIFT-••••-9904", saldo: 0, comprador: nome(13), validade: "30 jun 2026", status: "Expirado" },
-    ],
-    [nome]
-  );
+function ContatosTab() {
   return (
-    <>
-      <SectionHeader
-        title="Gift Cards"
-        subtitle="Cartões-presente emitidos e saldos disponíveis"
-        action="+ Emitir gift card"
-        onAction={() => toast.info("Emissão de gift cards chega com o backend")}
-      />
-      <MiniTable
-        headers={["Código", "Saldo", "Comprador", "Validade", "Status"]}
-        rows={rows.map((g) => [
-          <span key="c" className="font-mono text-[11px] font-semibold text-slate-800">{g.codigo}</span>,
-          <span key="s" className="font-semibold text-slate-800">{formatBRL(g.saldo)}</span>,
-          <span key="b" className="text-slate-600">{g.comprador}</span>,
-          <span key="v" className="text-slate-500">{g.validade}</span>,
-          <StatusBadge key="st" status={g.status} />,
-        ])}
-      />
-    </>
+    <EmptyState
+      icon={Users2}
+      title="Contatos da Guru"
+      description="Lista de contatos vindos da API da Guru (GET /api/v2/contacts) — ainda não conectada. Conte pra gente se quer isso antes das outras abas."
+    />
   );
 }
 
-/* ------------------------------ Configurações ---------------------------- */
-
-const MOEDAS: Record<string, string> = {
-  BRL: "Real brasileiro (BRL)",
-  USD: "Dólar americano (USD)",
-  EUR: "Euro (EUR)",
-};
-
-function ConfigPagamentosTab() {
-  const [moeda, setMoeda] = useState("BRL");
-  const [reciboAuto, setReciboAuto] = useState(true);
-  const [textoRecibo, setTextoRecibo] = useState(
-    `Obrigado pela sua compra! Este é o recibo emitido pela ${brand.name}. Em caso de dúvidas, responda este e-mail ou fale com a gente no WhatsApp.`
-  );
+function LeadsTab() {
   return (
-    <>
-      <SectionHeader
-        title="Configurações de pagamento"
-        subtitle="Moeda, recibos e preferências de cobrança"
-      />
-      <div className="max-w-2xl space-y-4 rounded-xl border bg-white p-5">
-        <div className="space-y-1">
-          <Label className="text-xs">Moeda padrão</Label>
-          <Select value={moeda} onValueChange={(v) => v && setMoeda(v)}>
-            <SelectTrigger className="h-8 w-64 text-xs">
-              <SelectValue>{MOEDAS[moeda]}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(MOEDAS).map(([value, label]) => (
-                <SelectItem key={value} value={value} className="text-xs">
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex items-center justify-between rounded-lg border p-3">
-          <div>
-            <p className="text-xs font-semibold text-slate-700">Recibo automático por e-mail</p>
-            <p className="text-[11px] text-slate-500">
-              Envia um recibo ao cliente após cada pagamento confirmado
-            </p>
-          </div>
-          <Switch checked={reciboAuto} onCheckedChange={(v) => setReciboAuto(!!v)} />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Texto padrão do recibo</Label>
-          <Textarea
-            value={textoRecibo}
-            onChange={(e) => setTextoRecibo(e.target.value)}
-            rows={4}
-            className="text-xs"
-          />
-        </div>
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => toast.success("Configurações de pagamento salvas")}
-          >
-            Salvar
-          </Button>
-        </div>
-      </div>
-    </>
+    <EmptyState
+      icon={UserPlus}
+      title="Leads da Guru"
+      description="Leads capturados na Guru (formulários, checkouts abandonados) — integração ainda não construída."
+    />
+  );
+}
+
+function RPPCTab() {
+  return (
+    <EmptyState
+      icon={Radar}
+      title="R.P.P.C."
+      description="Rastreamento de campanhas, checkouts, grupos e custo de tráfego da Guru — o domínio mais complexo dos que faltam, com vários sub-recursos na API. Ainda não construído."
+    />
+  );
+}
+
+function RelatoriosTab() {
+  return (
+    <EmptyState
+      icon={BarChart3}
+      title="Relatórios"
+      description="Relatórios consolidados de vendas e assinaturas da Guru — ainda não construído."
+    />
   );
 }
 
@@ -1104,26 +937,20 @@ export default function PagamentosPage() {
               </table>
             </div>
           </>
-        ) : tab === "Pagamentos" ? (
+        ) : tab === "Vendas" ? (
           <TransacoesTab />
-        ) : tab === "Faturas e estimativas" ? (
-          <FaturasTab />
-        ) : tab === "Pedidos" ? (
-          <PedidosTab />
         ) : tab === "Assinaturas" ? (
           <AssinaturasTab />
-        ) : tab === "Links de pagamento" ? (
-          <LinksTab />
-        ) : tab === "Vendas" ? (
-          <VendasTab />
+        ) : tab === "Contatos" ? (
+          <ContatosTab />
+        ) : tab === "Leads" ? (
+          <LeadsTab />
         ) : tab === "Produtos" ? (
           <ProdutosTab />
-        ) : tab === "Cupons" ? (
-          <CuponsTab />
-        ) : tab === "Gift Cards" ? (
-          <GiftCardsTab />
+        ) : tab === "R.P.P.C." ? (
+          <RPPCTab />
         ) : (
-          <ConfigPagamentosTab />
+          <RelatoriosTab />
         )}
       </div>
     </div>
