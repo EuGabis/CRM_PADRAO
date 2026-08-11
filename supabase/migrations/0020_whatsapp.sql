@@ -51,6 +51,10 @@ create policy "membros excluem canais wa" on public.whatsapp_channels
   for delete to authenticated
   using (location_id in (select private.user_locations()));
 
+-- Conversa lembra qual canal de WhatsApp a originou (nulo p/ outros canais)
+alter table public.conversations add column if not exists channel_id uuid
+  references public.whatsapp_channels (id) on delete set null;
+
 -- Colunas nas mensagens
 alter table public.messages add column if not exists wa_message_id text;
 alter table public.messages add column if not exists status text
