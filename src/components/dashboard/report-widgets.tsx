@@ -4,10 +4,10 @@ import Link from "next/link";
 import { ArrowRight, Inbox } from "lucide-react";
 import { WidgetCard } from "./widget-card";
 import { formatBRL } from "@/lib/data/repos/opportunities";
-import { useDbOpportunities } from "@/lib/data/repos/db/pipeline";
+import { useDashboardOps } from "./date-range";
 
 export function LeadSourceTable() {
-  const ops = useDbOpportunities();
+  const ops = useDashboardOps();
   const bySource = new Map<string, typeof ops>();
   for (const o of ops) {
     const list = bySource.get(o.source) ?? [];

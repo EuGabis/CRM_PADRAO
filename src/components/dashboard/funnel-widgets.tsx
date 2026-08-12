@@ -4,12 +4,14 @@ import { useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { WidgetCard } from "./widget-card";
 import { formatBRL } from "@/lib/data/repos/opportunities";
-import { useDbOpportunities, useDbPipeline } from "@/lib/data/repos/db/pipeline";
+import { useDbPipeline } from "@/lib/data/repos/db/pipeline";
+import { useDashboardOps } from "./date-range";
+import { TOOLTIP_STYLE } from "./opportunity-widgets";
 
 export function FunnelWidget() {
   const [pipeId, setPipeId] = useState("");
   const pipeline = useDbPipeline(pipeId);
-  const ops = useDbOpportunities();
+  const ops = useDashboardOps();
   if (!pipeline) return null;
 
   const rows = pipeline.stages.map((st) => {
@@ -60,7 +62,7 @@ export function FunnelWidget() {
 export function StageDistribution() {
   const [pipeId, setPipeId] = useState("");
   const pipeline = useDbPipeline(pipeId);
-  const ops = useDbOpportunities();
+  const ops = useDashboardOps();
   if (!pipeline) return null;
 
   const data = pipeline.stages
@@ -87,7 +89,7 @@ export function StageDistribution() {
                   <Cell key={d.name} fill={d.color} />
                 ))}
               </Pie>
-              <Tooltip />
+              <Tooltip contentStyle={TOOLTIP_STYLE} />
             </PieChart>
           </ResponsiveContainer>
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
