@@ -113,6 +113,21 @@
   .lito-bubble { animation: none; opacity: 1; }
 }
 
+/* Recharts 3 liga a camada de acessibilidade por padrão e põe tabindex no
+   wrapper do gráfico. Ao CLICAR num gráfico o navegador então desenhava o
+   retângulo de foco — era a "marcação quadrada" em volta dos donuts do painel.
+   Tira o anel só no foco por mouse; navegação por teclado continua enxergando
+   onde está. */
+.recharts-wrapper:focus:not(:focus-visible),
+.recharts-surface:focus:not(:focus-visible) {
+  outline: none;
+}
+.recharts-wrapper:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);

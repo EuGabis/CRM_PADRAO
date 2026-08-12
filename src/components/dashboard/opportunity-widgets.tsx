@@ -16,12 +16,14 @@ import {
 } from "recharts";
 import { WidgetCard } from "./widget-card";
 import { formatBRL } from "@/lib/data/repos/opportunities";
-import { useDbOpportunities } from "@/lib/data/repos/db/pipeline";
+import { useDashboardOps } from "./date-range";
 
-function useFilteredOps(pipelineId: string) {
-  const ops = useDbOpportunities();
-  return pipelineId === "all" ? ops : ops.filter((o) => o.pipelineId === pipelineId);
-}
+/** Estilo único dos tooltips do painel (mesmo dos gráficos de Pagamentos). */
+export const TOOLTIP_STYLE = {
+  fontSize: 12,
+  borderRadius: 8,
+  border: "1px solid #e2e8f0",
+} as const;
 
 const STATUS_LABEL: Record<string, string> = {
   open: "Aberto(a)",
@@ -36,7 +38,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 export function StatusDonut() {
   const [pipe, setPipe] = useState("all");
-  const ops = useFilteredOps(pipe);
+  const ops = useDashboardOps(pipe);
   const data = (["open", "won", "lost"] as const)
     .map((s) => ({ name: STATUS_LABEL[s], value: ops.filter((o) => o.status === s).length, color: STATUS_COLOR[s] }))
     .filter((d) => d.value > 0);
@@ -52,7 +54,14 @@ export function StatusDonut() {
                   <Cell key={d.name} fill={d.color} />
                 ))}
               </Pie>
-              <Tooltip formatter={(v) => [`${v}`, ""]} />
+              {/* Sem o nome, o tooltip saía como ": 1". */}
+              <Tooltip
+                contentStyle={TOOLTIP_STYLE}
+                formatter={(v, name) => [
+                  `${v} oportunidade${Number(v) === 1 ? "" : "s"}`,
+                  name,
+                ]}
+              />
             </PieChart>
           </ResponsiveContainer>
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -78,7 +87,7 @@ export function StatusDonut() {
 
 export function ValueBars() {
   const [pipe, setPipe] = useState("all");
-  const ops = useFilteredOps(pipe);
+  const ops = useDashboardOps(pipe);
   const data = (["open", "won", "lost"] as const).map((s) => ({
     name: STATUS_LABEL[s],
     valor: ops.filter((o) => o.status === s).reduce((sum, o) => sum + o.value, 0),
@@ -100,7 +109,7 @@ export function ValueBars() {
         <BarChart data={data} layout="vertical" margin={{ left: 10, right: 20 }}>
           <XAxis type="number" tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}K`} fontSize={10} />
           <YAxis type="category" dataKey="name" width={70} fontSize={10} />
-          <Tooltip formatter={(v) => formatBRL(Number(v))} />
+          <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v) => [formatBRL(Number(v)), "Valor"]} />
           <Bar dataKey="valor" radius={[0, 4, 4, 0]}>
             {data.map((d) => (
               <Cell key={d.name} fill={d.fill} />
@@ -114,7 +123,7 @@ export function ValueBars() {
 
 export function ConversionGauge() {
   const [pipe, setPipe] = useState("all");
-  const ops = useFilteredOps(pipe);
+  const ops = useDashboardOps(pipe);
   const won = ops.filter((o) => o.status === "won");
   const rate = ops.length ? Math.round((won.length / ops.length) * 100) : 0;
   const revenue = won.reduce((s, o) => s + o.value, 0);

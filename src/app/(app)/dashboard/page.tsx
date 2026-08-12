@@ -2,6 +2,7 @@
 
 import { DashboardSwitcher } from "@/components/dashboard/dashboard-switcher";
 import { DateFilter } from "@/components/dashboard/date-filter";
+import { DashboardRangeProvider } from "@/components/dashboard/date-range";
 import {
   ConversionGauge,
   StatusDonut,
@@ -16,27 +17,29 @@ import {
 
 export default function DashboardPage() {
   return (
-    <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <DashboardSwitcher />
-        <DateFilter />
+    <DashboardRangeProvider>
+      <div className="p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <DashboardSwitcher />
+          <DateFilter />
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <StatusDonut />
+          <ValueBars />
+          <ConversionGauge />
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <FunnelWidget />
+          <StageDistribution />
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <LeadSourceTable />
+          <ManualActionsCard />
+        </div>
+        <div className="mt-4">
+          <GaCards />
+        </div>
       </div>
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatusDonut />
-        <ValueBars />
-        <ConversionGauge />
-      </div>
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <FunnelWidget />
-        <StageDistribution />
-      </div>
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <LeadSourceTable />
-        <ManualActionsCard />
-      </div>
-      <div className="mt-4">
-        <GaCards />
-      </div>
-    </div>
+    </DashboardRangeProvider>
   );
 }
