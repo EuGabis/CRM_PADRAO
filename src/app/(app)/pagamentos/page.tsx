@@ -1203,7 +1203,26 @@ function ContatosGuruTab() {
 /* ------------------------------- Relatórios ------------------------------ */
 
 const CHART_INDIGO = "#6366f1";
+const CHART_INDIGO_ACTIVE = "#4338ca";
 const SUB_COLORS = { ativa: "#10b981", atrasado: "#f59e0b", cancelado: "#ef4444", outro: "#94a3b8" };
+const SUB_STATUS_LABELS = ["Ativas", "Atrasadas", "Canceladas", "Outras"] as const;
+type SubStatusLabel = (typeof SUB_STATUS_LABELS)[number];
+
+function csvEscape(v: string | number): string {
+  return `"${String(v ?? "").replaceAll('"', '""')}"`;
+}
+
+/** Mesmo padrão de contatos/exportContactsCsv: ; como separador (Excel pt-BR), BOM UTF-8. */
+function downloadCsv(filename: string, rows: (string | number)[][]) {
+  const content = rows.map((r) => r.map(csvEscape).join(";")).join("\r\n");
+  const blob = new Blob(["﻿" + content], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 function RelatoriosTab() {
   const { guru, loaded } = useGuruIntegration();
@@ -1219,9 +1238,31 @@ function RelatoriosTab() {
   );
 }
 
+function subStatusLabel(status: string | null): SubStatusLabel {
+  const cat = classifyGuruStatus(status);
+  if (cat === "aprovado") return "Ativas";
+  if (cat === "atrasado") return "Atrasadas";
+  if (cat === "cancelado" || cat === "expirado") return "Canceladas";
+  return "Outras";
+}
+
+function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <button
+      onClick={onClear}
+      className="ml-2 inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-200"
+    >
+      {label} ✕
+    </button>
+  );
+}
+
 function RelatoriosGuruTab() {
   const salesReport = usePaymentSalesReport();
   const subscriptions = usePaymentSubscriptions();
+  const [monthFilter, setMonthFilter] = useState<string | null>(null);
+  const [productFilter, setProductFilter] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<SubStatusLabel | null>(null);
 
   // Receita/produtos/ticket vêm de payment_sales_monthly (histórico
   // completo agregado no banco) em vez do array `usePaymentEvents` (só as
@@ -1235,7 +1276,9 @@ function RelatoriosGuruTab() {
 
     // Receita dos últimos 6 meses — chave em "YYYY-MM" (ver monthKey) pra
     // casar com o mês UTC de `date_trunc` sem passar por conversão de fuso;
-    // o label usa o mês local (só exibição, não afeta o agrupamento).
+    // o label usa o mês local (só exibição, não afeta o agrupamento). Clicar
+    // num produto em "Produtos que mais faturam" restringe esse gráfico só
+    // às vendas daquele produto.
     const now = new Date();
     const months: { key: string; label: string; total: number }[] = [];
     for (let i = 5; i >= 0; i--) {
@@ -1243,14 +1286,17 @@ function RelatoriosGuruTab() {
       months.push({ key: monthKey(d.toISOString()), label: format(d, "MMM/yy", { locale: ptBR }), total: 0 });
     }
     const idxByKey = new Map(months.map((m, i) => [m.key, i]));
-    for (const r of approved) {
+    const monthsSource = productFilter ? approved.filter((r) => r.productName === productFilter) : approved;
+    for (const r of monthsSource) {
       const idx = idxByKey.get(monthKey(r.month));
       if (idx !== undefined) months[idx].total += r.revenue;
     }
 
-    // Top produtos por receita
+    // Top produtos por receita — clicar num mês no gráfico ao lado restringe
+    // esta lista só às vendas daquele mês.
+    const prodSource = monthFilter ? approved.filter((r) => monthKey(r.month) === monthFilter) : approved;
     const prod = new Map<string, number>();
-    for (const r of approved) {
+    for (const r of prodSource) {
       prod.set(r.productName, (prod.get(r.productName) ?? 0) + r.revenue);
     }
     const topProducts = Array.from(prod.entries())
@@ -1260,41 +1306,76 @@ function RelatoriosGuruTab() {
     const topMax = Math.max(1, ...topProducts.map((p) => p.total));
 
     // Assinaturas por status
-    const subCounts = { ativa: 0, atrasado: 0, cancelado: 0, outro: 0 };
-    for (const s of subscriptions) {
-      const cat = classifyGuruStatus(s.status);
-      if (cat === "aprovado") subCounts.ativa++;
-      else if (cat === "atrasado") subCounts.atrasado++;
-      else if (cat === "cancelado" || cat === "expirado") subCounts.cancelado++;
-      else subCounts.outro++;
-    }
+    const subCounts = { Ativas: 0, Atrasadas: 0, Canceladas: 0, Outras: 0 };
+    for (const s of subscriptions) subCounts[subStatusLabel(s.status)]++;
     const pie = [
-      { name: "Ativas", value: subCounts.ativa, color: SUB_COLORS.ativa },
-      { name: "Atrasadas", value: subCounts.atrasado, color: SUB_COLORS.atrasado },
-      { name: "Canceladas", value: subCounts.cancelado, color: SUB_COLORS.cancelado },
-      { name: "Outras", value: subCounts.outro, color: SUB_COLORS.outro },
+      { name: "Ativas" as const, value: subCounts.Ativas, color: SUB_COLORS.ativa },
+      { name: "Atrasadas" as const, value: subCounts.Atrasadas, color: SUB_COLORS.atrasado },
+      { name: "Canceladas" as const, value: subCounts.Canceladas, color: SUB_COLORS.cancelado },
+      { name: "Outras" as const, value: subCounts.Outras, color: SUB_COLORS.outro },
     ].filter((d) => d.value > 0);
 
     return {
       revenue,
       salesCount,
       ticket: salesCount ? revenue / salesCount : 0,
-      activeSubs: subCounts.ativa,
+      activeSubs: subCounts.Ativas,
       months,
       topProducts,
       topMax,
       pie,
     };
-  }, [salesReport.rows, subscriptions]);
+  }, [salesReport.rows, subscriptions, monthFilter, productFilter]);
+
+  const filteredSubs = useMemo(
+    () => (statusFilter ? subscriptions.filter((s) => subStatusLabel(s.status) === statusFilter) : []),
+    [subscriptions, statusFilter]
+  );
+
+  const monthFilterLabel = monthFilter ? data.months.find((m) => m.key === monthFilter)?.label ?? monthFilter : null;
+
+  function handleExportCsv() {
+    const rows: (string | number)[][] = [
+      ["Relatório de Pagamentos — Guru"],
+      [`Gerado em ${format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR })}`],
+      [],
+      ["Receita aprovada", formatBRL(data.revenue)],
+      ["Vendas aprovadas", data.salesCount],
+      ["Ticket médio", formatBRL(data.ticket)],
+      ["Assinaturas ativas", data.activeSubs],
+      [],
+      [productFilter ? `Receita por mês — ${productFilter}` : "Receita por mês"],
+      ["Mês", "Receita"],
+      ...data.months.map((m) => [m.label, formatBRL(m.total)]),
+      [],
+      [monthFilterLabel ? `Produtos que mais faturam — ${monthFilterLabel}` : "Produtos que mais faturam"],
+      ["Produto", "Receita"],
+      ...data.topProducts.map((p) => [p.name, formatBRL(p.total)]),
+      [],
+      ["Assinaturas por status"],
+      ["Status", "Quantidade"],
+      ...data.pie.map((d) => [d.name, d.value]),
+    ];
+    downloadCsv(`relatorio-pagamentos-guru-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+    toast.success("Relatório exportado em CSV");
+  }
 
   return (
     <>
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-slate-900">Relatórios</h1>
-          <p className="text-xs text-slate-500">Consolidado de vendas e assinaturas da Guru</p>
+          <p className="text-xs text-slate-500">
+            Consolidado de vendas e assinaturas da Guru — clique num mês, produto ou status pra filtrar
+          </p>
         </div>
-        <GuruLiveBadge />
+        <div className="flex items-center gap-2">
+          <GuruLiveBadge />
+          <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={handleExportCsv}>
+            <Download className="size-3.5" />
+            Exportar CSV
+          </Button>
+        </div>
       </div>
       <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Receita aprovada" value={formatBRL(data.revenue)} />
@@ -1304,7 +1385,10 @@ function RelatoriosGuruTab() {
       </div>
       <div className="grid gap-3 lg:grid-cols-3">
         <div className="rounded-xl border bg-white p-4 lg:col-span-2">
-          <p className="mb-3 text-xs font-semibold text-slate-700">Receita por mês (aprovadas)</p>
+          <p className="mb-3 flex items-center text-xs font-semibold text-slate-700">
+            Receita por mês (aprovadas)
+            {productFilter && <FilterChip label={productFilter} onClear={() => setProductFilter(null)} />}
+          </p>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={data.months} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
@@ -1319,7 +1403,16 @@ function RelatoriosGuruTab() {
                 formatter={(v) => formatBRL(Number(v))}
                 contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
               />
-              <Bar dataKey="total" fill={CHART_INDIGO} radius={[4, 4, 0, 0]} />
+              <Bar
+                dataKey="total"
+                radius={[4, 4, 0, 0]}
+                style={{ cursor: "pointer" }}
+                onClick={(entry: any) => setMonthFilter((cur) => (cur === entry.key ? null : entry.key))}
+              >
+                {data.months.map((m) => (
+                  <Cell key={m.key} fill={m.key === monthFilter ? CHART_INDIGO_ACTIVE : CHART_INDIGO} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -1333,7 +1426,13 @@ function RelatoriosGuruTab() {
                 <PieChart>
                   <Pie data={data.pie} dataKey="value" nameKey="name" innerRadius={44} outerRadius={70} paddingAngle={2}>
                     {data.pie.map((d) => (
-                      <Cell key={d.name} fill={d.color} />
+                      <Cell
+                        key={d.name}
+                        fill={d.color}
+                        style={{ cursor: "pointer" }}
+                        opacity={statusFilter && statusFilter !== d.name ? 0.35 : 1}
+                        onClick={() => setStatusFilter((cur) => (cur === d.name ? null : d.name))}
+                      />
                     ))}
                   </Pie>
                   <RTooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }} />
@@ -1341,13 +1440,20 @@ function RelatoriosGuruTab() {
               </ResponsiveContainer>
               <div className="mt-2 space-y-1">
                 {data.pie.map((d) => (
-                  <div key={d.name} className="flex items-center justify-between text-[11px]">
+                  <button
+                    key={d.name}
+                    onClick={() => setStatusFilter((cur) => (cur === d.name ? null : d.name))}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded px-1 py-0.5 text-[11px] hover:bg-slate-50",
+                      statusFilter === d.name && "bg-indigo-50"
+                    )}
+                  >
                     <span className="flex items-center gap-1.5 text-slate-600">
                       <span className="size-2 rounded-full" style={{ background: d.color }} />
                       {d.name}
                     </span>
                     <span className="font-medium text-slate-800">{d.value}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </>
@@ -1355,23 +1461,64 @@ function RelatoriosGuruTab() {
         </div>
       </div>
       <div className="mt-3 rounded-xl border bg-white p-4">
-        <p className="mb-3 text-xs font-semibold text-slate-700">Produtos que mais faturam</p>
+        <p className="mb-3 flex items-center text-xs font-semibold text-slate-700">
+          Produtos que mais faturam
+          {monthFilterLabel && <FilterChip label={monthFilterLabel} onClear={() => setMonthFilter(null)} />}
+        </p>
         {data.topProducts.length === 0 ? (
           <p className="py-8 text-center text-xs text-slate-400">Nenhuma venda aprovada ainda.</p>
         ) : (
           <div className="space-y-2">
             {data.topProducts.map((p) => (
-              <div key={p.name} className="flex items-center gap-3">
-                <span className="w-40 shrink-0 truncate text-xs text-slate-700" title={p.name}>{p.name}</span>
+              <button
+                key={p.name}
+                onClick={() => setProductFilter((cur) => (cur === p.name ? null : p.name))}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-md px-1 py-0.5 hover:bg-slate-50",
+                  productFilter === p.name && "bg-indigo-50"
+                )}
+              >
+                <span className="w-40 shrink-0 truncate text-left text-xs text-slate-700" title={p.name}>{p.name}</span>
                 <div className="h-4 flex-1 overflow-hidden rounded bg-slate-100">
                   <div className="h-full rounded bg-indigo-500" style={{ width: `${(p.total / data.topMax) * 100}%` }} />
                 </div>
                 <span className="w-24 shrink-0 text-right text-xs font-semibold text-slate-800">{formatBRL(p.total)}</span>
-              </div>
+              </button>
             ))}
           </div>
         )}
       </div>
+      {statusFilter && (
+        <div className="mt-3 rounded-xl border bg-white p-4">
+          <p className="mb-3 flex items-center text-xs font-semibold text-slate-700">
+            Assinaturas {statusFilter.toLowerCase()}
+            <FilterChip label={statusFilter} onClear={() => setStatusFilter(null)} />
+          </p>
+          {filteredSubs.length === 0 ? (
+            <p className="py-6 text-center text-xs text-slate-400">Nenhuma assinatura encontrada.</p>
+          ) : (
+            <>
+              <MiniTable
+                headers={["Contato", "Produto", "Status", "Próxima cobrança", "Valor"]}
+                rows={filteredSubs.slice(0, 50).map((s) => [
+                  <span key="c" className="text-slate-700">{s.contactName ?? s.contactEmail ?? "—"}</span>,
+                  <span key="p" className="text-slate-600">{s.productName ?? "—"}</span>,
+                  <GuruStatusBadge key="s" status={s.status} />,
+                  <span key="n" className="text-slate-500">
+                    {s.nextCycleAt ? format(new Date(s.nextCycleAt), "dd MMM yyyy", { locale: ptBR }) : "—"}
+                  </span>,
+                  <span key="v" className="font-semibold text-slate-800">
+                    {s.amount !== null ? formatBRL(s.amount) : "—"}
+                  </span>,
+                ])}
+              />
+              {filteredSubs.length > 50 && (
+                <p className="mt-2 text-[11px] text-slate-400">Mostrando 50 de {filteredSubs.length} assinaturas.</p>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </>
   );
 }
