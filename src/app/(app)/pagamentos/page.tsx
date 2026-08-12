@@ -981,13 +981,17 @@ function ContactDetailDialog({ contact, onClose }: { contact: GuruContact | null
 
   return (
     <Dialog open={!!contact} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>{contact?.name ?? contact?.email ?? "Contato"}</DialogTitle>
+      <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-3xl">
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="truncate pr-6">{contact?.name ?? contact?.email ?? "Contato"}</DialogTitle>
         </DialogHeader>
         {contact && (
-          <Tabs value={tab} onValueChange={(v) => setTab((v as string) ?? "detalhe")}>
-            <TabsList>
+          <Tabs
+            value={tab}
+            onValueChange={(v) => setTab((v as string) ?? "detalhe")}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <TabsList variant="line" className="w-full shrink-0 border-b">
               <TabsTrigger value="detalhe" className="text-xs">Detalhe</TabsTrigger>
               <TabsTrigger value="vendas" className="text-xs">
                 Vendas{sales.length > 0 ? ` (${sales.length})` : ""}
@@ -997,10 +1001,10 @@ function ContactDetailDialog({ contact, onClose }: { contact: GuruContact | null
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="detalhe" className="mt-3 space-y-4">
+            <TabsContent value="detalhe" className="mt-4 space-y-4 overflow-y-auto">
               <div>
                 <p className="mb-2 text-xs font-semibold text-slate-700">Dados pessoais</p>
-                <div className="grid grid-cols-2 gap-3 rounded-lg border bg-white p-3 text-xs">
+                <div className="grid grid-cols-2 gap-4 rounded-lg border bg-white p-4 text-xs">
                   <div>
                     <p className="text-slate-400">Nome</p>
                     <p className="font-medium text-slate-800">{contact.name ?? "—"}</p>
@@ -1032,7 +1036,7 @@ function ContactDetailDialog({ contact, onClose }: { contact: GuruContact | null
               </div>
             </TabsContent>
 
-            <TabsContent value="vendas" className="mt-3">
+            <TabsContent value="vendas" className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto">
               {salesLoading ? (
                 <p className="p-6 text-center text-xs text-slate-400">Carregando...</p>
               ) : sales.length === 0 ? (
@@ -1040,26 +1044,26 @@ function ContactDetailDialog({ contact, onClose }: { contact: GuruContact | null
                   Nenhuma venda encontrada para este contato.
                 </p>
               ) : (
-                <div className="max-h-80 overflow-y-auto">
-                  <MiniTable
-                    headers={["Código", "Produto", "Criada em", "Status", "Valor"]}
-                    rows={sales.map((e) => [
-                      <span key="cd" className="font-mono text-[11px] text-slate-500">{e.code ?? "—"}</span>,
-                      <span key="p" className="text-slate-600">{e.productName ?? "—"}</span>,
-                      <span key="d" className="text-slate-500">
-                        {e.guruCreatedAt ? format(new Date(e.guruCreatedAt), "dd MMM yyyy", { locale: ptBR }) : "—"}
-                      </span>,
-                      <GuruStatusBadge key="s" status={e.status} />,
-                      <span key="v" className="font-semibold text-slate-800">
-                        {e.amount !== null ? formatBRL(e.amount) : "—"}
-                      </span>,
-                    ])}
-                  />
-                </div>
+                <MiniTable
+                  headers={["Código", "Produto", "Criada em", "Status", "Valor"]}
+                  rows={sales.map((e) => [
+                    <span key="cd" className="block max-w-24 truncate font-mono text-[11px] text-slate-500" title={e.code ?? undefined}>
+                      {e.code ?? "—"}
+                    </span>,
+                    <span key="p" className="text-slate-600">{e.productName ?? "—"}</span>,
+                    <span key="d" className="text-slate-500">
+                      {e.guruCreatedAt ? format(new Date(e.guruCreatedAt), "dd MMM yyyy", { locale: ptBR }) : "—"}
+                    </span>,
+                    <GuruStatusBadge key="s" status={e.status} />,
+                    <span key="v" className="font-semibold text-slate-800">
+                      {e.amount !== null ? formatBRL(e.amount) : "—"}
+                    </span>,
+                  ])}
+                />
               )}
             </TabsContent>
 
-            <TabsContent value="assinaturas" className="mt-3">
+            <TabsContent value="assinaturas" className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto">
               {subsLoading ? (
                 <p className="p-6 text-center text-xs text-slate-400">Carregando...</p>
               ) : subs.length === 0 ? (
@@ -1067,25 +1071,25 @@ function ContactDetailDialog({ contact, onClose }: { contact: GuruContact | null
                   Nenhuma assinatura encontrada para este contato.
                 </p>
               ) : (
-                <div className="max-h-80 overflow-y-auto">
-                  <MiniTable
-                    headers={["Código", "Produto", "Status", "Iniciada em", "Próxima cobrança", "Valor"]}
-                    rows={subs.map((s) => [
-                      <span key="cd" className="font-mono text-[11px] text-slate-500">{s.code ?? "—"}</span>,
-                      <span key="p" className="text-slate-600">{s.productName ?? "—"}</span>,
-                      <GuruStatusBadge key="s" status={s.status} />,
-                      <span key="d" className="text-slate-500">
-                        {s.guruStartedAt ? format(new Date(s.guruStartedAt), "dd MMM yyyy", { locale: ptBR }) : "—"}
-                      </span>,
-                      <span key="n" className="text-slate-500">
-                        {s.nextCycleAt ? format(new Date(s.nextCycleAt), "dd MMM yyyy", { locale: ptBR }) : "—"}
-                      </span>,
-                      <span key="v" className="font-semibold text-slate-800">
-                        {s.amount !== null ? formatBRL(s.amount) : "—"}
-                      </span>,
-                    ])}
-                  />
-                </div>
+                <MiniTable
+                  headers={["Código", "Produto", "Status", "Iniciada em", "Próxima cobrança", "Valor"]}
+                  rows={subs.map((s) => [
+                    <span key="cd" className="block max-w-24 truncate font-mono text-[11px] text-slate-500" title={s.code ?? undefined}>
+                      {s.code ?? "—"}
+                    </span>,
+                    <span key="p" className="text-slate-600">{s.productName ?? "—"}</span>,
+                    <GuruStatusBadge key="s" status={s.status} />,
+                    <span key="d" className="text-slate-500">
+                      {s.guruStartedAt ? format(new Date(s.guruStartedAt), "dd MMM yyyy", { locale: ptBR }) : "—"}
+                    </span>,
+                    <span key="n" className="text-slate-500">
+                      {s.nextCycleAt ? format(new Date(s.nextCycleAt), "dd MMM yyyy", { locale: ptBR }) : "—"}
+                    </span>,
+                    <span key="v" className="font-semibold text-slate-800">
+                      {s.amount !== null ? formatBRL(s.amount) : "—"}
+                    </span>,
+                  ])}
+                />
               )}
             </TabsContent>
           </Tabs>
