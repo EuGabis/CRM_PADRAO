@@ -12,7 +12,6 @@ const GROUPS: { title: string; items: { label: string; href?: string }[] }[] = [
     items: [
       { label: "Perfil da empresa", href: "/configuracoes/perfil" },
       { label: "Meu perfil", href: "/configuracoes/meu-perfil" },
-      { label: "Faturamento", href: "/configuracoes/faturamento" },
       { label: "Minha equipe", href: "/configuracoes/equipe" },
       { label: "Leads & Pipelines", href: "/configuracoes/leads-pipelines" },
     ],
