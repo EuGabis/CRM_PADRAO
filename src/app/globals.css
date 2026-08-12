@@ -113,19 +113,22 @@
   .lito-bubble { animation: none; opacity: 1; }
 }
 
-/* Recharts 3 liga a camada de acessibilidade por padrão e põe tabindex no
-   wrapper do gráfico. Ao CLICAR num gráfico o navegador então desenhava o
-   retângulo de foco — era a "marcação quadrada" em volta dos donuts do painel.
-   Tira o anel só no foco por mouse; navegação por teclado continua enxergando
-   onde está. */
-.recharts-wrapper:focus:not(:focus-visible),
-.recharts-surface:focus:not(:focus-visible) {
+/* "Marcação quadrada" ao clicar num donut: o <Pie> do Recharts 3 nasce com
+   `rootTabIndex: 0` e vira um <g class="recharts-pie"> focável. Como <g> é SVG,
+   o anel de foco do navegador é desenhado na CAIXA do grupo — daí um quadrado
+   em volta de um gráfico redondo. O mesmo vale para os outros tipos de gráfico.
+
+   Some com o anel nesses grupos: nenhum deles é operável por teclado (não há
+   ação ao dar Enter/setas) e o mesmo dado já aparece em texto na legenda ao
+   lado de cada gráfico, então não se perde informação nem navegação. */
+.recharts-wrapper:focus,
+.recharts-surface:focus,
+.recharts-pie:focus,
+.recharts-bar:focus,
+.recharts-radial-bar:focus,
+.recharts-area:focus,
+.recharts-line:focus {
   outline: none;
-}
-.recharts-wrapper:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-  border-radius: var(--radius-md);
 }
 
 .dark {
