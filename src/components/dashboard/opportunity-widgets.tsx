@@ -49,7 +49,8 @@ export function StatusDonut() {
         <div className="relative h-[150px] w-[150px]">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
-              <Pie data={data} dataKey="value" innerRadius={48} outerRadius={68} strokeWidth={0}>
+              {/* rootTabIndex -1: o <Pie> nasce focável e o anel de foco do SVG vira um quadrado. */}
+              <Pie data={data} dataKey="value" innerRadius={48} outerRadius={68} strokeWidth={0} rootTabIndex={-1}>
                 {data.map((d) => (
                   <Cell key={d.name} fill={d.color} />
                 ))}

@@ -1424,7 +1424,8 @@ function RelatoriosGuruTab() {
             <>
               <ResponsiveContainer width="100%" height={180}>
                 <PieChart>
-                  <Pie data={data.pie} dataKey="value" nameKey="name" innerRadius={44} outerRadius={70} paddingAngle={2}>
+                  {/* rootTabIndex -1: o <Pie> nasce focável e o anel de foco do SVG vira um quadrado. */}
+                  <Pie data={data.pie} dataKey="value" nameKey="name" innerRadius={44} outerRadius={70} paddingAngle={2} rootTabIndex={-1}>
                     {data.pie.map((d) => (
                       <Cell
                         key={d.name}

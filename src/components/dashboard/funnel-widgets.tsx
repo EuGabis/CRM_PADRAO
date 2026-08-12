@@ -84,7 +84,8 @@ export function StageDistribution() {
         <div className="relative h-[190px] w-[190px] shrink-0">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
-              <Pie data={data} dataKey="value" innerRadius={58} outerRadius={85} strokeWidth={0}>
+              {/* rootTabIndex -1: o <Pie> nasce focável e o anel de foco do SVG vira um quadrado. */}
+              <Pie data={data} dataKey="value" innerRadius={58} outerRadius={85} strokeWidth={0} rootTabIndex={-1}>
                 {data.map((d) => (
                   <Cell key={d.name} fill={d.color} />
                 ))}
