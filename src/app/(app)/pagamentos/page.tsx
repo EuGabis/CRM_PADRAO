@@ -49,9 +49,11 @@ import {
   EVENTS_PAGE_SIZE_OPTIONS,
   paymentsActions,
   useGuruIntegration,
+  usePaymentEventsForContact,
   usePaymentEventsPage,
   usePaymentSalesReport,
   usePaymentSubscriptions,
+  usePaymentSubscriptionsForContact,
   usePaymentsRealtimeStatus,
   type PaymentEvent,
   type PaymentSubscription,
@@ -66,7 +68,9 @@ import {
   CONTACTS_PAGE_SIZE,
   usePaymentContactsPage,
   usePaymentContactsSummary,
+  type GuruContact,
 } from "@/lib/data/repos/db/payment-contacts";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMyMembership } from "@/lib/data/repos/db/team";
 import { classifyGuruStatus, guruStatusLabel } from "@/lib/data/guru";
 import { cn } from "@/lib/utils";
@@ -954,10 +958,148 @@ function Pager({ page, pageCount, onChange }: { page: number; pageCount: number;
   );
 }
 
+/**
+ * Aberto ao clicar num contato — espelha a tela de detalhe da própria Guru
+ * (Dados Pessoais, Vendas, Assinaturas). Endereço/saldo/lista de bloqueio
+ * que aparecem no painel da Guru não vêm de nenhum campo documentado em
+ * GET /api/v2/contacts — por isso não têm como aparecer aqui.
+ */
+function ContactDetailDialog({ contact, onClose }: { contact: GuruContact | null; onClose: () => void }) {
+  const [tab, setTab] = useState("detalhe");
+  const { rows: sales, loading: salesLoading } = usePaymentEventsForContact(
+    contact?.email ?? null,
+    contact?.email ? null : contact?.name ?? null
+  );
+  const { rows: subs, loading: subsLoading } = usePaymentSubscriptionsForContact(
+    contact?.email ?? null,
+    contact?.email ? null : contact?.name ?? null
+  );
+
+  useEffect(() => {
+    if (contact) setTab("detalhe");
+  }, [contact?.contactKey]);
+
+  return (
+    <Dialog open={!!contact} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{contact?.name ?? contact?.email ?? "Contato"}</DialogTitle>
+        </DialogHeader>
+        {contact && (
+          <Tabs value={tab} onValueChange={(v) => setTab((v as string) ?? "detalhe")}>
+            <TabsList>
+              <TabsTrigger value="detalhe" className="text-xs">Detalhe</TabsTrigger>
+              <TabsTrigger value="vendas" className="text-xs">
+                Vendas{sales.length > 0 ? ` (${sales.length})` : ""}
+              </TabsTrigger>
+              <TabsTrigger value="assinaturas" className="text-xs">
+                Assinaturas{subs.length > 0 ? ` (${subs.length})` : ""}
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="detalhe" className="mt-3 space-y-4">
+              <div>
+                <p className="mb-2 text-xs font-semibold text-slate-700">Dados pessoais</p>
+                <div className="grid grid-cols-2 gap-3 rounded-lg border bg-white p-3 text-xs">
+                  <div>
+                    <p className="text-slate-400">Nome</p>
+                    <p className="font-medium text-slate-800">{contact.name ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400">E-mail</p>
+                    <p className="font-medium text-slate-800">{contact.email ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400">Documento</p>
+                    <p className="font-mono text-slate-800">{contact.doc ?? "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400">Celular</p>
+                    <p className="text-slate-800">{contact.phone ?? "—"}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <KpiCard label="Compras" value={String(contact.purchases)} />
+                <KpiCard label="Total gasto" value={formatBRL(contact.totalSpent)} />
+                <KpiCard label="Assinaturas ativas" value={String(contact.activeSubs)} />
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-semibold text-slate-700">Endereço</p>
+                <p className="rounded-lg border bg-slate-50 p-3 text-xs text-slate-400">
+                  Não disponível — a API pública da Guru não retorna endereço no cadastro de contatos.
+                </p>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="vendas" className="mt-3">
+              {salesLoading ? (
+                <p className="p-6 text-center text-xs text-slate-400">Carregando...</p>
+              ) : sales.length === 0 ? (
+                <p className="rounded-lg border bg-white p-6 text-center text-xs text-slate-400">
+                  Nenhuma venda encontrada para este contato.
+                </p>
+              ) : (
+                <div className="max-h-80 overflow-y-auto">
+                  <MiniTable
+                    headers={["Código", "Produto", "Criada em", "Status", "Valor"]}
+                    rows={sales.map((e) => [
+                      <span key="cd" className="font-mono text-[11px] text-slate-500">{e.code ?? "—"}</span>,
+                      <span key="p" className="text-slate-600">{e.productName ?? "—"}</span>,
+                      <span key="d" className="text-slate-500">
+                        {e.guruCreatedAt ? format(new Date(e.guruCreatedAt), "dd MMM yyyy", { locale: ptBR }) : "—"}
+                      </span>,
+                      <GuruStatusBadge key="s" status={e.status} />,
+                      <span key="v" className="font-semibold text-slate-800">
+                        {e.amount !== null ? formatBRL(e.amount) : "—"}
+                      </span>,
+                    ])}
+                  />
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="assinaturas" className="mt-3">
+              {subsLoading ? (
+                <p className="p-6 text-center text-xs text-slate-400">Carregando...</p>
+              ) : subs.length === 0 ? (
+                <p className="rounded-lg border bg-white p-6 text-center text-xs text-slate-400">
+                  Nenhuma assinatura encontrada para este contato.
+                </p>
+              ) : (
+                <div className="max-h-80 overflow-y-auto">
+                  <MiniTable
+                    headers={["Código", "Produto", "Status", "Iniciada em", "Próxima cobrança", "Valor"]}
+                    rows={subs.map((s) => [
+                      <span key="cd" className="font-mono text-[11px] text-slate-500">{s.code ?? "—"}</span>,
+                      <span key="p" className="text-slate-600">{s.productName ?? "—"}</span>,
+                      <GuruStatusBadge key="s" status={s.status} />,
+                      <span key="d" className="text-slate-500">
+                        {s.guruStartedAt ? format(new Date(s.guruStartedAt), "dd MMM yyyy", { locale: ptBR }) : "—"}
+                      </span>,
+                      <span key="n" className="text-slate-500">
+                        {s.nextCycleAt ? format(new Date(s.nextCycleAt), "dd MMM yyyy", { locale: ptBR }) : "—"}
+                      </span>,
+                      <span key="v" className="font-semibold text-slate-800">
+                        {s.amount !== null ? formatBRL(s.amount) : "—"}
+                      </span>,
+                    ])}
+                  />
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ContatosGuruTab() {
   const [page, setPage] = useState(0);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [selectedContact, setSelectedContact] = useState<GuruContact | null>(null);
   const summary = usePaymentContactsSummary();
   const { rows, total, loading } = usePaymentContactsPage(page, search);
 
@@ -1014,7 +1156,13 @@ function ContatosGuruTab() {
             <MiniTable
               headers={["Contato", "E-mail", "Telefone", "Documento", "Compras", "Total gasto", "Assinaturas", "Última atividade"]}
               rows={rows.map((b) => [
-                <span key="n" className="font-medium text-slate-800">{b.name ?? b.email ?? "—"}</span>,
+                <button
+                  key="n"
+                  className="font-medium text-slate-800 hover:text-indigo-600 hover:underline"
+                  onClick={() => setSelectedContact(b)}
+                >
+                  {b.name ?? b.email ?? "—"}
+                </button>,
                 <span key="e" className="text-slate-500">{b.email ?? "—"}</span>,
                 <span key="p" className="text-slate-600">{b.phone ?? "—"}</span>,
                 <span key="d" className="font-mono text-[11px] text-slate-600">{b.doc ?? "—"}</span>,
@@ -1043,6 +1191,7 @@ function ContatosGuruTab() {
           </div>
         </>
       )}
+      <ContactDetailDialog contact={selectedContact} onClose={() => setSelectedContact(null)} />
     </>
   );
 }

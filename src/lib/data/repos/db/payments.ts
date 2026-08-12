@@ -269,6 +269,85 @@ export function usePaymentsRealtimeStatus() {
   return usePaymentsStore((s) => s.realtime);
 }
 
+/**
+ * Vendas/assinaturas de UM contato (pela mesma chave de payment_contacts:
+ * e-mail, ou nome quando não há e-mail) — usado no detalhe do contato,
+ * espelhando as abas Vendas/Assinaturas do próprio painel da Guru.
+ */
+export function usePaymentEventsForContact(email: string | null, name: string | null) {
+  const [rows, setRows] = useState<PaymentEvent[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!email && !name) {
+      setRows([]);
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    (async () => {
+      await useDbStore.getState().load();
+      const loc = useDbStore.getState().locationId;
+      if (!loc) {
+        if (active) {
+          setRows([]);
+          setLoading(false);
+        }
+        return;
+      }
+      const supabase = createClient();
+      let query = supabase.from("payment_events").select("*").eq("location_id", loc);
+      query = email ? query.ilike("contact_email", email) : query.ilike("contact_name", name as string);
+      const { data } = await query.order("guru_created_at", { ascending: false, nullsFirst: false }).limit(200);
+      if (!active) return;
+      setRows((data ?? []).map(mapPaymentEvent));
+      setLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [email, name]);
+
+  return { rows, loading };
+}
+
+export function usePaymentSubscriptionsForContact(email: string | null, name: string | null) {
+  const [rows, setRows] = useState<PaymentSubscription[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!email && !name) {
+      setRows([]);
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    (async () => {
+      await useDbStore.getState().load();
+      const loc = useDbStore.getState().locationId;
+      if (!loc) {
+        if (active) {
+          setRows([]);
+          setLoading(false);
+        }
+        return;
+      }
+      const supabase = createClient();
+      let query = supabase.from("payment_subscriptions").select("*").eq("location_id", loc);
+      query = email ? query.ilike("contact_email", email) : query.ilike("contact_name", name as string);
+      const { data } = await query.order("guru_updated_at", { ascending: false, nullsFirst: false });
+      if (!active) return;
+      setRows((data ?? []).map(mapPaymentSubscription));
+      setLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [email, name]);
+
+  return { rows, loading };
+}
+
 export interface SalesMonthlyRow {
   month: string;
   productName: string;
