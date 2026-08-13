@@ -10,7 +10,7 @@ import { Composer } from "@/components/inbox/composer";
 import { ContactPanel } from "@/components/inbox/contact-panel";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { Thread } from "@/components/inbox/thread";
-import { ViewsRail } from "@/components/inbox/views-rail";
+import { ViewsRail, type InboxScope } from "@/components/inbox/views-rail";
 import { DataTable, type Column } from "@/components/shared/data-table";
 import { EmptyState } from "@/components/shared/empty-state";
 import { KpiCard } from "@/components/shared/kpi-card";
@@ -62,6 +62,7 @@ export default function ConversasPage() {
   const conversations = useConversations();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [scope, setScope] = useState<InboxScope>("group");
   const selectedConversation = useConversation(selectedId);
 
   // seleciona a primeira conversa quando os dados chegam
@@ -82,11 +83,12 @@ export default function ConversasPage() {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          <ViewsRail onNew={() => setNewOpen(true)} />
+          <ViewsRail onNew={() => setNewOpen(true)} scope={scope} onScopeChange={setScope} />
           <ConversationList
             selectedId={selectedId}
             onSelect={setSelectedId}
             onNew={() => setNewOpen(true)}
+            scope={scope}
           />
           {selectedId ? (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">

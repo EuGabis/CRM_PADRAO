@@ -83,6 +83,8 @@ export interface Conversation {
   slaDays: number;
   /** WhatsApp: canal/número que originou a conversa (nulo p/ outros canais). */
   channelId?: string;
+  /** Responsável pelo atendimento; null = caixa do grupo (migração 0024). */
+  assignedTo?: string | null;
 }
 
 export type NodeCategory =

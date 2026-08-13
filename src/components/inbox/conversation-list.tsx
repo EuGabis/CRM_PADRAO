@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowUpDown, Plus, Search, Star } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,9 @@ import {
   useRealtimeStatus,
   type ConversationFilter,
 } from "@/lib/data/repos/db/conversations";
+import { useMyMembership } from "@/lib/data/repos/db/team";
 import { cn } from "@/lib/utils";
+import type { InboxScope } from "./views-rail";
 
 const FILTER_TABS: { key: ConversationFilter; label: string }[] = [
   { key: "unread", label: "Não lidos" },
@@ -42,18 +44,28 @@ export function ConversationList({
   selectedId,
   onSelect,
   onNew,
+  scope = "group",
 }: {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onNew?: () => void;
+  scope?: InboxScope;
 }) {
   const [filter, setFilter] = useState<ConversationFilter>("all");
   const [sort, setSort] = useState(SORT_OPTIONS[0]);
   const [query, setQuery] = useState("");
-  const conversations = useConversations(filter);
+  const all = useConversations(filter);
   const { contacts } = useDbContacts();
   const realtime = useRealtimeStatus();
+  const { me } = useMyMembership();
   const unreadCount = useConversations("unread").length;
+
+  // "Atribuídas a mim" cruza com as abas (Não lidos/Todos/...) em vez de
+  // substituí-las.
+  const conversations = useMemo(
+    () => (scope === "mine" ? all.filter((c) => c.assignedTo === me?.userId) : all),
+    [all, scope, me?.userId]
+  );
 
   const sorted =
     sort === "Maior atraso de SLA"
