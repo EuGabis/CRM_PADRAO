@@ -24,6 +24,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useWebphone } from "@/components/layout/webphone-store";
 import { dbContactActions, useDbContact } from "@/lib/data/repos/db/contacts";
 import { conversationActions } from "@/lib/data/repos/db/conversations";
 import { taskActions } from "@/lib/data/repos/db/contacts-module";
@@ -122,6 +123,7 @@ export function OpportunityCard({
   });
   const router = useRouter();
   const { contact } = useDbContact(opportunity.contactId);
+  const callContact = useWebphone((s) => s.callContact);
 
   const [openAction, setOpenAction] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState("");
@@ -138,14 +140,12 @@ export function OpportunityCard({
   /* ---- ações ---- */
 
   const call = () => {
-    const digits = (contact?.phone ?? "").replace(/\D/g, "");
-    if (!digits) {
+    if (!contact?.phone?.trim()) {
       toast.error("Contato sem telefone cadastrado");
       return;
     }
-    // tel: abre o discador do sistema (ou o softphone padrão). Não inventa
-    // telefonia própria — o CRM ainda não tem provedor de voz.
-    window.location.href = `tel:+${digits}`;
+    // Abre o webphone da topbar com o número já no visor.
+    callContact(contact.phone, `${contact.firstName} ${contact.lastName}`.trim());
   };
 
   const openConversation = async () => {

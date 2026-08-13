@@ -16,10 +16,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { createClient } from "@/lib/supabase/client";
 import { SupportPanel } from "./support-panel";
 import { WebphonePanel } from "./webphone-panel";
+import { useWebphone } from "./webphone-store";
 
 export function Topbar() {
   const [supportOpen, setSupportOpen] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const { open: webphoneOpen, setOpen: setWebphoneOpen } = useWebphone();
 
   useEffect(() => {
     const supabase = createClient();
@@ -49,7 +51,9 @@ export function Topbar() {
         <LifeBuoy className="size-3.5" />
         Suporte
       </button>
-      <Popover>
+      {/* Popover controlado: "Ligar" no card do kanban e no cabeçalho da
+          conversa abrem ESTE painel, com o número do contato já no visor. */}
+      <Popover open={webphoneOpen} onOpenChange={setWebphoneOpen}>
         <PopoverTrigger
           render={
             <button className="flex items-center gap-1.5 rounded-full bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-600" />
@@ -62,18 +66,14 @@ export function Topbar() {
           <WebphonePanel />
         </PopoverContent>
       </Popover>
-      <Popover>
-        <PopoverTrigger
-          render={
-            <button className="flex size-7 items-center justify-center rounded-full bg-emerald-500 text-white hover:bg-emerald-400" />
-          }
-        >
-          <Phone className="size-3.5" />
-        </PopoverTrigger>
-        <PopoverContent align="end" className="p-0">
-          <WebphonePanel />
-        </PopoverContent>
-      </Popover>
+      {/* Abria um segundo popover com o MESMO painel; agora só chama o de cima. */}
+      <button
+        onClick={() => setWebphoneOpen(true)}
+        title="Abrir o webphone"
+        className="flex size-7 items-center justify-center rounded-full bg-emerald-500 text-white hover:bg-emerald-400"
+      >
+        <Phone className="size-3.5" />
+      </button>
       <button
         onClick={() => toast.info("Central de notificações chega em breve")}
         className="relative flex size-7 items-center justify-center rounded-full text-slate-300 hover:bg-slate-700"
