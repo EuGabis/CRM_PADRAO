@@ -6,17 +6,24 @@ import { WidgetCard } from "./widget-card";
 import { formatBRL } from "@/lib/data/repos/opportunities";
 import { useDbPipeline } from "@/lib/data/repos/db/pipeline";
 import { useDashboardOps } from "./date-range";
+import { DrilldownDialog, useDrilldown } from "./drilldown";
 import { TOOLTIP_STYLE } from "./opportunity-widgets";
 
 export function FunnelWidget() {
   const [pipeId, setPipeId] = useState("");
   const pipeline = useDbPipeline(pipeId);
   const ops = useDashboardOps();
+  const { drilldown, open, close } = useDrilldown();
   if (!pipeline) return null;
 
   const rows = pipeline.stages.map((st) => {
     const stageOps = ops.filter((o) => o.pipelineId === pipeline.id && o.stageId === st.id);
-    return { stage: st, count: stageOps.length, value: stageOps.reduce((s, o) => s + o.value, 0) };
+    return {
+      stage: st,
+      ops: stageOps,
+      count: stageOps.length,
+      value: stageOps.reduce((s, o) => s + o.value, 0),
+    };
   });
   const max = Math.max(1, ...rows.map((r) => r.count));
   const first = rows[0]?.count || 1;
@@ -35,15 +42,23 @@ export function FunnelWidget() {
           return (
             <div key={r.stage.id} className="flex items-center gap-2">
               <div className="min-w-0 flex-1">
-                <div
-                  className="flex h-9 min-w-[120px] flex-col justify-center rounded px-2"
+                <button
+                  onClick={() =>
+                    open({
+                      title: `${pipeline.name} · ${r.stage.name}`,
+                      ops: r.ops,
+                      pipelineId: pipeline.id,
+                    })
+                  }
+                  title={`Ver as ${r.count} oportunidade${r.count === 1 ? "" : "s"} desta fase`}
+                  className="flex h-9 min-w-[120px] cursor-pointer flex-col justify-center rounded px-2 text-left transition-opacity hover:opacity-85"
                   style={{ width: `${Math.max(18, (r.count / max) * 100)}%`, background: r.stage.color }}
                 >
                   <span className="truncate text-[10px] font-bold leading-tight text-white">
                     {r.stage.name}
                   </span>
                   <span className="text-[9px] leading-tight text-white/90">{formatBRL(r.value)}</span>
-                </div>
+                </button>
               </div>
               <span className="w-16 text-right text-[11px] font-medium text-slate-600">
                 {cumulative.toFixed(1)}%
@@ -55,6 +70,7 @@ export function FunnelWidget() {
           );
         })}
       </div>
+      <DrilldownDialog state={drilldown} onClose={close} />
     </WidgetCard>
   );
 }
@@ -63,6 +79,7 @@ export function StageDistribution() {
   const [pipeId, setPipeId] = useState("");
   const pipeline = useDbPipeline(pipeId);
   const ops = useDashboardOps();
+  const { drilldown, open, close } = useDrilldown();
   if (!pipeline) return null;
 
   const data = pipeline.stages
@@ -70,6 +87,7 @@ export function StageDistribution() {
       const stageOps = ops.filter((o) => o.pipelineId === pipeline.id && o.stageId === st.id);
       return {
         name: st.name,
+        ops: stageOps,
         value: stageOps.length,
         money: stageOps.reduce((s, o) => s + o.value, 0),
         color: st.color,
@@ -78,6 +96,12 @@ export function StageDistribution() {
     .filter((d) => d.value > 0);
   const total = data.reduce((s, d) => s + d.value, 0);
 
+  const openStage = (i: number) => {
+    const d = data[i];
+    if (!d) return;
+    open({ title: `${pipeline.name} · ${d.name}`, ops: d.ops, pipelineId: pipeline.id });
+  };
+
   return (
     <WidgetCard title="Distribuição de fases" pipelineId={pipeId} onPipelineChange={setPipeId}>
       <div className="flex items-center gap-4">
@@ -85,7 +109,16 @@ export function StageDistribution() {
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               {/* rootTabIndex -1: o <Pie> nasce focável e o anel de foco do SVG vira um quadrado. */}
-              <Pie data={data} dataKey="value" innerRadius={58} outerRadius={85} strokeWidth={0} rootTabIndex={-1}>
+              <Pie
+                data={data}
+                dataKey="value"
+                innerRadius={58}
+                outerRadius={85}
+                strokeWidth={0}
+                rootTabIndex={-1}
+                className="cursor-pointer"
+                onClick={(_, i) => openStage(i)}
+              >
                 {data.map((d) => (
                   <Cell key={d.name} fill={d.color} />
                 ))}
@@ -98,16 +131,23 @@ export function StageDistribution() {
           </div>
         </div>
         <ul className="min-w-0 flex-1 space-y-1 text-[11px]">
-          {data.map((d) => (
-            <li key={d.name} className="flex items-center gap-1.5">
-              <span className="size-2 shrink-0 rounded-sm" style={{ background: d.color }} />
-              <span className="truncate text-slate-600">
-                {d.name} · {formatBRL(d.money)} ({((d.value / total) * 100).toFixed(1)}%) · {d.value}
-              </span>
+          {data.map((d, i) => (
+            <li key={d.name}>
+              <button
+                onClick={() => openStage(i)}
+                className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-slate-50"
+              >
+                <span className="size-2 shrink-0 rounded-sm" style={{ background: d.color }} />
+                <span className="truncate text-slate-600">
+                  {d.name} · {formatBRL(d.money)} ({((d.value / total) * 100).toFixed(1)}%) ·{" "}
+                  {d.value}
+                </span>
+              </button>
             </li>
           ))}
         </ul>
       </div>
+      <DrilldownDialog state={drilldown} onClose={close} />
     </WidgetCard>
   );
 }

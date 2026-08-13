@@ -28,8 +28,11 @@ values (
   'COLE_O_AUTOMATION_SECRET_AQUI'
 )
 on conflict (id) do update
-  set tick_url = excluded.tick_url,
-      secret   = excluded.secret;
+  set tick_url = excluded.tick_url;
+-- Mesma armadilha da 0009: o `do update` NÃO toca no secret. Sobrescrevê-lo
+-- aqui faz uma re-execução deste arquivo derrubar o motor de marketing com 401.
+-- Para (re)definir, à mão no SQL Editor:
+--   update private.marketing_config set secret = '<valor de AUTOMATION_SECRET na Vercel>';
 
 -- ---------- Função que chama a rota do envio ----------
 create or replace function private.marketing_tick()

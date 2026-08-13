@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Settings2 } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -52,9 +51,8 @@ export function WidgetCard({
               </SelectContent>
             </Select>
           )}
-          <button className="text-slate-400 hover:text-slate-600">
-            <Settings2 className="size-3.5" />
-          </button>
+          {/* A engrenagem que ficava aqui não tinha ação nenhuma: clicar não
+              abria nada. Volta quando existir configuração de widget. */}
         </div>
       </div>
       <div className="min-h-0 flex-1">{children}</div>
