@@ -53,6 +53,10 @@ const mapMessage = (r: any): Message => ({
   waMessageId: r.wa_message_id ?? undefined,
   status: r.status ?? undefined,
   automated: r.automated || undefined,
+  scheduledBy: r.scheduled_by ?? null,
+  scheduleStatus: r.schedule_status ?? undefined,
+  dispatchedAt: r.dispatched_at ?? undefined,
+  scheduleError: r.schedule_error ?? undefined,
 });
 
 const mapView = (r: any): InboxView => ({
@@ -220,6 +224,45 @@ export function useInboxViews() {
 }
 
 /**
+ * Log de mensagens agendadas: tudo que passou pelo "Programar", da mais
+ * recente para a mais antiga (migração 0028).
+ */
+export function useScheduledMessages() {
+  const { messages, load } = useConvStore();
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return useMemo(
+    () =>
+      messages
+        .filter((m) => !!m.scheduleStatus)
+        .sort((a, b) => (b.scheduledFor ?? "").localeCompare(a.scheduledFor ?? "")),
+    [messages]
+  );
+}
+
+export const scheduleActions = {
+  /** Cancela um agendamento ainda pendente (não mexe no que já saiu). */
+  async cancel(messageId: string): Promise<boolean> {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("messages")
+      .update({ schedule_status: "cancelada" })
+      .eq("id", messageId)
+      .eq("schedule_status", "pendente") // corrida com o disparador: quem chegar primeiro vence
+      .select()
+      .maybeSingle();
+    if (error || !data) return false;
+    const s = useConvStore.getState();
+    s.patch({
+      messages: s.messages.map((m) => (m.id === messageId ? mapMessage(data) : m)),
+    });
+    return true;
+  },
+};
+
+/**
  * Ids das conversas que têm ao menos uma mensagem escrita por automação/IA —
  * o que sustenta o escopo "bot" do rail.
  */
@@ -244,6 +287,14 @@ export const conversationActions = {
     const location = loc();
     if (!location) return false;
     const supabase = createClient();
+    // Agendou? Registra quem e entra na fila como pendente (migração 0028).
+    const scheduling = msg.scheduledFor
+      ? {
+          scheduled_for: msg.scheduledFor,
+          scheduled_by: (await supabase.auth.getUser()).data.user?.id ?? null,
+          schedule_status: "pendente",
+        }
+      : { scheduled_for: null };
     const { data, error } = await supabase
       .from("messages")
       .insert({
@@ -254,7 +305,7 @@ export const conversationActions = {
         channel: msg.channel,
         body: msg.body,
         internal: msg.internal ?? false,
-        scheduled_for: msg.scheduledFor ?? null,
+        ...scheduling,
       })
       .select()
       .single();

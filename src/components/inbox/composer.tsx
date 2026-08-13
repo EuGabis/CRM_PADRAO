@@ -219,12 +219,21 @@ export function Composer({ conversationId }: { conversationId: string }) {
     }
     setBody("");
     setSubject("");
+    if (scheduledFor) {
+      toast.success("Mensagem agendada — acompanhe na aba Agendadas");
+      // Agendar sem canal conectado é permitido (dá tempo de conectar até lá),
+      // mas o disparo falha se continuar assim — melhor avisar agora.
+      if (channel === "whatsapp" && !internal && !conversation?.channelId) {
+        toast.warning(
+          "Sem canal de WhatsApp conectado, o disparo vai falhar. Cadastre em Canais de atendimento."
+        );
+      }
+      return;
+    }
     toast.success(
-      scheduledFor
-        ? "Mensagem agendada"
-        : internal
-          ? "Comentário interno adicionado"
-          : `Mensagem enviada via ${channelLabel(channel)}`
+      internal
+        ? "Comentário interno adicionado"
+        : `Mensagem enviada via ${channelLabel(channel)}`
     );
   };
 
