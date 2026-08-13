@@ -14,6 +14,7 @@ import {
   Play,
   Star,
   Trash2,
+  UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -25,6 +26,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { SlaBadge } from "@/components/shared/sla-badge";
 import { contactName } from "@/lib/data/repos/contacts";
 import { useDbContact } from "@/lib/data/repos/db/contacts";
@@ -33,8 +40,80 @@ import {
   useConversation,
   useMessages,
 } from "@/lib/data/repos/db/conversations";
-import type { Message } from "@/lib/data/types";
+import { useMyMembership, useTeam } from "@/lib/data/repos/db/team";
+import type { Conversation, Message } from "@/lib/data/types";
 import { cn } from "@/lib/utils";
+
+/** Responsável pelo atendimento — grava em `conversations.assigned_to` (0024). */
+function AssignPicker({ conversation }: { conversation: Conversation }) {
+  const { members } = useTeam();
+  const { me } = useMyMembership();
+  const owner = members.find((m) => m.userId === conversation.assignedTo) ?? null;
+
+  const set = async (userId: string | null) => {
+    const ok = await conversationActions.assign(conversation.id, userId);
+    if (!ok) {
+      toast.error("Não foi possível alterar o responsável");
+      return;
+    }
+    toast.success(
+      userId
+        ? `Atribuída a ${members.find((m) => m.userId === userId)?.name ?? "usuário"}`
+        : "Devolvida para a caixa do grupo"
+    );
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button
+            title={owner ? `Responsável: ${owner.name}` : "Sem responsável"}
+            className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-100"
+          />
+        }
+      >
+        {owner ? (
+          <>
+            <Avatar className="size-5">
+              <AvatarFallback
+                className="text-[9px] font-bold text-white"
+                style={{ background: owner.color }}
+              >
+                {owner.name.slice(0, 2).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <span className="max-w-24 truncate">{owner.name}</span>
+          </>
+        ) : (
+          <>
+            <UserPlus className="size-3.5" />
+            Atribuir
+          </>
+        )}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        {me && (
+          <DropdownMenuItem className="text-xs" onClick={() => void set(me.userId)}>
+            Atribuir a mim
+          </DropdownMenuItem>
+        )}
+        {members
+          .filter((m) => m.userId !== me?.userId)
+          .map((m) => (
+            <DropdownMenuItem key={m.userId} className="text-xs" onClick={() => void set(m.userId)}>
+              {m.name}
+            </DropdownMenuItem>
+          ))}
+        {conversation.assignedTo && (
+          <DropdownMenuItem className="text-xs text-slate-500" onClick={() => void set(null)}>
+            Remover responsável
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 function fmtBytes(n?: number) {
   if (!n) return "";
@@ -280,6 +359,7 @@ export function Thread({
           <SlaBadge days={conversation.slaDays} />
         </div>
         <div className="flex items-center gap-1.5">
+          <AssignPicker conversation={conversation} />
           <button
             onClick={() => toast.info("Ligação via WhatsApp chega com o backend")}
             className="flex items-center gap-1.5 rounded-full bg-[var(--lito-wa-green)] px-3 py-1 text-xs font-bold text-white hover:opacity-90"

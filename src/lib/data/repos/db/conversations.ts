@@ -24,6 +24,7 @@ const mapConversation = (r: any): Conversation => ({
   starred: r.starred,
   slaDays: r.sla_days,
   channelId: r.channel_id ?? undefined,
+  assignedTo: r.assigned_to ?? null,
 });
 
 const mapMessage = (r: any): Message => ({
@@ -332,6 +333,23 @@ export const conversationActions = {
         c.id === conversationId ? { ...c, starred: !conv.starred } : c
       ),
     });
+  },
+
+  /** Define o responsável pela conversa; `null` devolve para a caixa do grupo. */
+  async assign(conversationId: string, userId: string | null): Promise<boolean> {
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("conversations")
+      .update({ assigned_to: userId })
+      .eq("id", conversationId);
+    if (error) return false;
+    const s = useConvStore.getState();
+    s.patch({
+      conversations: s.conversations.map((c) =>
+        c.id === conversationId ? { ...c, assignedTo: userId } : c
+      ),
+    });
+    return true;
   },
 
   /** Exclui a conversa e todas as mensagens dela. */
