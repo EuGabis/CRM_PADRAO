@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CalendarClock, Link2, Phone, Plus, Smartphone, Trash2 } from "lucide-react";
@@ -61,10 +62,26 @@ const TABS = [
   { label: "Configurações" },
 ];
 
+/**
+ * `useSearchParams` obriga um limite de Suspense — sem ele o build falha ao
+ * pré-renderizar /conversas.
+ */
 export default function ConversasPage() {
+  return (
+    <Suspense fallback={null}>
+      <ConversasPageInner />
+    </Suspense>
+  );
+}
+
+function ConversasPageInner() {
   const [tab, setTab] = useState("Conversas");
   const conversations = useConversations();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // ?c=<id> vem do card do kanban ("Abrir conversa") — abre direto naquela.
+  const searchParams = useSearchParams();
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => searchParams.get("c")
+  );
   const [newOpen, setNewOpen] = useState(false);
   const selectedConversation = useConversation(selectedId);
 
