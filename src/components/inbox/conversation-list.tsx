@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ArrowUpDown, Plus, Search, Star } from "lucide-react";
+import { useMemo } from "react";
+import { ArrowUpDown, Plus, Search, Star, X } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,13 +16,15 @@ import { contactName } from "@/lib/data/repos/contacts";
 import { useDbContacts } from "@/lib/data/repos/db/contacts";
 import {
   conversationActions,
+  useAutomatedConversationIds,
   useConversations,
+  useInboxViews,
   useRealtimeStatus,
-  type ConversationFilter,
 } from "@/lib/data/repos/db/conversations";
 import { useMyMembership } from "@/lib/data/repos/db/team";
 import { cn } from "@/lib/utils";
-import type { InboxScope } from "./views-rail";
+import { SORT_OPTIONS, scopeLabel, useInboxUi } from "./inbox-filters";
+import type { ConversationFilter } from "@/lib/data/types";
 
 const FILTER_TABS: { key: ConversationFilter; label: string }[] = [
   { key: "unread", label: "Não lidos" },
@@ -31,41 +33,33 @@ const FILTER_TABS: { key: ConversationFilter; label: string }[] = [
   { key: "starred", label: "Marcados" },
 ];
 
-const SORT_OPTIONS = [
-  "Mais recentes · Todas as mensagens",
-  "Mais antigas · Todas as mensagens",
-  "Mais recentes · Mensagens manuais",
-  "Mais antigas · Mensagens manuais",
-  "Maior atraso de SLA",
-  "Próxima meta de SLA",
-];
-
 export function ConversationList({
   selectedId,
   onSelect,
   onNew,
-  scope = "group",
 }: {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onNew?: () => void;
-  scope?: InboxScope;
 }) {
-  const [filter, setFilter] = useState<ConversationFilter>("all");
-  const [sort, setSort] = useState(SORT_OPTIONS[0]);
-  const [query, setQuery] = useState("");
+  const { scope, filter, sort, query, activeViewId, setFilter, setSort, setQuery, reset } =
+    useInboxUi();
   const all = useConversations(filter);
   const { contacts } = useDbContacts();
   const realtime = useRealtimeStatus();
   const { me } = useMyMembership();
   const unreadCount = useConversations("unread").length;
+  const automatedIds = useAutomatedConversationIds();
+  const views = useInboxViews();
+  const activeView = views.find((v) => v.id === activeViewId) ?? null;
 
-  // "Atribuídas a mim" cruza com as abas (Não lidos/Todos/...) em vez de
+  // O escopo do rail cruza com as abas (Não lidos/Todos/...) em vez de
   // substituí-las.
-  const conversations = useMemo(
-    () => (scope === "mine" ? all.filter((c) => c.assignedTo === me?.userId) : all),
-    [all, scope, me?.userId]
-  );
+  const conversations = useMemo(() => {
+    if (scope === "mine") return all.filter((c) => c.assignedTo === me?.userId);
+    if (scope === "bot") return all.filter((c) => automatedIds.has(c.id));
+    return all;
+  }, [all, scope, me?.userId, automatedIds]);
 
   const sorted =
     sort === "Maior atraso de SLA"
@@ -86,8 +80,8 @@ export function ConversationList({
   return (
     <div className="flex h-full w-[300px] shrink-0 flex-col border-r bg-white">
       <div className="flex items-center justify-between border-b px-3 py-2">
-        <h2 className="flex items-center gap-1.5 text-sm font-bold text-slate-800">
-          Caixa de entrada
+        <h2 className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-slate-800">
+          <span className="truncate">{activeView ? activeView.name : "Caixa de entrada"}</span>
           {realtime === "on" && (
             <span
               title="Realtime conectado — mensagens chegam ao vivo"
@@ -127,6 +121,20 @@ export function ConversationList({
         </DropdownMenu>
         </div>
       </div>
+      {(scope !== "group" || activeView) && (
+        <div className="flex items-center gap-1.5 border-b bg-indigo-50/60 px-3 py-1.5">
+          <span className="truncate text-[11px] font-medium text-indigo-700">
+            {activeView ? `Visualização · ${activeView.name}` : scopeLabel[scope]}
+          </span>
+          <button
+            onClick={reset}
+            title="Voltar à caixa do grupo"
+            className="ml-auto flex size-5 shrink-0 items-center justify-center rounded text-indigo-400 hover:bg-indigo-100 hover:text-indigo-700"
+          >
+            <X className="size-3" />
+          </button>
+        </div>
+      )}
       <div className="flex gap-1 border-b px-2 py-1.5">
         {FILTER_TABS.map((t) => (
           <button
@@ -219,8 +227,16 @@ export function ConversationList({
             </button>
           );
         })}
-        {sorted.length === 0 && (
-          <p className="p-6 text-center text-xs text-slate-400">Nenhuma conversa neste filtro</p>
+        {visible.length === 0 && (
+          <p className="p-6 text-center text-[11px] leading-relaxed text-slate-400">
+            {q
+              ? `Nenhuma conversa com “${query.trim()}” neste filtro.`
+              : scope === "mine"
+                ? "Nenhuma conversa atribuída a você. Abra uma conversa e use “Atribuir” no cabeçalho."
+                : scope === "bot"
+                  ? "Nenhuma conversa tocada por automação ainda. Assim que um fluxo registrar nota ou responder um contato, a conversa aparece aqui."
+                  : "Nenhuma conversa neste filtro"}
+          </p>
         )}
       </div>
     </div>

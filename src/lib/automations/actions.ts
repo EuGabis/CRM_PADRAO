@@ -373,6 +373,7 @@ export async function runAction(step: Step, ctx: RunContext): Promise<ActionResu
         channel: conversation.channel,
         body,
         internal: true,
+        automated: true, // alimenta o escopo "com automação" do rail (migração 0027)
       });
       if (error) return { status: "error", message: error.message };
       return { status: "ok", message: "Nota interna registrada" };
