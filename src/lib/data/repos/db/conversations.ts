@@ -3,8 +3,17 @@
 import { useEffect, useMemo } from "react";
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
-import type { Channel, Conversation, Message } from "@/lib/data/types";
+import type {
+  Channel,
+  Conversation,
+  ConversationFilter,
+  InboxView,
+  InboxViewConfig,
+  Message,
+} from "@/lib/data/types";
 import { useDbStore } from "./contacts";
+
+export type { ConversationFilter } from "@/lib/data/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -43,6 +52,18 @@ const mapMessage = (r: any): Message => ({
   mediaSize: r.media_size ?? undefined,
   waMessageId: r.wa_message_id ?? undefined,
   status: r.status ?? undefined,
+  automated: r.automated || undefined,
+});
+
+const mapView = (r: any): InboxView => ({
+  id: r.id,
+  name: r.name,
+  config: {
+    scope: r.config?.scope ?? "group",
+    filter: r.config?.filter ?? "all",
+    sort: r.config?.sort ?? "",
+    query: r.config?.query ?? "",
+  },
 });
 
 export const MEDIA_BUCKET = "conversation-media";
@@ -55,8 +76,11 @@ interface ConvState {
   conversations: Conversation[];
   messages: Message[];
   snippets: Snippet[];
+  views: InboxView[];
   load: () => Promise<void>;
-  patch: (p: Partial<Pick<ConvState, "conversations" | "messages" | "snippets" | "realtime">>) => void;
+  patch: (
+    p: Partial<Pick<ConvState, "conversations" | "messages" | "snippets" | "views" | "realtime">>
+  ) => void;
 }
 
 export const useConvStore = create<ConvState>((set, get) => ({
@@ -66,16 +90,18 @@ export const useConvStore = create<ConvState>((set, get) => ({
   conversations: [],
   messages: [],
   snippets: [],
+  views: [],
 
   load: async () => {
     if (get().loaded || get().loading) return;
     set({ loading: true });
     await useDbStore.getState().load();
     const supabase = createClient();
-    const [convs, msgs, snips] = await Promise.all([
+    const [convs, msgs, snips, views] = await Promise.all([
       supabase.from("conversations").select("*"),
       supabase.from("messages").select("*").order("created_at"),
       supabase.from("snippets").select("*").order("created_at"),
+      supabase.from("inbox_views").select("*").order("created_at"),
     ]);
     set({
       loaded: true,
@@ -83,6 +109,7 @@ export const useConvStore = create<ConvState>((set, get) => ({
       conversations: (convs.data ?? []).map(mapConversation),
       messages: (msgs.data ?? []).map(mapMessage),
       snippets: (snips.data ?? []).map((r: any) => ({ id: r.id, name: r.name, content: r.content })),
+      views: (views.data ?? []).map(mapView),
     });
 
     // Realtime: mensagens e conversas chegam ao vivo (RLS filtra por tenant)
@@ -136,8 +163,6 @@ export const useConvStore = create<ConvState>((set, get) => ({
   patch: (p) => set(p),
 }));
 
-export type ConversationFilter = "unread" | "all" | "recent" | "starred";
-
 export function useConversations(filter: ConversationFilter = "all") {
   const { conversations, load } = useConvStore();
   useEffect(() => {
@@ -182,6 +207,31 @@ export function useSnippets() {
 
 export function useRealtimeStatus() {
   return useConvStore((s) => s.realtime);
+}
+
+/** Visualizações salvas da caixa de entrada (compartilhadas com a equipe). */
+export function useInboxViews() {
+  const { views, load } = useConvStore();
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return views;
+}
+
+/**
+ * Ids das conversas que têm ao menos uma mensagem escrita por automação/IA —
+ * o que sustenta o escopo "bot" do rail.
+ */
+export function useAutomatedConversationIds() {
+  const messages = useConvStore((s) => s.messages);
+  return useMemo(() => {
+    const ids = new Set<string>();
+    messages.forEach((m) => {
+      if (m.automated) ids.add(m.conversationId);
+    });
+    return ids;
+  }, [messages]);
 }
 
 const loc = () => useDbStore.getState().locationId;
@@ -407,6 +457,38 @@ export const conversationActions = {
       });
     }
     return conv.id;
+  },
+};
+
+export const inboxViewActions = {
+  async add(name: string, config: InboxViewConfig): Promise<boolean> {
+    const location = loc();
+    if (!location) return false;
+    const supabase = createClient();
+    const { data: auth } = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from("inbox_views")
+      .insert({
+        location_id: location,
+        name,
+        config,
+        created_by: auth.user?.id ?? null,
+      })
+      .select()
+      .single();
+    if (error || !data) return false;
+    const s = useConvStore.getState();
+    s.patch({ views: [...s.views, mapView(data)] });
+    return true;
+  },
+
+  async remove(id: string): Promise<boolean> {
+    const supabase = createClient();
+    const { error } = await supabase.from("inbox_views").delete().eq("id", id);
+    if (error) return false;
+    const s = useConvStore.getState();
+    s.patch({ views: s.views.filter((v) => v.id !== id) });
+    return true;
   },
 };
 

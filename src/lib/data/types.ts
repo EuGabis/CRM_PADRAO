@@ -70,6 +70,8 @@ export interface Message {
   /** WhatsApp: id da mensagem na Meta (casa status) e estado de entrega. */
   waMessageId?: string;
   status?: "sent" | "delivered" | "read" | "failed";
+  /** Escrita por automação/IA, não por uma pessoa (migração 0027). */
+  automated?: boolean;
 }
 
 export interface Conversation {
@@ -85,6 +87,26 @@ export interface Conversation {
   channelId?: string;
   /** Responsável pelo atendimento; null = caixa do grupo (migração 0024). */
   assignedTo?: string | null;
+}
+
+/** Abas de filtro da caixa de entrada. */
+export type ConversationFilter = "unread" | "all" | "recent" | "starred";
+
+/** Escopo do rail: grupo, minhas, ou conversas tocadas por automação/IA. */
+export type InboxScope = "group" | "mine" | "bot";
+
+/** Estado da caixa de entrada guardado numa visualização salva (migração 0027). */
+export interface InboxViewConfig {
+  scope: InboxScope;
+  filter: ConversationFilter;
+  sort: string;
+  query: string;
+}
+
+export interface InboxView {
+  id: string;
+  name: string;
+  config: InboxViewConfig;
 }
 
 export type NodeCategory =

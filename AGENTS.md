@@ -385,8 +385,8 @@ Cloud API → celular.
 - Migração `0022_whatsapp.sql` — tabela `whatsapp_channels` (RLS padrão membership;
   `phone_number_id` único), colunas `messages.wa_message_id|status|channel_id` e
   `conversations.channel_id`. Migração 0023 = Google Ads, 0024 = Formulários,
-  0025 = atribuição de conversas, 0026 = `ai_logs` (ver seções próprias abaixo);
-  **próxima migração livre: 0027**.
+  0025 = atribuição de conversas, 0026 = `ai_logs`, 0027 = rail das conversas
+  (ver seções próprias abaixo); **próxima migração livre: 0028**.
 - Env (privadas, nunca `NEXT_PUBLIC_`): `WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`,
   `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` (default `v21.0`).
 
@@ -533,6 +533,15 @@ os módulos ainda não migrados continuam importando dos repos mock em
   gravação por `MediaRecorder`; exibição via URL assinada (`conversationActions.
   sendMedia`/`mediaUrl`). WhatsApp usou a migração 0022 (ver seção própria
   abaixo). **Migração livre a partir de agora: 0023.**
+  **Rail da caixa de entrada** (migração 0027) — os cinco botões funcionam de
+  verdade: busca global (procura no corpo de TODAS as mensagens, não só no
+  preview), "Atribuídas a mim" (`conversations.assigned_to`, migração 0025),
+  "Caixa do grupo", "Conversas com automação" (`messages.automated` — marcado
+  pelo motor de automações; qualquer agente de IA que responder deve marcar
+  também) e visualizações salvas (tabela `inbox_views`, guarda escopo + aba +
+  ordenação + busca). O estado de filtro mora em
+  `src/components/inbox/inbox-filters.ts` (store Zustand) porque rail, lista e
+  visualização mexem nele.
 - ✅ Backend F2e: **Dashboard** com widgets calculando sobre dados reais
   (adapters `useDbPipelines/useDbOpportunities/useDbPipeline` em `db/pipeline.ts`).
 - ✅ Backend F2f: módulo **Calendários** real — compromissos do banco (repo
