@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { ArrowUpDown, Plus, Search, Star, X } from "lucide-react";
+import { Archive, ArrowUpDown, CheckCircle2, ChevronDown, Plus, Search, Star, X } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,8 +23,8 @@ import {
 } from "@/lib/data/repos/db/conversations";
 import { useMyMembership } from "@/lib/data/repos/db/team";
 import { cn } from "@/lib/utils";
-import { SORT_OPTIONS, scopeLabel, useInboxUi } from "./inbox-filters";
-import type { ConversationFilter } from "@/lib/data/types";
+import { SORT_OPTIONS, scopeLabel, statusLabel, useInboxUi } from "./inbox-filters";
+import type { ConversationFilter, InboxStatusView } from "@/lib/data/types";
 
 const FILTER_TABS: { key: ConversationFilter; label: string }[] = [
   { key: "unread", label: "Não lidos" },
@@ -32,6 +32,8 @@ const FILTER_TABS: { key: ConversationFilter; label: string }[] = [
   { key: "recent", label: "Recentes" },
   { key: "starred", label: "Marcados" },
 ];
+
+const STATUS_VIEWS: InboxStatusView[] = ["abertas", "finalizadas", "arquivadas", "todas"];
 
 export function ConversationList({
   selectedId,
@@ -42,24 +44,58 @@ export function ConversationList({
   onSelect: (id: string) => void;
   onNew?: () => void;
 }) {
-  const { scope, filter, sort, query, activeViewId, setFilter, setSort, setQuery, reset } =
-    useInboxUi();
+  const {
+    scope,
+    filter,
+    sort,
+    query,
+    status,
+    activeViewId,
+    setFilter,
+    setSort,
+    setQuery,
+    setStatus,
+    reset,
+  } = useInboxUi();
   const all = useConversations(filter);
   const { contacts } = useDbContacts();
   const realtime = useRealtimeStatus();
   const { me } = useMyMembership();
-  const unreadCount = useConversations("unread").length;
+  // Não lidas que ainda pedem ação: finalizada ou arquivada não conta.
+  const unreadCount = useConversations("unread").filter(
+    (c) => !c.closedAt && !c.archivedAt
+  ).length;
   const automatedIds = useAutomatedConversationIds();
   const views = useInboxViews();
   const activeView = views.find((v) => v.id === activeViewId) ?? null;
+  const todas = useConversations("all");
+
+  // Contagem por pilha, mostrada no seletor — evita clicar em "Arquivadas" para
+  // descobrir que está vazio.
+  const statusCounts = useMemo(
+    () => ({
+      abertas: todas.filter((c) => !c.closedAt && !c.archivedAt).length,
+      finalizadas: todas.filter((c) => !!c.closedAt).length,
+      arquivadas: todas.filter((c) => !!c.archivedAt).length,
+      todas: todas.length,
+    }),
+    [todas]
+  );
 
   // O escopo do rail cruza com as abas (Não lidos/Todos/...) em vez de
   // substituí-las.
   const conversations = useMemo(() => {
-    if (scope === "mine") return all.filter((c) => c.assignedTo === me?.userId);
-    if (scope === "bot") return all.filter((c) => automatedIds.has(c.id));
-    return all;
-  }, [all, scope, me?.userId, automatedIds]);
+    // Pilha primeiro (aberta/finalizada/arquivada), depois o escopo do rail.
+    const byStatus = all.filter((c) => {
+      if (status === "todas") return true;
+      if (status === "finalizadas") return !!c.closedAt;
+      if (status === "arquivadas") return !!c.archivedAt;
+      return !c.closedAt && !c.archivedAt;
+    });
+    if (scope === "mine") return byStatus.filter((c) => c.assignedTo === me?.userId);
+    if (scope === "bot") return byStatus.filter((c) => automatedIds.has(c.id));
+    return byStatus;
+  }, [all, status, scope, me?.userId, automatedIds]);
 
   const sorted =
     sort === "Maior atraso de SLA"
@@ -81,7 +117,37 @@ export function ConversationList({
     <div className="flex h-full w-[300px] shrink-0 flex-col border-r bg-white">
       <div className="flex items-center justify-between border-b px-3 py-2">
         <h2 className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-slate-800">
-          <span className="truncate">{activeView ? activeView.name : "Caixa de entrada"}</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              title="Trocar entre abertas, finalizadas e arquivadas"
+              render={
+                <button className="flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 hover:bg-slate-100" />
+              }
+            >
+              <span className="truncate">
+                {activeView
+                  ? activeView.name
+                  : status === "abertas"
+                    ? "Caixa de entrada"
+                    : statusLabel[status]}
+              </span>
+              <ChevronDown className="size-3.5 shrink-0 text-slate-400" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-52">
+              {STATUS_VIEWS.map((s) => (
+                <DropdownMenuItem
+                  key={s}
+                  onClick={() => setStatus(s)}
+                  className={cn("text-xs", status === s && "font-bold text-indigo-600")}
+                >
+                  {statusLabel[s]}
+                  <span className="ml-auto text-[10px] font-normal text-slate-400">
+                    {statusCounts[s]}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           {realtime === "on" && (
             <span
               title="Realtime conectado — mensagens chegam ao vivo"
@@ -121,10 +187,16 @@ export function ConversationList({
         </DropdownMenu>
         </div>
       </div>
-      {(scope !== "group" || activeView) && (
+      {(scope !== "group" || status !== "abertas" || activeView) && (
         <div className="flex items-center gap-1.5 border-b bg-indigo-50/60 px-3 py-1.5">
           <span className="truncate text-[11px] font-medium text-indigo-700">
-            {activeView ? `Visualização · ${activeView.name}` : scopeLabel[scope]}
+            {[
+              activeView ? `Visualização · ${activeView.name}` : null,
+              scope !== "group" ? scopeLabel[scope] : null,
+              status !== "abertas" ? statusLabel[status] : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
           <button
             onClick={reset}
@@ -196,8 +268,19 @@ export function ConversationList({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-1">
-                  <span className="truncate text-xs font-semibold text-slate-800">
-                    {contactName(contact)}
+                  <span className="flex min-w-0 items-center gap-1">
+                    {conv.closedAt && (
+                      <CheckCircle2
+                        className="size-3 shrink-0 text-emerald-500"
+                        aria-label="Finalizada"
+                      />
+                    )}
+                    {conv.archivedAt && (
+                      <Archive className="size-3 shrink-0 text-slate-400" aria-label="Arquivada" />
+                    )}
+                    <span className="truncate text-xs font-semibold text-slate-800">
+                      {contactName(contact)}
+                    </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-1">
                     <SlaBadge days={conv.slaDays} />
@@ -231,7 +314,11 @@ export function ConversationList({
           <p className="p-6 text-center text-[11px] leading-relaxed text-slate-400">
             {q
               ? `Nenhuma conversa com “${query.trim()}” neste filtro.`
-              : scope === "mine"
+              : status === "finalizadas"
+                ? "Nenhuma conversa finalizada. Use “Finalizar” no cabeçalho da conversa quando o atendimento terminar."
+                : status === "arquivadas"
+                  ? "Nenhuma conversa arquivada. Arquivar tira a conversa da caixa sem excluir nada."
+                  : scope === "mine"
                 ? "Nenhuma conversa atribuída a você. Abra uma conversa e use “Atribuir” no cabeçalho."
                 : scope === "bot"
                   ? "Nenhuma conversa tocada por automação ainda. Assim que um fluxo registrar nota ou responder um contato, a conversa aparece aqui."

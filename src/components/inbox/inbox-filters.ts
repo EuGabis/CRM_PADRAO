@@ -1,7 +1,12 @@
 "use client";
 
 import { create } from "zustand";
-import type { ConversationFilter, InboxScope, InboxViewConfig } from "@/lib/data/types";
+import type {
+  ConversationFilter,
+  InboxScope,
+  InboxStatusView,
+  InboxViewConfig,
+} from "@/lib/data/types";
 
 /**
  * Estado de filtro da caixa de entrada, fora dos componentes porque três lugares
@@ -23,6 +28,7 @@ const DEFAULTS: InboxViewConfig = {
   filter: "all",
   sort: SORT_OPTIONS[0],
   query: "",
+  status: "abertas",
 };
 
 interface InboxUiState extends InboxViewConfig {
@@ -32,6 +38,7 @@ interface InboxUiState extends InboxViewConfig {
   setFilter: (filter: ConversationFilter) => void;
   setSort: (sort: string) => void;
   setQuery: (query: string) => void;
+  setStatus: (status: InboxStatusView) => void;
   applyView: (id: string, config: InboxViewConfig) => void;
   reset: () => void;
 }
@@ -43,18 +50,26 @@ export const useInboxUi = create<InboxUiState>((set) => ({
   setFilter: (filter) => set({ filter, activeViewId: null }),
   setSort: (sort) => set({ sort, activeViewId: null }),
   setQuery: (query) => set({ query, activeViewId: null }),
+  setStatus: (status) => set({ status, activeViewId: null }),
   applyView: (activeViewId, config) => set({ ...DEFAULTS, ...config, activeViewId }),
   reset: () => set({ ...DEFAULTS, activeViewId: null }),
 }));
 
 /** Snapshot do estado atual, para salvar como visualização. */
 export function currentViewConfig(): InboxViewConfig {
-  const { scope, filter, sort, query } = useInboxUi.getState();
-  return { scope, filter, sort, query };
+  const { scope, filter, sort, query, status } = useInboxUi.getState();
+  return { scope, filter, sort, query, status };
 }
 
 export const scopeLabel: Record<InboxScope, string> = {
   group: "Caixa de entrada do grupo",
   mine: "Atribuídas a mim",
   bot: "Conversas com automação",
+};
+
+export const statusLabel: Record<InboxStatusView, string> = {
+  abertas: "Abertas",
+  finalizadas: "Finalizadas",
+  arquivadas: "Arquivadas",
+  todas: "Todas",
 };

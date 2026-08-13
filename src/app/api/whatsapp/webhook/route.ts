@@ -155,6 +155,13 @@ async function handleIncoming(db: any, channel: any, value: any, m: any) {
         unread_count: (conv.unread_count ?? 0) + 1,
         last_message_at: nowIso,
         last_message_preview: text,
+        // O cliente escreveu: a conversa volta para a caixa mesmo que alguém
+        // tenha finalizado ou arquivado antes (0029). Perder mensagem de
+        // cliente é pior do que desfazer um arquivamento.
+        closed_at: null,
+        closed_by: null,
+        archived_at: null,
+        archived_by: null,
       })
       .eq("id", conv.id);
   }

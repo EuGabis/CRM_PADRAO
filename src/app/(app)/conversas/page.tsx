@@ -548,10 +548,13 @@ function EstatisticasTab() {
     conversations.forEach((c) => {
       porCanal[c.channel] += 1;
     });
+    const abertas = conversations.filter((c) => !c.closedAt && !c.archivedAt);
     return {
       porCanal,
-      abertas: conversations.length,
-      slaEstourado: conversations.filter((c) => c.slaDays > 0).length,
+      abertas: abertas.length,
+      finalizadas: conversations.filter((c) => !!c.closedAt).length,
+      arquivadas: conversations.filter((c) => !!c.archivedAt).length,
+      slaEstourado: abertas.filter((c) => c.slaDays > 0).length,
       totalMensagens: messages.length,
       mensagensHoje: messages.filter((m) => m.at.slice(0, 10) === hoje).length,
       enviadas: messages.filter((m) => m.direction === "out" && !m.internal).length,
@@ -562,7 +565,16 @@ function EstatisticasTab() {
     <div>
       <h1 className="mb-4 text-lg font-bold text-slate-900">Estatísticas de conversas</h1>
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label="Conversas abertas" value={String(stats.abertas)} />
+        <KpiCard
+          label="Conversas abertas"
+          value={String(stats.abertas)}
+          hint="Fora as finalizadas e arquivadas"
+        />
+        <KpiCard
+          label="Finalizadas"
+          value={String(stats.finalizadas)}
+          hint={`${stats.arquivadas} arquivadas`}
+        />
         <KpiCard label="Mensagens hoje" value={String(stats.mensagensHoje)} />
         <KpiCard label="Mensagens enviadas (total)" value={String(stats.enviadas)} />
         <KpiCard
