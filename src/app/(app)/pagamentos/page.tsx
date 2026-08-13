@@ -1678,7 +1678,9 @@ export default function PagamentosPage() {
                 A Guru é a central de pagamentos do CRM — vendas e assinaturas vêm daqui.
               </p>
             </div>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {/* Um provedor só — a grade de 4 colunas espremia o card num quarto
+                da tela e deixava um vazio enorme à direita. */}
+            <div className="max-w-lg">
               <GuruProviderCard />
             </div>
           </>

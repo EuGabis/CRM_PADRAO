@@ -11,8 +11,8 @@ export const dynamic = "force-dynamic";
  *
  * A Guru autentica cada chamada enviando o campo `api_token` no corpo (é o
  * Account Token da conta) — comparamos com o token salvo por empresa em
- * `payment_credentials` (colado pelo admin a partir do painel da Guru, em
- * Configurar provedores > Guru). Sem correspondência, 401 — a rota roda com
+ * `payment_credentials` (colado pelo admin a partir do painel da Guru, no
+ * card da Guru em Pagamentos > Integrações). Sem correspondência, 401 — a rota roda com
  * a service role e não tem sessão de usuário (chamada máquina-a-máquina).
  *
  * `webhook_type` diz o formato do corpo: "transaction" (venda, ver
