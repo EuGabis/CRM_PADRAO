@@ -35,6 +35,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SlaBadge } from "@/components/shared/sla-badge";
+import { useWebphone } from "@/components/layout/webphone-store";
 import { contactName } from "@/lib/data/repos/contacts";
 import { useDbContact } from "@/lib/data/repos/db/contacts";
 import {
@@ -430,6 +431,7 @@ export function Thread({
   const conversation = useConversation(conversationId);
   const { contact } = useDbContact(conversation?.contactId ?? null);
   const messages = useMessages(conversationId);
+  const callContact = useWebphone((s) => s.callContact);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -507,7 +509,14 @@ export function Thread({
             <Archive className="size-4" />
           </button>
           <button
-            onClick={() => toast.info("Ligação via WhatsApp chega com o backend")}
+            onClick={() => {
+              if (!contact.phone?.trim()) {
+                toast.error("Contato sem telefone cadastrado");
+                return;
+              }
+              callContact(contact.phone, contactName(contact));
+            }}
+            title="Abrir o webphone com este número"
             className="flex items-center gap-1.5 rounded-full bg-[var(--lito-wa-green)] px-3 py-1 text-xs font-bold text-white hover:opacity-90"
           >
             <Phone className="size-3.5" /> Ligar

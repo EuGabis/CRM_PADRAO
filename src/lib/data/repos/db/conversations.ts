@@ -522,6 +522,31 @@ export const conversationActions = {
     return true;
   },
 
+  /**
+   * Reaproveita a conversa mais recente do contato, em qualquer canal, e só
+   * cria uma se ele ainda não tiver nenhuma. É o que o botão "Abrir conversa"
+   * (card do kanban) precisa: abrir o que já existe, não um chat novo.
+   */
+  async openForContact(contactId: string): Promise<string | null> {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("conversations")
+      .select("*")
+      .eq("contact_id", contactId)
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) {
+      const conv = mapConversation(data);
+      const s = useConvStore.getState();
+      if (!s.conversations.some((c) => c.id === conv.id)) {
+        s.patch({ conversations: [conv, ...s.conversations] });
+      }
+      return conv.id;
+    }
+    return conversationActions.open(contactId, "whatsapp");
+  },
+
   /** Cria (ou reaproveita) a conversa de um contato num canal. Retorna o id. */
   async open(contactId: string, channel: Channel): Promise<string | null> {
     const s = useConvStore.getState();
@@ -532,6 +557,27 @@ export const conversationActions = {
     const location = loc();
     if (!location) return null;
     const supabase = createClient();
+
+    // A store só tem dado depois que o módulo Conversas carregou. Chamado de
+    // fora dele (kanban, por exemplo) ela está vazia, e confiar só nela criava
+    // uma conversa duplicada. Confere no banco antes de inserir.
+    const { data: found } = await supabase
+      .from("conversations")
+      .select("*")
+      .eq("contact_id", contactId)
+      .eq("channel", channel)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (found) {
+      const conv = mapConversation(found);
+      if (!useConvStore.getState().conversations.some((c) => c.id === conv.id)) {
+        useConvStore.getState().patch({
+          conversations: [conv, ...useConvStore.getState().conversations],
+        });
+      }
+      return conv.id;
+    }
     let channelId: string | null = null;
     if (channel === "whatsapp") {
       const { data: ch } = await supabase
