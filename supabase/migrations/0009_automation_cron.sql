@@ -29,8 +29,14 @@ values (
   'COLE_O_AUTOMATION_SECRET_AQUI'
 )
 on conflict (id) do update
-  set tick_url = excluded.tick_url,
-      secret   = excluded.secret;
+  set tick_url = excluded.tick_url;
+-- ATENÇÃO: o `do update` NÃO toca no secret de propósito. Antes ele fazia
+-- `secret = excluded.secret`, e rodar este arquivo de novo apagava o segredo
+-- real, trocando-o pelo placeholder acima — o tick passava a responder 401 a
+-- cada minuto e nenhuma automação rodava. Foi exatamente o que aconteceu
+-- (descoberto em 2026-08-13). Para (re)definir o valor, use o update abaixo,
+-- à mão, no SQL Editor:
+--   update private.automation_config set secret = '<valor de AUTOMATION_SECRET na Vercel>';
 
 -- ---------- Função que chama a rota do motor ----------
 create or replace function private.automation_tick()

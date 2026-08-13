@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -36,12 +37,29 @@ import type { Opportunity } from "@/lib/data/types";
 
 const TABS = [{ label: "Leads" }, { label: "Pipelines" }, { label: "Ações em massa" }];
 
+/**
+ * `useSearchParams` obriga um limite de Suspense — sem ele o build falha ao
+ * pré-renderizar /leads. Daí a casca abaixo.
+ */
 export default function LeadsPage() {
+  return (
+    <Suspense fallback={null}>
+      <LeadsPageInner />
+    </Suspense>
+  );
+}
+
+function LeadsPageInner() {
   const [tab, setTab] = useState("Leads");
   const { pipelines, opportunities, loaded } = usePipelineDb();
   const team = useDbTeam();
 
-  const [pipelineId, setPipelineId] = useState<string>("");
+  // ?pipeline=<id> vem do painel: clicar num pedaço do gráfico e escolher
+  // "Abrir no funil" precisa cair no pipeline certo, não no primeiro da lista.
+  const searchParams = useSearchParams();
+  const [pipelineId, setPipelineId] = useState<string>(
+    () => searchParams.get("pipeline") ?? ""
+  );
   const pipeline =
     pipelines.find((p) => p.id === pipelineId) ?? pipelines[0] ?? null;
 

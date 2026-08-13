@@ -5,9 +5,11 @@ import { ArrowRight, Inbox } from "lucide-react";
 import { WidgetCard } from "./widget-card";
 import { formatBRL } from "@/lib/data/repos/opportunities";
 import { useDashboardOps } from "./date-range";
+import { DrilldownDialog, useDrilldown } from "./drilldown";
 
 export function LeadSourceTable() {
   const ops = useDashboardOps();
+  const { drilldown, open, close } = useDrilldown();
   const bySource = new Map<string, typeof ops>();
   for (const o of ops) {
     const list = bySource.get(o.source) ?? [];
@@ -16,6 +18,7 @@ export function LeadSourceTable() {
   }
   const rows = [...bySource.entries()].map(([source, list]) => ({
     source,
+    ops: list,
     total: list.length,
     value: list.reduce((s, o) => s + o.value, 0),
     open: list.filter((o) => o.status === "open").length,
@@ -40,7 +43,14 @@ export function LeadSourceTable() {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.source} className="border-b last:border-0">
+              <tr
+                key={r.source}
+                onClick={() =>
+                  open({ title: `Fonte de leads · ${r.source}`, ops: r.ops })
+                }
+                title={`Ver as ${r.total} oportunidade${r.total === 1 ? "" : "s"} desta fonte`}
+                className="cursor-pointer border-b last:border-0 hover:bg-slate-50"
+              >
                 <td className="py-2 pr-2 font-medium text-slate-700">{r.source}</td>
                 <td className="px-2 py-2">{r.total}</td>
                 <td className="px-2 py-2">{formatBRL(r.value)}</td>
@@ -54,7 +64,13 @@ export function LeadSourceTable() {
             ))}
           </tbody>
         </table>
+        {rows.length === 0 && (
+          <p className="py-6 text-center text-xs text-slate-400">
+            Nenhuma oportunidade no período selecionado.
+          </p>
+        )}
       </div>
+      <DrilldownDialog state={drilldown} onClose={close} />
     </WidgetCard>
   );
 }
