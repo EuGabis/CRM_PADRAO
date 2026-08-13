@@ -52,6 +52,9 @@ export interface Opportunity {
 
 export type MessageType = "text" | "audio" | "image" | "file" | "event";
 
+/** Ciclo de vida de uma mensagem agendada (migração 0028). */
+export type ScheduleStatus = "pendente" | "enviando" | "enviada" | "falhou" | "cancelada";
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -72,6 +75,11 @@ export interface Message {
   status?: "sent" | "delivered" | "read" | "failed";
   /** Escrita por automação/IA, não por uma pessoa (migração 0027). */
   automated?: boolean;
+  /** Log do agendamento (migração 0028) — só preenchido se scheduledFor existe. */
+  scheduledBy?: string | null;
+  scheduleStatus?: ScheduleStatus;
+  dispatchedAt?: string;
+  scheduleError?: string;
 }
 
 export interface Conversation {

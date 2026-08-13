@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Link2, Phone, Plus, Smartphone, Trash2 } from "lucide-react";
+import { CalendarClock, Link2, Phone, Plus, Smartphone, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { SubNav } from "@/components/layout/subnav";
 import { Composer } from "@/components/inbox/composer";
@@ -39,17 +39,21 @@ import { contactName } from "@/lib/data/repos/contacts";
 import { useDbContacts } from "@/lib/data/repos/db/contacts";
 import {
   conversationActions,
+  scheduleActions,
   snippetActions,
   useConvStore,
   useConversation,
   useConversations,
+  useScheduledMessages,
   useSnippets,
 } from "@/lib/data/repos/db/conversations";
+import { useTeam } from "@/lib/data/repos/db/team";
 import { brand } from "@/lib/config/brand";
-import type { Channel } from "@/lib/data/types";
+import type { Channel, ScheduleStatus } from "@/lib/data/types";
 
 const TABS = [
   { label: "Conversas" },
+  { label: "Agendadas" },
   { label: "Ações manuais" },
   { label: "Trechos" },
   { label: "Links de acionamento" },
@@ -74,6 +78,7 @@ export default function ConversasPage() {
       <SubNav tabs={TABS} active={tab} onChange={setTab} />
       {tab !== "Conversas" ? (
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
+          {tab === "Agendadas" && <AgendadasTab />}
           {tab === "Ações manuais" && <AcoesManuaisTab />}
           {tab === "Trechos" && <TrechosTab />}
           {tab === "Links de acionamento" && <LinksTab />}
@@ -209,6 +214,162 @@ function NewConversationDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ---------- Agendadas (log real — migração 0028) ---------- */
+
+const SCHEDULE_BADGE: Record<ScheduleStatus, { label: string; className: string }> = {
+  pendente: { label: "Pendente", className: "bg-amber-100 text-amber-700" },
+  enviando: { label: "Enviando", className: "bg-sky-100 text-sky-700" },
+  enviada: { label: "Enviada", className: "bg-emerald-100 text-emerald-700" },
+  falhou: { label: "Falhou", className: "bg-rose-100 text-rose-700" },
+  cancelada: { label: "Cancelada", className: "bg-slate-100 text-slate-500" },
+};
+
+function AgendadasTab() {
+  const scheduled = useScheduledMessages();
+  const conversations = useConversations();
+  const { contacts } = useDbContacts();
+  const { members } = useTeam();
+  const loaded = useConvStore((s) => s.loaded);
+
+  const rows = useMemo(
+    () =>
+      scheduled.map((m) => {
+        const conv = conversations.find((c) => c.id === m.conversationId);
+        const contact = conv ? contacts.find((x) => x.id === conv.contactId) : null;
+        return {
+          ...m,
+          contato: contact ? contactName(contact) : "—",
+          quem: members.find((x) => x.userId === m.scheduledBy)?.name ?? "—",
+        };
+      }),
+    [scheduled, conversations, contacts, members]
+  );
+
+  const pendentes = rows.filter((r) => r.scheduleStatus === "pendente").length;
+  const enviadas = rows.filter((r) => r.scheduleStatus === "enviada").length;
+  const falhas = rows.filter((r) => r.scheduleStatus === "falhou").length;
+
+  const columns: Column<(typeof rows)[number]>[] = [
+    {
+      key: "contato",
+      header: "Contato",
+      sortable: true,
+      sortValue: (r) => r.contato,
+      render: (r) => <span className="font-medium text-slate-800">{r.contato}</span>,
+    },
+    {
+      key: "canal",
+      header: "Canal",
+      render: (r) => (
+        <span className="flex items-center gap-1.5 text-slate-600">
+          <ChannelIcon channel={r.channel} size={14} /> {channelLabel(r.channel)}
+        </span>
+      ),
+    },
+    {
+      key: "mensagem",
+      header: "Mensagem",
+      render: (r) => (
+        <span className="block max-w-xs truncate text-slate-500">
+          {r.internal ? "Comentário interno · " : ""}
+          {r.body}
+        </span>
+      ),
+    },
+    {
+      key: "quem",
+      header: "Agendada por",
+      sortable: true,
+      sortValue: (r) => r.quem,
+      render: (r) => <span className="text-slate-600">{r.quem}</span>,
+    },
+    {
+      key: "quando",
+      header: "Para quando",
+      sortable: true,
+      sortValue: (r) => r.scheduledFor ?? "",
+      render: (r) =>
+        r.scheduledFor
+          ? format(new Date(r.scheduledFor), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
+          : "—",
+    },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (r) => r.scheduleStatus ?? "",
+      render: (r) => {
+        const badge = SCHEDULE_BADGE[r.scheduleStatus as ScheduleStatus];
+        return (
+          <span className="flex flex-col gap-0.5">
+            <span
+              className={`w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.className}`}
+            >
+              {badge.label}
+            </span>
+            {r.scheduleError && (
+              <span className="max-w-[220px] text-[10px] leading-tight text-rose-500">
+                {r.scheduleError}
+              </span>
+            )}
+          </span>
+        );
+      },
+    },
+    {
+      key: "disparada",
+      header: "Disparada em",
+      render: (r) =>
+        r.dispatchedAt
+          ? format(new Date(r.dispatchedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
+          : "—",
+    },
+    {
+      key: "acao",
+      header: "",
+      render: (r) =>
+        r.scheduleStatus === "pendente" ? (
+          <button
+            onClick={async () => {
+              if (!window.confirm("Cancelar este agendamento?")) return;
+              (await scheduleActions.cancel(r.id))
+                ? toast.success("Agendamento cancelado")
+                : toast.error("Não foi possível cancelar — pode já ter sido disparada");
+            }}
+            className="text-[11px] font-medium text-slate-400 hover:text-red-500"
+          >
+            Cancelar
+          </button>
+        ) : null,
+    },
+  ];
+
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <h1 className="text-lg font-bold text-slate-900">Mensagens agendadas</h1>
+        <Badge variant="secondary">{rows.length} no total</Badge>
+      </div>
+      {rows.length > 0 && (
+        <div className="mb-4 grid gap-3 sm:grid-cols-3">
+          <KpiCard label="Pendentes" value={String(pendentes)} hint="Aguardando a hora marcada" />
+          <KpiCard label="Enviadas" value={String(enviadas)} />
+          <KpiCard label="Falharam" value={String(falhas)} hint="Veja o motivo na coluna Status" />
+        </div>
+      )}
+      {loaded && rows.length === 0 ? (
+        <EmptyState
+          icon={CalendarClock}
+          title="Nenhuma mensagem agendada"
+          description="Ao escrever na conversa, use o relógio do composer para programar o envio. O disparo acontece sozinho na hora marcada e o histórico fica aqui."
+        />
+      ) : (
+        <DataTable data={rows} columns={columns} pageSize={15} />
+      )}
+    </div>
   );
 }
 

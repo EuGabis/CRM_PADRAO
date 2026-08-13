@@ -265,6 +265,47 @@ function PipelineEvent({ message }: { message: Message }) {
   );
 }
 
+/**
+ * Log do agendamento dentro da própria bolha: quem agendou, para quando e em
+ * que pé está. Antes só existia o selo "AGENDADA", que nunca mudava porque
+ * nada disparava a mensagem (migração 0028).
+ */
+function ScheduleTag({ message }: { message: Message }) {
+  const { members } = useTeam();
+  const who = members.find((m) => m.userId === message.scheduledBy)?.name;
+  const status = message.scheduleStatus;
+
+  const head =
+    status === "enviada"
+      ? "Agendada · enviada"
+      : status === "falhou"
+        ? "Agendada · falhou"
+        : status === "cancelada"
+          ? "Agendamento cancelado"
+          : status === "enviando"
+            ? "Agendada · enviando"
+            : "Agendada";
+
+  return (
+    <span className="mb-1 block border-b border-white/25 pb-1">
+      <span className="block text-[9px] font-bold uppercase tracking-wide opacity-90">{head}</span>
+      <span className="block text-[10px] opacity-80">
+        {message.scheduledFor &&
+          `para ${format(new Date(message.scheduledFor), "dd/MM 'às' HH:mm", { locale: ptBR })}`}
+        {who && ` · por ${who}`}
+      </span>
+      {status === "enviada" && message.dispatchedAt && (
+        <span className="block text-[10px] opacity-80">
+          disparada em {format(new Date(message.dispatchedAt), "dd/MM 'às' HH:mm", { locale: ptBR })}
+        </span>
+      )}
+      {status === "falhou" && message.scheduleError && (
+        <span className="block text-[10px] font-medium opacity-90">{message.scheduleError}</span>
+      )}
+    </span>
+  );
+}
+
 function MessageBubble({ message }: { message: Message }) {
   if (message.type === "event") return <PipelineEvent message={message} />;
   const isOut = message.direction === "out";
@@ -285,11 +326,7 @@ function MessageBubble({ message }: { message: Message }) {
             Comentário interno
           </p>
         )}
-        {message.scheduledFor && (
-          <p className="mb-0.5 text-[9px] font-bold uppercase tracking-wide opacity-80">
-            Agendada
-          </p>
-        )}
+        {message.scheduleStatus && <ScheduleTag message={message} />}
         {message.type === "audio" || message.type === "image" || message.type === "file" ? (
           <MediaContent message={message} out={isOut && !message.internal} />
         ) : (
