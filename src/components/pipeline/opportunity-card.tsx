@@ -151,7 +151,9 @@ export function OpportunityCard({
   const openConversation = async () => {
     if (!contact) return;
     setBusy(true);
-    const id = await conversationActions.open(contact.id, "whatsapp");
+    // Reaproveita a conversa que o contato já tem — nunca abre um chat novo
+    // por cima de um existente.
+    const id = await conversationActions.openForContact(contact.id);
     setBusy(false);
     if (!id) {
       toast.error("Não foi possível abrir a conversa");
@@ -185,7 +187,7 @@ export function OpportunityCard({
     const body = note.trim();
     if (!body || !contact) return;
     setBusy(true);
-    const conversationId = await conversationActions.open(contact.id, "whatsapp");
+    const conversationId = await conversationActions.openForContact(contact.id);
     const ok =
       !!conversationId &&
       (await conversationActions.send(conversationId, {
