@@ -95,6 +95,11 @@ export interface Conversation {
   channelId?: string;
   /** Responsável pelo atendimento; null = caixa do grupo (migração 0024). */
   assignedTo?: string | null;
+  /** Finalizada e arquivada são independentes (migração 0029): null = não. */
+  closedAt?: string | null;
+  closedBy?: string | null;
+  archivedAt?: string | null;
+  archivedBy?: string | null;
 }
 
 /** Abas de filtro da caixa de entrada. */
@@ -103,12 +108,17 @@ export type ConversationFilter = "unread" | "all" | "recent" | "starred";
 /** Escopo do rail: grupo, minhas, ou conversas tocadas por automação/IA. */
 export type InboxScope = "group" | "mine" | "bot";
 
+/** Qual pilha a caixa está mostrando (migração 0029). */
+export type InboxStatusView = "abertas" | "finalizadas" | "arquivadas" | "todas";
+
 /** Estado da caixa de entrada guardado numa visualização salva (migração 0027). */
 export interface InboxViewConfig {
   scope: InboxScope;
   filter: ConversationFilter;
   sort: string;
   query: string;
+  /** Ausente nas visualizações salvas antes da 0029 → "abertas". */
+  status: InboxStatusView;
 }
 
 export interface InboxView {

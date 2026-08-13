@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
+  Archive,
   CalendarDays,
   Check,
   CheckCheck,
+  CheckCircle2,
   Download,
   FileText,
   Pause,
@@ -358,6 +360,66 @@ function MessageBubble({ message }: { message: Message }) {
   );
 }
 
+/**
+ * Faixa de estado: diz que a conversa está finalizada e/ou arquivada, quem fez
+ * e quando, com o caminho de volta ao lado (migração 0029). Sem isso, abrir uma
+ * conversa finalizada dá a impressão de que ela ainda está na fila.
+ */
+function StatusBanner({ conversation }: { conversation: Conversation }) {
+  const { members } = useTeam();
+  if (!conversation.closedAt && !conversation.archivedAt) return null;
+
+  const nameOf = (userId?: string | null) =>
+    members.find((m) => m.userId === userId)?.name ?? "alguém da equipe";
+  const when = (iso: string) => format(new Date(iso), "dd/MM 'às' HH:mm", { locale: ptBR });
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-slate-50 px-4 py-2">
+      {conversation.closedAt && (
+        <span className="flex items-center gap-1.5 text-[11px] text-slate-600">
+          <CheckCircle2 className="size-3.5 text-emerald-500" />
+          Finalizada por <strong className="font-semibold">{nameOf(conversation.closedBy)}</strong>{" "}
+          em {when(conversation.closedAt)}
+        </span>
+      )}
+      {conversation.archivedAt && (
+        <span className="flex items-center gap-1.5 text-[11px] text-slate-600">
+          <Archive className="size-3.5 text-slate-400" />
+          Arquivada por{" "}
+          <strong className="font-semibold">{nameOf(conversation.archivedBy)}</strong> em{" "}
+          {when(conversation.archivedAt)}
+        </span>
+      )}
+      <span className="ml-auto flex items-center gap-2">
+        {conversation.closedAt && (
+          <button
+            onClick={async () =>
+              (await conversationActions.close(conversation.id, false))
+                ? toast.success("Conversa reaberta")
+                : toast.error("Não foi possível reabrir")
+            }
+            className="text-[11px] font-semibold text-indigo-600 hover:underline"
+          >
+            Reabrir
+          </button>
+        )}
+        {conversation.archivedAt && (
+          <button
+            onClick={async () =>
+              (await conversationActions.archive(conversation.id, false))
+                ? toast.success("Conversa desarquivada")
+                : toast.error("Não foi possível desarquivar")
+            }
+            className="text-[11px] font-semibold text-indigo-600 hover:underline"
+          >
+            Desarquivar
+          </button>
+        )}
+      </span>
+    </div>
+  );
+}
+
 export function Thread({
   conversationId,
   onDeleted,
@@ -397,6 +459,53 @@ export function Thread({
         </div>
         <div className="flex items-center gap-1.5">
           <AssignPicker conversation={conversation} />
+          <button
+            onClick={async () => {
+              const done = !conversation.closedAt;
+              const ok = await conversationActions.close(conversation.id, done);
+              if (!ok) {
+                toast.error("Não foi possível atualizar a conversa");
+                return;
+              }
+              toast.success(done ? "Conversa finalizada" : "Conversa reaberta");
+            }}
+            title={
+              conversation.closedAt
+                ? "Reabrir o atendimento"
+                : "Marcar o atendimento como resolvido"
+            }
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium",
+              conversation.closedAt
+                ? "text-emerald-600 hover:bg-emerald-50"
+                : "text-slate-500 hover:bg-slate-100"
+            )}
+          >
+            <CheckCircle2 className="size-3.5" />
+            {conversation.closedAt ? "Reabrir" : "Finalizar"}
+          </button>
+          <button
+            onClick={async () => {
+              const archived = !conversation.archivedAt;
+              const ok = await conversationActions.archive(conversation.id, archived);
+              if (!ok) {
+                toast.error("Não foi possível atualizar a conversa");
+                return;
+              }
+              toast.success(archived ? "Conversa arquivada" : "Conversa desarquivada");
+            }}
+            title={
+              conversation.archivedAt
+                ? "Tirar do arquivo"
+                : "Arquivar (sai da caixa, nada é excluído)"
+            }
+            className={cn(
+              "flex size-7 items-center justify-center rounded-md hover:bg-slate-100",
+              conversation.archivedAt ? "text-indigo-600" : "text-slate-400"
+            )}
+          >
+            <Archive className="size-4" />
+          </button>
           <button
             onClick={() => toast.info("Ligação via WhatsApp chega com o backend")}
             className="flex items-center gap-1.5 rounded-full bg-[var(--lito-wa-green)] px-3 py-1 text-xs font-bold text-white hover:opacity-90"
@@ -456,6 +565,7 @@ export function Thread({
           </Dialog>
         </div>
       </div>
+      <StatusBanner conversation={conversation} />
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-slate-50 p-4 [scrollbar-width:thin]">
         {messages.map((m) => {
           const day = format(new Date(m.at), "d 'de' MMMM", { locale: ptBR });

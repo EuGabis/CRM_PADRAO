@@ -386,8 +386,8 @@ Cloud API → celular.
   `phone_number_id` único), colunas `messages.wa_message_id|status|channel_id` e
   `conversations.channel_id`. Migração 0023 = Google Ads, 0024 = Formulários,
   0025 = atribuição de conversas, 0026 = `ai_logs`, 0027 = rail das conversas,
-  0028 = mensagens agendadas (ver seções próprias abaixo);
-  **próxima migração livre: 0029**.
+  0028 = mensagens agendadas, 0029 = finalizar/arquivar conversas (ver seções
+  próprias abaixo); **próxima migração livre: 0030**.
 - Env (privadas, nunca `NEXT_PUBLIC_`): `WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`,
   `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` (default `v21.0`).
 
@@ -554,6 +554,15 @@ os módulos ainda não migrados continuam importando dos repos mock em
   integração de envio = publicar na conversa. Log completo na aba
   **Conversas → Agendadas** (quem agendou, para quando, status, motivo da falha,
   cancelar) e resumo dentro da própria bolha da mensagem.
+  **Finalizar e arquivar** (migração 0029) — dois eixos independentes em
+  `conversations`: `closed_at|closed_by` (atendimento resolvido) e
+  `archived_at|archived_by` (fora de vista). Guardados separados de propósito:
+  um enum único apagaria "quantas finalizei" ao arquivar. O seletor fica no
+  título da lista (Abertas · Finalizadas · Arquivadas · Todas, com contagem), a
+  ação no cabeçalho da conversa, e a faixa de estado mostra quem/quando com
+  Reabrir/Desarquivar ao lado. **Mensagem de entrada reabre E desarquiva**
+  (webhook do WhatsApp) — perder mensagem de cliente é pior do que desfazer um
+  arquivamento.
 - ✅ Backend F2e: **Dashboard** com widgets calculando sobre dados reais
   (adapters `useDbPipelines/useDbOpportunities/useDbPipeline` em `db/pipeline.ts`).
 - ✅ Backend F2f: módulo **Calendários** real — compromissos do banco (repo

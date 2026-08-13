@@ -34,6 +34,10 @@ const mapConversation = (r: any): Conversation => ({
   slaDays: r.sla_days,
   channelId: r.channel_id ?? undefined,
   assignedTo: r.assigned_to ?? null,
+  closedAt: r.closed_at ?? null,
+  closedBy: r.closed_by ?? null,
+  archivedAt: r.archived_at ?? null,
+  archivedBy: r.archived_by ?? null,
 });
 
 const mapMessage = (r: any): Message => ({
@@ -67,6 +71,7 @@ const mapView = (r: any): InboxView => ({
     filter: r.config?.filter ?? "all",
     sort: r.config?.sort ?? "",
     query: r.config?.query ?? "",
+    status: r.config?.status ?? "abertas", // salvas antes da 0029 não têm o campo
   },
 });
 
@@ -448,6 +453,55 @@ export const conversationActions = {
     s.patch({
       conversations: s.conversations.map((c) =>
         c.id === conversationId ? { ...c, assignedTo: userId } : c
+      ),
+    });
+    return true;
+  },
+
+  /**
+   * Finaliza (atendimento resolvido) ou reabre. Arquivar é outro eixo — uma
+   * conversa pode estar finalizada e não arquivada, e vice-versa (0029).
+   */
+  async close(conversationId: string, done: boolean): Promise<boolean> {
+    const supabase = createClient();
+    const { data: auth } = await supabase.auth.getUser();
+    const patch = done
+      ? { closed_at: new Date().toISOString(), closed_by: auth.user?.id ?? null }
+      : { closed_at: null, closed_by: null };
+    const { data, error } = await supabase
+      .from("conversations")
+      .update(patch)
+      .eq("id", conversationId)
+      .select()
+      .single();
+    if (error || !data) return false;
+    const s = useConvStore.getState();
+    s.patch({
+      conversations: s.conversations.map((c) =>
+        c.id === conversationId ? mapConversation(data) : c
+      ),
+    });
+    return true;
+  },
+
+  /** Arquiva (tira de vista) ou desarquiva. Não mexe no "finalizada". */
+  async archive(conversationId: string, archived: boolean): Promise<boolean> {
+    const supabase = createClient();
+    const { data: auth } = await supabase.auth.getUser();
+    const patch = archived
+      ? { archived_at: new Date().toISOString(), archived_by: auth.user?.id ?? null }
+      : { archived_at: null, archived_by: null };
+    const { data, error } = await supabase
+      .from("conversations")
+      .update(patch)
+      .eq("id", conversationId)
+      .select()
+      .single();
+    if (error || !data) return false;
+    const s = useConvStore.getState();
+    s.patch({
+      conversations: s.conversations.map((c) =>
+        c.id === conversationId ? mapConversation(data) : c
       ),
     });
     return true;
