@@ -67,6 +67,22 @@ function LeadsPageInner() {
   const [view, setView] = useState<"kanban" | "list">("kanban");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Seleção do kanban (a lista tem a própria, dentro do DataTable).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const clearSelection = () => setSelected(new Set());
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const toggleStage = (ids: string[], select: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => (select ? next.add(id) : next.delete(id)));
+      return next;
+    });
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -85,15 +101,29 @@ function LeadsPageInner() {
   const onDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id));
   const onDragEnd = async (e: DragEndEvent) => {
     setActiveId(null);
-    if (e.over && e.active.id !== e.over.id) {
-      const stage = pipeline?.stages.find((s) => s.id === e.over!.id);
-      if (stage) {
-        const ok = await oppActions.move(String(e.active.id), stage.id);
-        ok
-          ? toast.success(`Lead movido para ${stage.name}`)
-          : toast.error("Não foi possível mover — tente novamente");
-      }
+    if (!e.over || e.active.id === e.over.id) return;
+    const stage = pipeline?.stages.find((s) => s.id === e.over!.id);
+    if (!stage) return;
+
+    const dragged = String(e.active.id);
+    // Arrastar um card que está selecionado leva a seleção inteira junto —
+    // é o que se espera de kanban com múltipla seleção.
+    const ids = selected.has(dragged) && selected.size > 1 ? [...selected] : [dragged];
+
+    const ok =
+      ids.length > 1
+        ? await oppActions.moveMany(ids, stage.id)
+        : await oppActions.move(dragged, stage.id);
+    if (!ok) {
+      toast.error("Não foi possível mover — tente novamente");
+      return;
     }
+    toast.success(
+      ids.length > 1
+        ? `${ids.length} leads movidos para ${stage.name}`
+        : `Lead movido para ${stage.name}`
+    );
+    if (ids.length > 1) clearSelection();
   };
 
   const listColumns: Column<Opportunity>[] = [
@@ -180,6 +210,12 @@ function LeadsPageInner() {
           >
             <Trash2 className="size-3.5" /> Excluir
           </Button>
+          <button
+            onClick={clear}
+            className="text-[11px] font-medium text-slate-500 hover:text-slate-700"
+          >
+            Limpar
+          </button>
         </div>
       </>
     );
@@ -202,7 +238,11 @@ function LeadsPageInner() {
             <div className="flex items-center gap-2">
               <Select
                 value={pipeline?.id ?? ""}
-                onValueChange={(v) => v && setPipelineId(v)}
+                onValueChange={(v) => {
+                  if (!v) return;
+                  setPipelineId(v);
+                  clearSelection(); // ids do pipeline anterior não valem aqui
+                }}
               >
                 <SelectTrigger className="h-8 w-[220px] text-xs font-semibold">
                   <SelectValue>{pipeline?.name ?? "Carregando..."}</SelectValue>
@@ -237,7 +277,10 @@ function LeadsPageInner() {
                   <KanbanSquare className="size-4" />
                 </button>
                 <button
-                  onClick={() => setView("list")}
+                  onClick={() => {
+                    setView("list");
+                    clearSelection(); // a lista tem a seleção dela
+                  }}
                   className={`flex size-8 items-center justify-center rounded-r-md border-l ${view === "list" ? "bg-indigo-50 text-indigo-600" : "text-slate-400"}`}
                 >
                   <List className="size-4" />
@@ -256,6 +299,11 @@ function LeadsPageInner() {
 
           {view === "kanban" ? (
             <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+              {selected.size > 0 && (
+                <div className="mb-2 flex items-center gap-3 rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2">
+                  <ListBulkBar ids={[...selected]} clear={clearSelection} />
+                </div>
+              )}
               <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto pb-2">
                 {pipeline?.stages
                   .slice()
@@ -266,6 +314,9 @@ function LeadsPageInner() {
                       stage={stage}
                       opportunities={pipeOps.filter((o) => o.stageId === stage.id)}
                       users={team}
+                      selected={selected}
+                      onToggleSelect={toggleSelect}
+                      onToggleStage={toggleStage}
                     />
                   ))}
                 {loaded && pipeline && pipeline.stages.length === 0 && (

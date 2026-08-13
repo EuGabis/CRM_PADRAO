@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { OpportunityCard } from "./opportunity-card";
 import { formatBRL, stageTotal } from "@/lib/data/repos/opportunities";
 import type { Opportunity, Stage, User } from "@/lib/data/types";
@@ -12,13 +13,22 @@ export function StageColumn({
   stage,
   opportunities,
   users,
+  selected,
+  onToggleSelect,
+  onToggleStage,
 }: {
   stage: Stage;
   opportunities: Opportunity[];
   users: User[];
+  selected?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  /** Marca/desmarca todos os cards da fase de uma vez. */
+  onToggleStage?: (ids: string[], select: boolean) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
+  const ids = opportunities.map((o) => o.id);
+  const allSelected = ids.length > 0 && ids.every((id) => selected?.has(id));
 
   if (collapsed) {
     return (
@@ -47,8 +57,17 @@ export function StageColumn({
       )}
       style={{ borderTopColor: stage.color, borderTopWidth: 3 }}
     >
-      <div className="flex items-center justify-between px-2.5 py-2">
-        <div className="min-w-0">
+      <div className="flex items-center justify-between gap-1.5 px-2.5 py-2">
+        {onToggleStage && ids.length > 0 && (
+          <Checkbox
+            checked={allSelected}
+            onCheckedChange={(v) => onToggleStage(ids, !!v)}
+            aria-label={`Selecionar os ${ids.length} leads de ${stage.name}`}
+            title="Selecionar todos desta fase"
+            className="size-3.5 shrink-0"
+          />
+        )}
+        <div className="min-w-0 flex-1">
           <p className="truncate text-[11px] font-bold text-slate-700">{stage.name}</p>
           <p className="text-[10px] text-slate-500">
             {opportunities.length} · {formatBRL(stageTotal(opportunities))}
@@ -67,6 +86,8 @@ export function StageColumn({
             key={o.id}
             opportunity={o}
             owner={users.find((u) => u.id === o.ownerId)}
+            selected={selected?.has(o.id)}
+            onToggleSelect={onToggleSelect}
           />
         ))}
         {opportunities.length === 0 && (

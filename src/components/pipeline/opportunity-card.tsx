@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
@@ -113,10 +114,14 @@ export function OpportunityCard({
   opportunity,
   owner,
   dragging,
+  selected,
+  onToggleSelect,
 }: {
   opportunity: Opportunity;
   owner?: User;
   dragging?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: opportunity.id,
@@ -263,14 +268,30 @@ export function OpportunityCard({
       }
       className={cn(
         "rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow",
-        (isDragging || dragging) && "opacity-60 shadow-lg ring-2 ring-indigo-300"
+        (isDragging || dragging) && "opacity-60 shadow-lg ring-2 ring-indigo-300",
+        selected && "border-indigo-300 bg-indigo-50/60 ring-1 ring-indigo-300"
       )}
     >
       {/* Só o corpo arrasta: com os listeners no card inteiro, abrir um popover
           da barra de ações competia com o gesto de arrastar. */}
       <div {...listeners} {...attributes} className="cursor-grab">
         <div className="flex items-start justify-between gap-2">
-          <p className="min-w-0 truncate text-xs font-semibold text-slate-800">
+          {onToggleSelect && (
+            // Fora do drag: marcar não pode arrastar o card junto.
+            <span
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              className="mt-0.5 shrink-0"
+            >
+              <Checkbox
+                checked={!!selected}
+                onCheckedChange={() => onToggleSelect(opportunity.id)}
+                aria-label={`Selecionar ${opportunity.name}`}
+                className="size-3.5"
+              />
+            </span>
+          )}
+          <p className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-800">
             {opportunity.name}
           </p>
           {owner ? (
