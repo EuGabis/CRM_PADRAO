@@ -162,7 +162,8 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
       return;
     }
     const supabase = createClient();
-    const [{ data: status }, { data: credential }, { data: subscriptions }] = await Promise.all([
+    const [statusRes, { data: credential }, { data: subscriptions }, eventsCount] =
+      await Promise.all([
       // Estado da integração — legível por qualquer membro (view da 0036).
       // Sem isso, usuário não-admin via "Conectar Guru" numa empresa já
       // conectada, porque payment_credentials é admin-only.
@@ -184,7 +185,28 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
         .select("*")
         .eq("location_id", locationId)
         .order("guru_updated_at", { ascending: false, nullsFirst: false }),
+      // Rede de segurança: se há venda sincronizada nesta empresa, a Guru
+      // ESTÁ conectada — não importa se a view de status respondeu. Sem isto,
+      // qualquer falha na view (migração não aplicada num ambiente, cache do
+      // PostgREST velho, permissão faltando) devolve o usuário comum para a
+      // tela de dados fictícios, que é o pior desfecho possível.
+      supabase
+        .from("payment_events")
+        .select("id", { count: "exact", head: true })
+        .eq("location_id", locationId),
     ]);
+
+    const status = statusRes.data;
+    if (statusRes.error) {
+      // Silenciar isso foi o erro da primeira correção: sem row e sem log,
+      // "não conectado" e "consulta falhou" viravam a mesma coisa na tela.
+      console.warn(
+        "[pagamentos] payment_integration_status indisponível:",
+        statusRes.error.message
+      );
+    }
+    const hasGuruData =
+      (eventsCount.count ?? 0) > 0 || (subscriptions?.length ?? 0) > 0;
 
     set({
       loaded: true,
@@ -193,7 +215,9 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
         ? mapGuruCredential(credential)
         : status
           ? mapGuruStatus(status)
-          : EMPTY_GURU,
+          : hasGuruData
+            ? { ...EMPTY_GURU, connected: true }
+            : EMPTY_GURU,
       subscriptions: (subscriptions ?? []).map(mapPaymentSubscription),
     });
 
