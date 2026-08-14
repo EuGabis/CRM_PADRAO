@@ -444,6 +444,7 @@ export function Thread({
   const { contact } = useDbContact(conversation?.contactId ?? null);
   const messages = useMessages(conversationId);
   const callContact = useWebphone((s) => s.callContact);
+  const { isAdmin } = useMyMembership();
   const bottomRef = useRef<HTMLDivElement>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -544,13 +545,18 @@ export function Thread({
               )}
             />
           </button>
-          <button
-            onClick={() => setConfirmOpen(true)}
-            title="Excluir conversa"
-            className="flex size-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-rose-600"
-          >
-            <Trash2 className="size-4" />
-          </button>
+          {/* Excluir apaga o histórico junto e não tem desfazer — é do admin.
+              Quem não é admin usa "Arquivar", que tira da vista sem destruir.
+              A RLS da 0040 reforça: esconder o botão não bastaria. */}
+          {isAdmin && (
+            <button
+              onClick={() => setConfirmOpen(true)}
+              title="Excluir conversa"
+              className="flex size-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-rose-600"
+            >
+              <Trash2 className="size-4" />
+            </button>
+          )}
           <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
             <DialogContent className="sm:max-w-sm">
               <DialogHeader>
@@ -575,7 +581,9 @@ export function Thread({
                       toast.success("Conversa excluída");
                       onDeleted?.();
                     } else {
-                      toast.error("Não foi possível excluir");
+                      toast.error(
+                        "Não foi possível excluir — apenas administradores podem"
+                      );
                     }
                   }}
                 >
