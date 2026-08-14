@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isAdvance } from "@/lib/whatsapp/status-rank";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
       }
       for (const st of value.statuses ?? []) {
         if (st?.id && st?.status) {
-          await db.from("messages").update({ status: st.status }).eq("wa_message_id", st.id);
+          await applyStatus(db, st);
         }
       }
     }
@@ -180,4 +181,27 @@ async function handleIncoming(db: any, channel: any, value: any, m: any) {
   });
   // corrida: entrega duplicada da Meta — o índice único barra o 2º insert; ignore
   if (insErr && (insErr as any).code !== "23505") throw insErr;
+}
+
+async function applyStatus(db: any, st: any) {
+  const { data: msg } = await db
+    .from("messages")
+    .select("id, status")
+    .eq("wa_message_id", st.id)
+    .maybeSingle();
+  if (!msg) return; // status de mensagem que não gravamos — ignora
+
+  if (!isAdvance(msg.status, st.status)) return; // não rebaixa entregue/lido
+
+  const patch: Record<string, unknown> = { status: st.status };
+  const nowIso = st.timestamp
+    ? new Date(Number(st.timestamp) * 1000).toISOString()
+    : new Date().toISOString();
+  if (st.status === "delivered") patch.delivered_at = nowIso;
+  if (st.status === "read") patch.read_at = nowIso;
+  if (st.status === "failed") {
+    patch.failed_at = nowIso;
+    patch.error_detail = st.errors?.[0]?.title || st.errors?.[0]?.message || "Falha na entrega";
+  }
+  await db.from("messages").update(patch).eq("id", msg.id);
 }

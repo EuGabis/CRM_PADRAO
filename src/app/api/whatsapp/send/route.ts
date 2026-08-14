@@ -122,6 +122,7 @@ export async function POST(request: Request) {
       channel_id: channel.id,
       wa_message_id: waMessageId,
       status: "sent",
+      template_name: template ? template.name : null,
     })
     .select()
     .single();
