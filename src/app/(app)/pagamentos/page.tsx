@@ -47,14 +47,17 @@ import { formatBRL } from "@/lib/data/repos/opportunities";
 import {
   EVENTS_PAGE_SIZE,
   EVENTS_PAGE_SIZE_OPTIONS,
+  PRODUCT_SALES_PAGE_SIZE,
   paymentsActions,
   useGuruIntegration,
   usePaymentEventsForContact,
+  usePaymentEventsForProduct,
   usePaymentEventsPage,
   usePaymentSalesReport,
   usePaymentSubscriptions,
   usePaymentSubscriptionsForContact,
   usePaymentsRealtimeStatus,
+  useProductSalesSummary,
   type PaymentEvent,
   type PaymentSubscription,
 } from "@/lib/data/repos/db/payments";
@@ -920,9 +923,13 @@ interface GuruProductRow {
   name: string;
   type: string;
   is_hidden?: number;
+  is_trackable?: number;
+  marketplace_id?: string;
   marketplace_name?: string;
   group?: { name?: string };
+  producer?: { name?: string };
   created_at?: number;
+  updated_at?: number;
 }
 
 function ProdutosGuruTab() {
@@ -931,6 +938,7 @@ function ProdutosGuruTab() {
     error: string | null;
     products: GuruProductRow[];
   }>({ loading: true, error: null, products: [] });
+  const [selectedProduct, setSelectedProduct] = useState<GuruProductRow | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<PaymentFilters>(() => emptyFilters("created_at"));
   const activeFilters = countActiveFilters(filters);
@@ -1015,8 +1023,14 @@ function ProdutosGuruTab() {
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {visible.map((p) => (
-            <div key={p.id} className="flex flex-col rounded-xl border bg-white p-4">
-              <div className="mb-2 flex items-center justify-between">
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setSelectedProduct(p)}
+              title="Ver detalhe, ofertas e vendas"
+              className="flex flex-col rounded-xl border bg-white p-4 text-left transition hover:border-indigo-300 hover:shadow-sm"
+            >
+              <div className="mb-2 flex w-full items-center justify-between">
                 <Badge variant="secondary" className="bg-slate-100 text-slate-600">
                   {p.type === "plan" ? "Assinatura" : "Produto"}
                 </Badge>
@@ -1035,11 +1049,347 @@ function ProdutosGuruTab() {
                   ? `Criado em ${format(new Date(p.created_at * 1000), "dd MMM yyyy", { locale: ptBR })}`
                   : "—"}
               </p>
-            </div>
+            </button>
           ))}
         </div>
       )}
+      <ProductDetailDialog
+        product={selectedProduct}
+        onClose={() => setSelectedProduct(null)}
+      />
     </>
+  );
+}
+
+/* ------------------------- Detalhe do produto ---------------------------- */
+
+interface GuruOfferRow {
+  id: string;
+  name: string;
+  value?: number;
+  currency?: string;
+  units_per_sale?: number;
+  is_active?: number;
+  payment_types?: string[];
+  checkout_url?: string;
+  installments?: { max_without_interest?: number; max_with_interest?: number };
+  plan?: { interval?: number; interval_type?: string; cycles?: number; trial_days?: number };
+}
+
+const PAYMENT_TYPE_LABEL: Record<string, string> = {
+  credit_card: "Cartão",
+  billet: "Boleto",
+  pix: "Pix",
+  paypal: "PayPal",
+  two_credit_cards: "2 cartões",
+  free: "Grátis",
+};
+
+const INTERVAL_LABEL: Record<string, string> = {
+  day: "dia",
+  week: "semana",
+  month: "mês",
+  year: "ano",
+};
+
+/** "1 x mês" / "3 x mês" — como a Guru descreve o ciclo de uma oferta de plano. */
+function planLabel(plan: GuruOfferRow["plan"]): string | null {
+  if (!plan?.interval_type) return null;
+  const unit = INTERVAL_LABEL[plan.interval_type] ?? plan.interval_type;
+  const every = plan.interval && plan.interval > 1 ? `a cada ${plan.interval} ${unit}es` : `por ${unit}`;
+  const cycles = plan.cycles ? ` · ${plan.cycles} ciclos` : "";
+  const trial = plan.trial_days ? ` · ${plan.trial_days} dias de teste` : "";
+  return `Cobrança ${every}${cycles}${trial}`;
+}
+
+/**
+ * Detalhe de um produto, espelhando as abas do painel da Guru:
+ *
+ * - Detalhe/Ofertas vêm da API da Guru (a oferta só existe lá — não guardamos
+ *   catálogo no banco, senão ficaria desatualizado em relação ao checkout).
+ * - Vendas vêm do NOSSO banco (`payment_events`), que já tem o histórico
+ *   sincronizado: pagina de verdade e não gasta requisição da Guru a cada
+ *   clique.
+ *
+ * A aba Auditoria que a Guru mostra não tem endpoint público documentado, por
+ * isso não aparece aqui.
+ */
+function ProductDetailDialog({
+  product,
+  onClose,
+}: {
+  product: GuruProductRow | null;
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState("detalhe");
+  const [offers, setOffers] = useState<{
+    loading: boolean;
+    error: string | null;
+    rows: GuruOfferRow[];
+  }>({ loading: false, error: null, rows: [] });
+  const [salesPage, setSalesPage] = useState(0);
+
+  const summary = useProductSalesSummary(product?.name ?? null);
+  const subscriptions = usePaymentSubscriptions();
+  const {
+    rows: sales,
+    total: salesTotal,
+    loading: salesLoading,
+  } = usePaymentEventsForProduct(product?.name ?? null, salesPage);
+
+  const activeSubs = useMemo(() => {
+    if (!product) return 0;
+    return subscriptions.filter(
+      (s) => s.productName === product.name && classifyGuruStatus(s.status) === "aprovado"
+    ).length;
+  }, [subscriptions, product]);
+
+  useEffect(() => {
+    setTab("detalhe");
+    setSalesPage(0);
+  }, [product?.id]);
+
+  // As ofertas só são buscadas quando a aba é aberta — cada abertura de
+  // produto custaria uma chamada à Guru (limite de 360/min por conta) mesmo
+  // para quem só quer ver as vendas.
+  useEffect(() => {
+    if (!product || tab !== "ofertas") return;
+    let active = true;
+    setOffers({ loading: true, error: null, rows: [] });
+    fetch(`/api/integrations/guru/products/${encodeURIComponent(product.id)}/offers`)
+      .then(async (res) => {
+        const json = await res.json();
+        if (!active) return;
+        if (!res.ok) {
+          setOffers({ loading: false, error: json.error ?? "Falha ao carregar ofertas", rows: [] });
+          return;
+        }
+        setOffers({ loading: false, error: null, rows: json.offers ?? [] });
+      })
+      .catch((e) => {
+        if (active) {
+          setOffers({
+            loading: false,
+            error: e instanceof Error ? e.message : "Falha ao carregar ofertas",
+            rows: [],
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [product?.id, tab]);
+
+  const salesPageCount = Math.max(1, Math.ceil(salesTotal / PRODUCT_SALES_PAGE_SIZE));
+
+  return (
+    <Dialog open={!!product} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-4xl">
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="truncate pr-6">{product?.name ?? "Produto"}</DialogTitle>
+        </DialogHeader>
+        {product && (
+          <Tabs
+            value={tab}
+            onValueChange={(v) => setTab((v as string) ?? "detalhe")}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <TabsList variant="line" className="w-full shrink-0 border-b">
+              <TabsTrigger value="detalhe" className="text-xs">Detalhe</TabsTrigger>
+              <TabsTrigger value="ofertas" className="text-xs">
+                Ofertas{offers.rows.length > 0 ? ` (${offers.rows.length})` : ""}
+              </TabsTrigger>
+              <TabsTrigger value="vendas" className="text-xs">
+                Vendas{salesTotal > 0 ? ` (${salesTotal.toLocaleString("pt-BR")})` : ""}
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="detalhe" className="mt-4 space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-2 gap-4 rounded-lg border bg-white p-4 text-xs md:grid-cols-3">
+                <div>
+                  <p className="text-slate-400">Tipo</p>
+                  <p className="font-medium text-slate-800">
+                    {product.type === "plan" ? "Assinatura" : "Produto"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Situação</p>
+                  <p className="font-medium text-slate-800">
+                    {product.is_hidden ? "Oculto" : "Visível"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Grupo</p>
+                  <p className="font-medium text-slate-800">{product.group?.name ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Produtor</p>
+                  <p className="font-medium text-slate-800">{product.producer?.name ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Marketplace</p>
+                  <p className="font-medium text-slate-800">
+                    {product.marketplace_name ?? "—"}
+                    {product.marketplace_id ? ` (${product.marketplace_id})` : ""}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Rastreável</p>
+                  <p className="font-medium text-slate-800">
+                    {product.is_trackable ? "Sim" : "Não"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Criado em</p>
+                  <p className="font-medium text-slate-800">
+                    {product.created_at
+                      ? format(new Date(product.created_at * 1000), "dd MMM yyyy, HH:mm", { locale: ptBR })
+                      : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Atualizado em</p>
+                  <p className="font-medium text-slate-800">
+                    {product.updated_at
+                      ? format(new Date(product.updated_at * 1000), "dd MMM yyyy, HH:mm", { locale: ptBR })
+                      : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-400">Código</p>
+                  <p className="truncate font-mono text-[11px] text-slate-600" title={product.id}>
+                    {product.id}
+                  </p>
+                </div>
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-semibold text-slate-700">
+                  Desempenho (histórico completo sincronizado)
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <KpiCard label="Receita aprovada" value={formatBRL(summary?.revenue ?? 0)} />
+                  <KpiCard label="Vendas aprovadas" value={String(summary?.approvedCount ?? 0)} />
+                  <KpiCard label="Ticket médio" value={formatBRL(summary?.ticket ?? 0)} />
+                  <KpiCard
+                    label="Assinaturas ativas"
+                    value={String(activeSubs)}
+                    hint={
+                      summary && summary.refundedCount > 0
+                        ? `${summary.refundedCount} reembolsos/chargebacks (${formatBRL(summary.refundedTotal)})`
+                        : undefined
+                    }
+                  />
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="ofertas" className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto">
+              {offers.loading ? (
+                <p className="p-6 text-center text-xs text-slate-400">Carregando ofertas da Guru...</p>
+              ) : offers.error ? (
+                <p className="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-xs text-red-600">
+                  {offers.error}
+                </p>
+              ) : offers.rows.length === 0 ? (
+                <p className="rounded-lg border bg-white p-6 text-center text-xs text-slate-400">
+                  Nenhuma oferta cadastrada para este produto na Guru.
+                </p>
+              ) : (
+                <MiniTable
+                  headers={["Nome", "Formas de pagamento", "Quantidade", "Valor total", "Situação", ""]}
+                  rows={offers.rows.map((o) => [
+                    <span key="n" className="font-medium text-slate-800">
+                      {o.name}
+                      {planLabel(o.plan) && (
+                        <span className="block text-[10px] font-normal text-slate-400">
+                          {planLabel(o.plan)}
+                        </span>
+                      )}
+                    </span>,
+                    <span key="pt" className="text-slate-600">
+                      {o.payment_types?.length
+                        ? o.payment_types.map((t) => PAYMENT_TYPE_LABEL[t] ?? t).join(", ")
+                        : "—"}
+                    </span>,
+                    <span key="q" className="text-slate-600">{o.units_per_sale ?? 1}</span>,
+                    <span key="v" className="font-semibold text-slate-800">
+                      {typeof o.value === "number" ? formatBRL(o.value) : "—"}
+                    </span>,
+                    o.is_active ? (
+                      <Badge key="s" className="bg-emerald-100 text-emerald-700">Ativa</Badge>
+                    ) : (
+                      <Badge key="s" variant="secondary" className="bg-slate-100 text-slate-500">
+                        Inativa
+                      </Badge>
+                    ),
+                    o.checkout_url ? (
+                      <a
+                        key="l"
+                        href={o.checkout_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] font-medium text-indigo-600 hover:underline"
+                      >
+                        Checkout
+                      </a>
+                    ) : (
+                      <span key="l" className="text-[11px] text-slate-300">—</span>
+                    ),
+                  ])}
+                />
+              )}
+            </TabsContent>
+
+            <TabsContent value="vendas" className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto">
+              {salesLoading && sales.length === 0 ? (
+                <p className="p-6 text-center text-xs text-slate-400">Carregando...</p>
+              ) : salesTotal === 0 ? (
+                <p className="rounded-lg border bg-white p-6 text-center text-xs text-slate-400">
+                  Nenhuma venda sincronizada para este produto.
+                </p>
+              ) : (
+                <>
+                  <div className={cn("transition-opacity", salesLoading && "opacity-50")}>
+                    <MiniTable
+                      headers={["Código", "Contato", "Criada em", "Status", "Valor"]}
+                      rows={sales.map((e) => [
+                        <span
+                          key="cd"
+                          className="block max-w-24 truncate font-mono text-[11px] text-slate-500"
+                          title={e.code ?? undefined}
+                        >
+                          {e.code ?? "—"}
+                        </span>,
+                        <span key="c" className="text-slate-600">
+                          {e.contactName ?? e.contactEmail ?? "—"}
+                        </span>,
+                        <span key="d" className="text-slate-500">
+                          {e.guruCreatedAt
+                            ? format(new Date(e.guruCreatedAt), "dd MMM yyyy, HH:mm", { locale: ptBR })
+                            : "—"}
+                        </span>,
+                        <GuruStatusBadge key="s" status={e.status} />,
+                        <span key="v" className="font-semibold text-slate-800">
+                          {e.amount !== null ? formatBRL(e.amount) : "—"}
+                        </span>,
+                      ])}
+                    />
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <p className="text-[11px] text-slate-400">
+                      {salesPage * PRODUCT_SALES_PAGE_SIZE + 1}–
+                      {Math.min(salesTotal, (salesPage + 1) * PRODUCT_SALES_PAGE_SIZE)} de{" "}
+                      {salesTotal.toLocaleString("pt-BR")} vendas
+                    </p>
+                    <Pager page={salesPage} pageCount={salesPageCount} onChange={setSalesPage} />
+                  </div>
+                </>
+              )}
+            </TabsContent>
+          </Tabs>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

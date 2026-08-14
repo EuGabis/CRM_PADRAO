@@ -69,6 +69,38 @@ export interface GuruProduct {
   updated_at?: number;
 }
 
+/**
+ * Oferta de um produto (GET /products/{id}/offers). `value` é o preço da
+ * oferta e `units_per_sale` a quantidade — é assim que o painel da Guru monta
+ * a coluna "Valor Total" da aba Ofertas. `plan` só vem em oferta de assinatura.
+ */
+export interface GuruOffer {
+  id: string;
+  name: string;
+  value?: number;
+  currency?: string;
+  units_per_sale?: number;
+  is_active?: number;
+  payment_types?: string[];
+  checkout_url?: string;
+  friendly_url?: string;
+  cash_discount?: number;
+  installments?: {
+    default?: number;
+    max_with_interest?: number;
+    max_without_interest?: number;
+    interest_rate?: number;
+  };
+  plan?: {
+    interval?: number;
+    interval_type?: string;
+    cycles?: number;
+    trial_days?: number;
+  };
+  created_at?: number;
+  updated_at?: number;
+}
+
 export interface GuruContact {
   id: string;
   name?: string;
@@ -144,6 +176,12 @@ export function fetchGuruSubscriptions(userToken: string, filters: Filters) {
 
 export function fetchGuruProducts(userToken: string, filters: Filters = {}) {
   return fetchAllPages<GuruProduct>(PRODUCTS_URL, userToken, filters);
+}
+
+/** Ofertas de um produto — mesma paginação por cursor da listagem. */
+export function fetchGuruProductOffers(userToken: string, productId: string) {
+  const url = `${PRODUCTS_URL}/${encodeURIComponent(productId)}/offers`;
+  return fetchAllPages<GuruOffer>(url, userToken, {});
 }
 
 /**
