@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
+import { classifyGuruStatus } from "@/lib/data/guru";
 import { useDbStore } from "./contacts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -402,6 +403,147 @@ export function usePaymentEventsForContact(email: string | null, name: string | 
   }, [email, name]);
 
   return { rows, loading };
+}
+
+export const PRODUCT_SALES_PAGE_SIZE = 10;
+
+/**
+ * Vendas de UM produto, paginadas no banco — a aba "Vendas" do detalhe do
+ * produto, espelhando a mesma aba no painel da Guru.
+ *
+ * Casamento por `product_name` exato (é o campo que a Guru manda tanto no
+ * webhook quanto na API, copiado de `product.name`), e não por `ilike %nome%`
+ * como no filtro livre da aba Vendas: aqui o produto é escolhido numa lista,
+ * então um "contém" traria as vendas de qualquer produto cujo nome comece
+ * igual (ex.: "Aviônica + GMP Turbo" arrastaria "Aviônica + GMP Turbo Anual").
+ */
+export function usePaymentEventsForProduct(
+  productName: string | null,
+  page: number,
+  pageSize: number = PRODUCT_SALES_PAGE_SIZE
+) {
+  const [rows, setRows] = useState<PaymentEvent[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!productName) {
+      setRows([]);
+      setTotal(0);
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    (async () => {
+      await useDbStore.getState().load();
+      const loc = useDbStore.getState().locationId;
+      if (!loc) {
+        if (active) {
+          setRows([]);
+          setTotal(0);
+          setLoading(false);
+        }
+        return;
+      }
+      const supabase = createClient();
+      const from = page * pageSize;
+      const { data, count } = await supabase
+        .from("payment_events")
+        .select("*", { count: "exact" })
+        .eq("location_id", loc)
+        .eq("product_name", productName)
+        .order("guru_created_at", { ascending: false, nullsFirst: false })
+        .range(from, from + pageSize - 1);
+      if (!active) return;
+      setRows((data ?? []).map(mapPaymentEvent));
+      if (typeof count === "number") setTotal(count);
+      setLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [productName, page, pageSize]);
+
+  return { rows, total, loading };
+}
+
+export interface ProductSalesSummary {
+  revenue: number;
+  approvedCount: number;
+  ticket: number;
+  refundedTotal: number;
+  refundedCount: number;
+}
+
+/**
+ * KPIs de um produto somando o HISTÓRICO INTEIRO, a partir da view agregada
+ * `payment_sales_monthly` (migração 0020) — não da página de vendas visível,
+ * que mostra 10 linhas e daria um número convincente e errado.
+ */
+export function useProductSalesSummary(productName: string | null) {
+  const [summary, setSummary] = useState<ProductSalesSummary | null>(null);
+
+  useEffect(() => {
+    if (!productName) {
+      setSummary(null);
+      return;
+    }
+    let active = true;
+    (async () => {
+      await useDbStore.getState().load();
+      const loc = useDbStore.getState().locationId;
+      if (!loc) {
+        if (active) setSummary(null);
+        return;
+      }
+      const supabase = createClient();
+      // Uma linha por mês x status para este produto — poucas centenas no pior
+      // caso, mas o PostgREST corta em 1000 sem avisar, então pagina igual ao
+      // relatório geral.
+      const CHUNK = 1000;
+      const all: any[] = [];
+      let from = 0;
+      while (true) {
+        const { data } = await supabase
+          .from("payment_sales_monthly")
+          .select("*")
+          .eq("location_id", loc)
+          .eq("product_name", productName)
+          .range(from, from + CHUNK - 1);
+        all.push(...(data ?? []));
+        if (!data || data.length < CHUNK) break;
+        from += CHUNK;
+      }
+      if (!active) return;
+      const rows = all.map(mapSalesMonthlyRow);
+      let revenue = 0;
+      let approvedCount = 0;
+      let refundedTotal = 0;
+      let refundedCount = 0;
+      for (const r of rows) {
+        const category = classifyGuruStatus(r.status);
+        if (category === "aprovado") {
+          revenue += r.revenue;
+          approvedCount += r.salesCount;
+        } else if (category === "reembolsado" || category === "chargeback") {
+          refundedTotal += r.revenue;
+          refundedCount += r.salesCount;
+        }
+      }
+      setSummary({
+        revenue,
+        approvedCount,
+        ticket: approvedCount ? revenue / approvedCount : 0,
+        refundedTotal,
+        refundedCount,
+      });
+    })();
+    return () => {
+      active = false;
+    };
+  }, [productName]);
+
+  return summary;
 }
 
 export function usePaymentSubscriptionsForContact(email: string | null, name: string | null) {

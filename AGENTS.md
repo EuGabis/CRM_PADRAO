@@ -352,6 +352,18 @@ venda/assinatura é vista de novo a cada mudança de status):
 da Guru + os dois tokens no diálogo do CRM. Sem o User Token, só o webhook funciona
 (sem a sincronização de 1 minuto).
 
+**Detalhe do produto** (aba Produtos → clicar num card) — espelha o painel da Guru:
+Detalhe (dados do produto + KPIs de `payment_sales_monthly`), Ofertas (ao vivo,
+`GET /api/v2/products/{id}/offers`, só quando a aba abre) e Vendas (do nosso
+`payment_events`, casando `product_name` EXATO — o `ilike` do filtro livre arrastaria
+produtos de nome prefixo). Spec: `docs/superpowers/specs/2026-08-14-produto-detalhe-design.md`.
+
+⚠️ **Rotas que leem `payment_credentials`** usam `resolveGuruUserToken()`
+(`src/lib/integrations/guru-token.ts`): a sessão do usuário AUTORIZA (membership) e a
+service role LÊ o token. A tabela é admin-only desde a 0008 — ler com a sessão do
+usuário faz a tela responder "Guru não conectada" para todo usuário não-admin (já
+aconteceu duas vezes, em camadas diferentes).
+
 ### Como diagnosticar a sincronização
 
 ```sql
