@@ -169,6 +169,10 @@ export interface Appointment {
   contactId: string | null;
   /** Lead (oportunidade) da negociação — migração 0041. */
   opportunityId?: string | null;
+  /** Minutos antes do início para o CRM avisar; null = sem lembrete (0042). */
+  reminderMinutes?: number | null;
+  /** Dono da agenda; null = compromisso da empresa, visível a todos (0043). */
+  ownerId?: string | null;
   title: string;
   start: string;
   end: string;

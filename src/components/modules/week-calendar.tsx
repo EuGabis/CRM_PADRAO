@@ -109,11 +109,23 @@ function HourCell({
 export function WeekCalendar({
   onEdit,
   onCreateAt,
+  /**
+   * Filtro de agenda (só admin recebe mais de uma): id do usuário, "__shared__"
+   * para os compromissos sem dono, ou undefined/"__all__" para tudo. A RLS já
+   * limita o que chega — isto é recorte de visualização, não permissão.
+   */
+  ownerFilter,
 }: {
   onEdit?: (appointment: Appointment) => void;
   onCreateAt?: (day: Date, hour: number) => void;
+  ownerFilter?: string;
 }) {
-  const { appointments, loading } = useDbAppointments();
+  const { appointments: all, loading } = useDbAppointments();
+  const appointments = useMemo(() => {
+    if (!ownerFilter || ownerFilter === "__all__") return all;
+    if (ownerFilter === "__shared__") return all.filter((a) => !a.ownerId);
+    return all.filter((a) => a.ownerId === ownerFilter);
+  }, [all, ownerFilter]);
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 0 }));
   const [draggingId, setDraggingId] = useState<string | null>(null);
 

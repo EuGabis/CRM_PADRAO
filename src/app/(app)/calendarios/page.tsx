@@ -29,6 +29,8 @@ import {
 import { appointmentActions, useDbAppointments } from "@/lib/data/repos/db/appointments";
 import { useDbContacts } from "@/lib/data/repos/db/contacts";
 import { useDbOpportunities, useDbPipelines } from "@/lib/data/repos/db/pipeline";
+import { useDbTeam } from "@/lib/data/repos/db/contacts";
+import { useMyMembership } from "@/lib/data/repos/db/team";
 import { contactName } from "@/lib/data/repos/contacts";
 import type { Appointment, Opportunity } from "@/lib/data/types";
 import { cn } from "@/lib/utils";
@@ -51,7 +53,12 @@ function ListaCompromissos({
   const { appointments } = useDbAppointments();
   const { contacts } = useDbContacts();
   const opportunities = useDbOpportunities();
+  const team = useDbTeam();
+  const { isAdmin } = useMyMembership();
   const [filtro, setFiltro] = useState<"Futuro" | "Passado">("Futuro");
+  // Só admin escolhe de quem é a agenda: os demais já recebem só a própria
+  // (a RLS da 0043 filtra), então o seletor não teria o que oferecer.
+  const [owner, setOwner] = useState(ALL);
 
   const remove = async (id: string, title: string) => {
     if (!window.confirm(`Excluir o compromisso "${title}"?`)) return;
@@ -71,14 +78,18 @@ function ListaCompromissos({
         lead: a.opportunityId
           ? opportunities.find((o) => o.id === a.opportunityId)?.name ?? "—"
           : "—",
+        agenda: a.ownerId
+          ? team.find((u) => u.id === a.ownerId)?.name ?? "—"
+          : "Empresa",
       }))
+      .filter((a) => (owner === ALL ? true : owner === SHARED ? !a.ownerId : a.ownerId === owner))
       .filter((a) => (filtro === "Futuro" ? a.startDate.getTime() >= now : a.startDate.getTime() < now))
       .sort((a, b) =>
         filtro === "Futuro"
           ? a.startDate.getTime() - b.startDate.getTime()
           : b.startDate.getTime() - a.startDate.getTime()
       );
-  }, [appointments, contacts, opportunities, filtro]);
+  }, [appointments, contacts, opportunities, team, filtro, owner]);
 
   return (
     <>
@@ -90,6 +101,32 @@ function ListaCompromissos({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Select value={owner} onValueChange={(v) => setOwner(v ?? ALL)}>
+              <SelectTrigger className="h-8 w-[170px] text-xs">
+                <SelectValue>
+                  {owner === ALL
+                    ? "Todas as agendas"
+                    : owner === SHARED
+                      ? "Agenda da empresa"
+                      : (team.find((u) => u.id === owner)?.name ?? "Agenda")}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL} className="text-xs">
+                  Todas as agendas
+                </SelectItem>
+                <SelectItem value={SHARED} className="text-xs">
+                  Agenda da empresa
+                </SelectItem>
+                {team.map((u) => (
+                  <SelectItem key={u.id} value={u.id} className="text-xs">
+                    {u.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <div className="flex gap-1">
             {(["Futuro", "Passado"] as const).map((f) => (
               <button
@@ -119,6 +156,7 @@ function ListaCompromissos({
               <th className="whitespace-nowrap px-4 py-2.5 font-medium">Origem</th>
               <th className="whitespace-nowrap px-4 py-2.5 font-medium">Contato</th>
               <th className="whitespace-nowrap px-4 py-2.5 font-medium">Lead</th>
+              <th className="whitespace-nowrap px-4 py-2.5 font-medium">Agenda</th>
               <th className="w-10 px-4 py-2.5" />
             </tr>
           </thead>
@@ -153,6 +191,7 @@ function ListaCompromissos({
                 </td>
                 <td className="whitespace-nowrap px-4 py-2.5 text-slate-600">{a.contato}</td>
                 <td className="whitespace-nowrap px-4 py-2.5 text-slate-600">{a.lead}</td>
+                <td className="whitespace-nowrap px-4 py-2.5 text-slate-600">{a.agenda}</td>
                 <td className="px-4 py-2.5">
                   <button
                     onClick={(e) => {
@@ -169,7 +208,7 @@ function ListaCompromissos({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-10 text-center text-sm text-slate-500">
+                <td colSpan={8} className="py-10 text-center text-sm text-slate-500">
                   Nenhum compromisso {filtro === "Futuro" ? "futuro" : "passado"}
                 </td>
               </tr>
@@ -321,6 +360,25 @@ function ConfigCalendarios() {
 /** Valor do item "sem vínculo" dos selects (ver comentário no uso). */
 const NONE = "__none__";
 
+/** Compromisso sem dono: agenda da empresa, todo mundo vê (migração 0043). */
+const SHARED = "__shared__";
+
+/** Filtro "todas as agendas" (só admin recebe mais de uma). */
+const ALL = "__all__";
+
+/** Antecedência do lembrete dentro do CRM (migração 0042). */
+const REMINDERS: { value: string; label: string }[] = [
+  { value: NONE, label: "Sem lembrete" },
+  { value: "0", label: "Na hora do compromisso" },
+  { value: "5", label: "5 minutos antes" },
+  { value: "10", label: "10 minutos antes" },
+  { value: "15", label: "15 minutos antes" },
+  { value: "30", label: "30 minutos antes" },
+  { value: "60", label: "1 hora antes" },
+  { value: "120", label: "2 horas antes" },
+  { value: "1440", label: "1 dia antes" },
+];
+
 export interface AppointmentDraft {
   /** Compromisso em edição; null = criando. */
   appointment: Appointment | null;
@@ -338,6 +396,8 @@ function AppointmentDialog({
   const { contacts } = useDbContacts();
   const opportunities = useDbOpportunities();
   const pipelines = useDbPipelines();
+  const team = useDbTeam();
+  const { isAdmin, me } = useMyMembership();
   const editing = draft?.appointment ?? null;
 
   const [title, setTitle] = useState("");
@@ -346,6 +406,8 @@ function AppointmentDialog({
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [startTime, setStartTime] = useState("10:00");
   const [endTime, setEndTime] = useState("10:45");
+  const [reminder, setReminder] = useState<string>(NONE);
+  const [ownerId, setOwnerId] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Espelha o rascunho ao (re)abrir. Ajuste durante o render em vez de efeito:
@@ -357,6 +419,16 @@ function AppointmentDialog({
     setTitle(editing?.title ?? "");
     setContactId(editing?.contactId ?? "");
     setOpportunityId(editing?.opportunityId ?? "");
+    setReminder(
+      editing?.reminderMinutes === null || editing?.reminderMinutes === undefined
+        ? NONE
+        : String(editing.reminderMinutes)
+    );
+    // Novo compromisso nasce meu; em edição, mantém quem já é o dono
+    // (`SHARED` = compromisso da empresa, sem dono).
+    setOwnerId(
+      editing ? (editing.ownerId ?? SHARED) : (me?.userId ?? SHARED)
+    );
     if (editing) {
       const start = new Date(editing.start);
       const end = new Date(editing.end);
@@ -384,6 +456,8 @@ function AppointmentDialog({
       title: title.trim(),
       contactId: contactId || null,
       opportunityId: opportunityId || null,
+      reminderMinutes: reminder === NONE ? null : Number(reminder),
+      ownerId: ownerId === SHARED || !ownerId ? null : ownerId,
       start: `${date}T${startTime}:00-03:00`,
       end: `${date}T${endTime}:00-03:00`,
     };
@@ -504,6 +578,53 @@ function AppointmentDialog({
               </p>
             )}
           </div>
+          {isAdmin && (
+            <div className="space-y-1">
+              <Label className="text-xs">Agenda de</Label>
+              <Select value={ownerId || SHARED} onValueChange={(v) => setOwnerId(v ?? SHARED)}>
+                <SelectTrigger className="h-8 w-full text-xs">
+                  <SelectValue>
+                    {ownerId && ownerId !== SHARED
+                      ? (team.find((u) => u.id === ownerId)?.name ?? "Usuário")
+                      : "Toda a empresa"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SHARED} className="text-xs">
+                    Toda a empresa
+                  </SelectItem>
+                  {team.map((u) => (
+                    <SelectItem key={u.id} value={u.id} className="text-xs">
+                      {u.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-slate-400">
+                Só administradores marcam na agenda de outra pessoa.
+              </p>
+            </div>
+          )}
+          <div className="space-y-1">
+            <Label className="text-xs">Lembrete no CRM</Label>
+            <Select value={reminder} onValueChange={(v) => setReminder(v ?? NONE)}>
+              <SelectTrigger className="h-8 w-full text-xs">
+                <SelectValue>
+                  {REMINDERS.find((r) => r.value === reminder)?.label ?? "Sem lembrete"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {REMINDERS.map((r) => (
+                  <SelectItem key={r.value} value={r.value} className="text-xs">
+                    {r.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-slate-400">
+              Aparece como aviso na tela para quem estiver com o CRM aberto.
+            </p>
+          </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
               <Label className="text-xs">Data *</Label>
@@ -565,6 +686,9 @@ function AppointmentDialog({
 
 export default function CalendariosPage() {
   const [tab, setTab] = useState(TABS[0].label);
+  const team = useDbTeam();
+  const { isAdmin } = useMyMembership();
+  const [owner, setOwner] = useState(ALL);
   // Um diálogo só para criar e editar: o rascunho diz qual dos dois é.
   const [draft, setDraft] = useState<AppointmentDraft | null>(null);
 
@@ -593,12 +717,39 @@ export default function CalendariosPage() {
                   Clique num horário para criar · clique no evento para editar · arraste para
                   mudar de dia ou hora
                 </p>
+                {isAdmin && (
+                  <Select value={owner} onValueChange={(v) => setOwner(v ?? ALL)}>
+                    <SelectTrigger className="h-8 w-[170px] text-xs">
+                      <SelectValue>
+                        {owner === ALL
+                          ? "Todas as agendas"
+                          : owner === SHARED
+                            ? "Agenda da empresa"
+                            : (team.find((u) => u.id === owner)?.name ?? "Agenda")}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL} className="text-xs">
+                        Todas as agendas
+                      </SelectItem>
+                      <SelectItem value={SHARED} className="text-xs">
+                        Agenda da empresa
+                      </SelectItem>
+                      {team.map((u) => (
+                        <SelectItem key={u.id} value={u.id} className="text-xs">
+                          {u.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={openNew}>
                   <Plus className="size-3.5" /> Novo compromisso
                 </Button>
               </div>
             </div>
             <WeekCalendar
+              ownerFilter={owner}
               onCreateAt={openSlot}
               onEdit={(appointment) => setDraft({ appointment })}
             />
