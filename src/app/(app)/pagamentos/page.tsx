@@ -66,8 +66,10 @@ import {
 } from "@/lib/data/repos/db/payment-files";
 import {
   CONTACTS_PAGE_SIZE,
+  hasValueFilter,
   usePaymentContactsPage,
   usePaymentContactsSummary,
+  type PaymentContactsFilter,
   type GuruContact,
 } from "@/lib/data/repos/db/payment-contacts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -1228,13 +1230,34 @@ function ContactDetailDialog({ contact, onClose }: { contact: GuruContact | null
   );
 }
 
+/** Marcadores do filtro de Contatos (viram flags no repo, não status da Guru). */
+const CONTATOS_FLAGS = [
+  { value: "compradores", label: "Só quem comprou" },
+  { value: "assinantes", label: "Com assinatura ativa" },
+];
+
 function ContatosGuruTab() {
   const [page, setPage] = useState(0);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [selectedContact, setSelectedContact] = useState<GuruContact | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<PaymentFilters>(() => emptyFilters("last_activity"));
   const summary = usePaymentContactsSummary();
-  const { rows, total, loading } = usePaymentContactsPage(page, search);
+
+  const repoFilter: PaymentContactsFilter = useMemo(
+    () => ({
+      from: filters.from,
+      to: filters.to,
+      onlyBuyers: filters.status.includes("compradores"),
+      onlySubscribers: filters.status.includes("assinantes"),
+    }),
+    [filters]
+  );
+  const valueFiltered = hasValueFilter(repoFilter);
+  const activeFilters = countActiveFilters(filters);
+
+  const { rows, total, loading } = usePaymentContactsPage(page, search, repoFilter);
 
   // Debounce curto: 180ms depois da última tecla já busca (a consulta usa
   // índices em lower(contact_email)/lower(email), fica rápida mesmo assim).
@@ -1261,27 +1284,57 @@ function ContatosGuruTab() {
           <h1 className="text-lg font-bold text-slate-900">Contatos</h1>
           <p className="text-xs text-slate-500">Todos os contatos da Guru (vendas e assinaturas), com histórico completo</p>
         </div>
-        <GuruLiveBadge />
+        <div className="flex items-center gap-2">
+          <GuruLiveBadge />
+          <FilterButton
+            active={activeFilters}
+            open={filtersOpen}
+            onClick={() => setFiltersOpen((v) => !v)}
+          />
+        </div>
       </div>
+      <FilterPanel
+        open={filtersOpen}
+        value={filters}
+        onApply={(f) => {
+          // A busca do filtro alimenta o mesmo campo do topo (uma fonte só).
+          setFilters(f);
+          setSearchInput(f.search);
+          setPage(0);
+        }}
+        onClose={() => setFiltersOpen(false)}
+        dateFields={[{ value: "last_activity", label: "Última atividade" }]}
+        statusOptions={CONTATOS_FLAGS}
+        showProduct={false}
+        searchLabel="Buscar"
+        searchPlaceholder="Nome, e-mail, telefone ou documento"
+      />
       <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Contatos" value={summary ? String(contacts) : "…"} />
         <KpiCard label="Receita total" value={summary ? formatBRL(revenue) : "…"} />
         <KpiCard label="Ticket por contato" value={summary ? formatBRL(contacts ? revenue / contacts : 0) : "…"} />
         <KpiCard label="Com assinatura ativa" value={summary ? String(summary.withSubs) : "…"} />
       </div>
-      <div className="mb-3">
+      <div className="mb-3 flex items-center gap-3">
         <Input
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Buscar por nome, e-mail, telefone ou documento (CPF)..."
           className="h-8 max-w-sm text-xs"
         />
+        {valueFiltered && (
+          <span className="text-[11px] text-slate-500">
+            Ordenado por total gasto — o filtro por valor usa a visão agregada.
+          </span>
+        )}
       </div>
       {total === 0 && !loading ? (
         <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
-          {search
-            ? "Nenhum contato encontrado com esse termo."
-            : "Nenhum contato ainda. Eles aparecem aqui conforme as vendas e assinaturas sincronizam da Guru."}
+          {activeFilters > 0
+            ? "Nenhum contato bate com o filtro."
+            : search
+              ? "Nenhum contato encontrado com esse termo."
+              : "Nenhum contato ainda. Eles aparecem aqui conforme as vendas e assinaturas sincronizam da Guru."}
         </div>
       ) : (
         <>
