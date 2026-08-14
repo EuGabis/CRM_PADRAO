@@ -9,6 +9,7 @@ import {
   Loader2,
   Mail,
   Pencil,
+  Phone,
   Plus,
   ShieldCheck,
   Trash2,
@@ -51,6 +52,7 @@ import {
   type ModulePermissions,
   type TeamMember,
 } from "@/lib/data/repos/db/team";
+import { useWhatsappChannels } from "@/lib/data/repos/db/whatsapp";
 import { cn } from "@/lib/utils";
 
 const ROLE_LABEL: Record<MemberRole, string> = {
@@ -78,6 +80,7 @@ function allowedCount(p: ModulePermissions) {
 export default function DepartamentosPage() {
   const { members, invitations, departments, loaded, loading } = useTeam();
   const { isAdmin, me, loaded: meLoaded } = useMyMembership();
+  const { channels } = useWhatsappChannels();
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -208,6 +211,24 @@ export default function DepartamentosPage() {
                   ))}
                   {allowedCount(d.permissions) === 0 && (
                     <span className="text-[10px] text-slate-400">Nenhum módulo liberado</span>
+                  )}
+                </div>
+                <div className="mb-3 flex flex-wrap items-center gap-1">
+                  <Phone className="size-3 shrink-0 text-slate-300" />
+                  {d.channelIds.length === 0 ? (
+                    <span className="text-[10px] text-slate-400">Todos os números</span>
+                  ) : (
+                    d.channelIds.map((id) => {
+                      const c = channels.find((x) => x.id === id);
+                      return (
+                        <span
+                          key={id}
+                          className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600"
+                        >
+                          {c ? `${c.name} · ${c.phoneE164}` : "número removido"}
+                        </span>
+                      );
+                    })
                   )}
                 </div>
                 <div className="mt-auto border-t pt-2">
@@ -544,9 +565,11 @@ function DepartmentDialog({
   open: boolean;
   onOpenChange: (o: boolean) => void;
 }) {
+  const { channels } = useWhatsappChannels();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [permissions, setPermissions] = useState<ModulePermissions>({});
+  const [channelIds, setChannelIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -557,7 +580,11 @@ function DepartmentDialog({
       department?.permissions ??
         Object.fromEntries(MODULE_KEYS.map((k) => [k, false]))
     );
+    setChannelIds(department?.channelIds ?? []);
   }, [department, open]);
+
+  const toggleChannel = (id: string) =>
+    setChannelIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
 
   const save = async () => {
     if (!name.trim()) {
@@ -566,8 +593,13 @@ function DepartmentDialog({
     }
     setSaving(true);
     const res = department
-      ? await departmentActions.update(department.id, { name, description, permissions })
-      : await departmentActions.create({ name, description, permissions });
+      ? await departmentActions.update(department.id, {
+          name,
+          description,
+          permissions,
+          channelIds,
+        })
+      : await departmentActions.create({ name, description, permissions, channelIds });
     setSaving(false);
     if (!res.ok) {
       toast.error(res.error ?? "Não foi possível salvar");
@@ -608,6 +640,53 @@ function DepartmentDialog({
             isAllowed={(k) => permissions[k] === true}
             onToggle={(k, allowed) => setPermissions((p) => ({ ...p, [k]: allowed }))}
           />
+
+          {/* Segmentação por número (migração 0034) */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <Label className="text-xs font-semibold">Números de WhatsApp atendidos</Label>
+              {channelIds.length > 0 && (
+                <button
+                  className="text-[10px] text-slate-400 hover:underline"
+                  onClick={() => setChannelIds([])}
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
+            {channels.length === 0 ? (
+              <p className="rounded-lg border border-dashed p-3 text-[11px] text-slate-400">
+                Nenhum número cadastrado ainda. Cadastre em Canais de atendimento
+                (/whatsapp) para poder segmentar as conversas.
+              </p>
+            ) : (
+              <div className="space-y-1.5 rounded-lg border p-3">
+                {channels.map((c) => (
+                  <Label
+                    key={c.id}
+                    className="flex items-center gap-2 text-[11px] font-normal text-slate-600"
+                  >
+                    <Checkbox
+                      checked={channelIds.includes(c.id)}
+                      onCheckedChange={() => toggleChannel(c.id)}
+                    />
+                    <Phone className="size-3 text-slate-400" />
+                    <span className="font-medium text-slate-700">{c.name}</span>
+                    <span className="text-slate-400">{c.phoneE164}</span>
+                    {!c.active && (
+                      <span className="text-[9px] text-amber-600">inativo</span>
+                    )}
+                  </Label>
+                ))}
+              </div>
+            )}
+            <p className="mt-1 text-[10px] leading-tight text-slate-400">
+              {channelIds.length === 0
+                ? "Nenhum número marcado = sem restrição: o departamento vê conversas de qualquer número."
+                : `Quem for deste departamento verá apenas as conversas ${channelIds.length === 1 ? "do número marcado" : `dos ${channelIds.length} números marcados`} — mais as conversas de outros canais (e-mail, Instagram), que não têm número.`}
+            </p>
+          </div>
+
           <p className="text-[10px] leading-tight text-slate-400">
             Vale para quem é <strong>Usuário</strong>. Administradores acessam tudo,
             independentemente do departamento.

@@ -398,8 +398,9 @@ Cloud API → celular.
   0025 = atribuição de conversas, 0026 = `ai_logs`, 0027 = rail das conversas,
   0028 = mensagens agendadas, 0029 = finalizar/arquivar conversas,
   0030 = `ai_agents`, 0031 = template tracking, 0032 = autoreply,
-  0033 = departamentos, 0034 = logo da empresa (ver seções próprias abaixo);
-  **próxima migração livre: 0035**.
+  0033 = departamentos, 0034 = logo da empresa,
+  0035 = conversas por número (ver seções próprias abaixo);
+  **próxima migração livre: 0036**.
 - Env (privadas, nunca `NEXT_PUBLIC_`): `WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`,
   `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` (default `v21.0`).
 
@@ -643,6 +644,17 @@ os módulos ainda não migrados continuam importando dos repos mock em
   `private.handle_new_user` é compartilhado, quem aplica é um gatilho aditivo
   (`private.apply_invite_department` em `location_members`), sem reescrever a
   função de signup.
+- ✅ **Conversas por número** (migração 0035) — `department_channels` liga o
+  departamento aos números de `whatsapp_channels`, e `private.channel_allowed()`
+  entra nas policies de SELECT/UPDATE de `conversations` e `messages` (e no
+  INSERT de `messages`). É **RLS de verdade**: quem não pode ver a conversa não
+  a recebe nem pela API. Regras: departamento SEM número vinculado = sem
+  restrição; conversa sem `channel_id` (e-mail, Instagram, WhatsApp antigo)
+  continua visível para todos; admin vê tudo. Os números são escolhidos no
+  diálogo do departamento em /configuracoes/departamentos.
+  ⚠️ Esta migração **recria** as policies `membros leem`/`membros editam` de
+  `conversations` e `messages` (nascidas do laço da 0001) — ao mexer nelas,
+  mantenha o `private.channel_allowed` no `using`/`with check`.
 - ✅ **Pagamentos** — integração real com a Guru, webhook + sincronização a cada
   minuto (ver seção própria acima).
 - ⏳ **Email Marketing** — código pronto, faltam passos manuais de produção (ver

@@ -22,6 +22,11 @@ export interface Department {
   name: string;
   description: string;
   permissions: ModulePermissions;
+  /**
+   * Números de WhatsApp que o departamento atende (migração 0035).
+   * Vazio = sem restrição: vê conversa de qualquer número.
+   */
+  channelIds: string[];
   createdAt: string;
 }
 
@@ -90,11 +95,12 @@ const mapInvite = (r: any): Invitation => ({
   createdAt: r.created_at,
 });
 
-const mapDepartment = (r: any): Department => ({
+const mapDepartment = (r: any, channelIds: string[] = []): Department => ({
   id: r.id,
   name: r.name,
   description: r.description ?? "",
   permissions: r.permissions ?? {},
+  channelIds,
   createdAt: r.created_at,
 });
 
@@ -125,7 +131,7 @@ export const useTeamStore = create<TeamState>((set, get) => ({
       return;
     }
     const supabase = createClient();
-    const [memberships, profiles, invites, departments] = await Promise.all([
+    const [memberships, profiles, invites, departments, depChannels] = await Promise.all([
       supabase.from("location_members").select("*").eq("location_id", locationId),
       supabase.from("profiles").select("*"),
       supabase
@@ -138,7 +144,18 @@ export const useTeamStore = create<TeamState>((set, get) => ({
         .select("*")
         .eq("location_id", locationId)
         .order("name"),
+      supabase
+        .from("department_channels")
+        .select("department_id, channel_id")
+        .eq("location_id", locationId),
     ]);
+
+    const channelsByDep = new Map<string, string[]>();
+    for (const row of (depChannels.data ?? []) as any[]) {
+      const list = channelsByDep.get(row.department_id) ?? [];
+      list.push(row.channel_id);
+      channelsByDep.set(row.department_id, list);
+    }
 
     const profileById = new Map((profiles.data ?? []).map((p: any) => [p.id, p]));
     const members: TeamMember[] = (memberships.data ?? []).map((m: any) => {
@@ -161,7 +178,9 @@ export const useTeamStore = create<TeamState>((set, get) => ({
       loading: false,
       members: members.sort((a, b) => a.name.localeCompare(b.name)),
       invitations: (invites.data ?? []).map(mapInvite),
-      departments: (departments.data ?? []).map(mapDepartment),
+      departments: (departments.data ?? []).map((d: any) =>
+        mapDepartment(d, channelsByDep.get(d.id) ?? [])
+      ),
     });
   },
 
@@ -214,11 +233,30 @@ async function reload() {
   await useTeamStore.getState().load(true);
 }
 
+/** Substitui os números do departamento (apaga e regrava — a lista é pequena). */
+async function syncChannels(
+  departmentId: string,
+  channelIds: string[],
+  loc: string
+): Promise<void> {
+  const supabase = createClient();
+  await supabase.from("department_channels").delete().eq("department_id", departmentId);
+  if (channelIds.length === 0) return;
+  await supabase.from("department_channels").insert(
+    channelIds.map((channel_id) => ({
+      department_id: departmentId,
+      channel_id,
+      location_id: loc,
+    }))
+  );
+}
+
 export const departmentActions = {
   async create(input: {
     name: string;
     description: string;
     permissions: ModulePermissions;
+    channelIds?: string[];
   }): Promise<{ ok: boolean; error?: string }> {
     const loc = locationId();
     if (!loc) return { ok: false, error: "Empresa não encontrada" };
@@ -241,9 +279,11 @@ export const departmentActions = {
         error: error?.code === "23505" ? "Já existe um departamento com esse nome" : "Não foi possível criar",
       };
     }
+    const channelIds = input.channelIds ?? [];
+    if (channelIds.length > 0) await syncChannels(data.id, channelIds, loc);
     const s = useTeamStore.getState();
     s.patch({
-      departments: [...s.departments, mapDepartment(data)].sort((a, b) =>
+      departments: [...s.departments, mapDepartment(data, channelIds)].sort((a, b) =>
         a.name.localeCompare(b.name)
       ),
     });
@@ -252,8 +292,15 @@ export const departmentActions = {
 
   async update(
     id: string,
-    patch: { name?: string; description?: string; permissions?: ModulePermissions }
+    patch: {
+      name?: string;
+      description?: string;
+      permissions?: ModulePermissions;
+      channelIds?: string[];
+    }
   ): Promise<{ ok: boolean; error?: string }> {
+    const loc = locationId();
+    if (!loc) return { ok: false, error: "Empresa não encontrada" };
     const row: Record<string, unknown> = {};
     if (patch.name !== undefined) row.name = patch.name.trim();
     if (patch.description !== undefined) row.description = patch.description.trim();
@@ -272,9 +319,12 @@ export const departmentActions = {
       };
     }
     const s = useTeamStore.getState();
+    const current = s.departments.find((d) => d.id === id)?.channelIds ?? [];
+    const channelIds = patch.channelIds ?? current;
+    if (patch.channelIds !== undefined) await syncChannels(id, patch.channelIds, loc);
     s.patch({
       departments: s.departments
-        .map((d) => (d.id === id ? mapDepartment(data) : d))
+        .map((d) => (d.id === id ? mapDepartment(data, channelIds) : d))
         .sort((a, b) => a.name.localeCompare(b.name)),
     });
     return { ok: true };
