@@ -63,7 +63,16 @@ function DraggableEvent({
       {...attributes}
       // O clique abre a edição. Com `activationConstraint` de 6px no sensor,
       // um clique curto não vira arraste — mesmo ajuste do kanban de Leads.
-      onClick={() => onOpen(appointment)}
+      //
+      // `stopPropagation` é obrigatório: o card fica DENTRO da célula, que
+      // também tem onClick (criar compromisso naquele horário). Sem isso o
+      // clique subia para a célula, o rascunho de edição era substituído pelo
+      // de criação e o diálogo abria como "Novo compromisso" — sem os dados do
+      // evento e sem o botão Excluir.
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen(appointment);
+      }}
       title={`${appointment.title} · clique para editar, arraste para mudar de dia/hora`}
       className={cn(
         "absolute inset-x-0.5 top-0.5 z-10 cursor-grab active:cursor-grabbing",
