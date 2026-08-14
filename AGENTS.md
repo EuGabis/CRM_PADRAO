@@ -399,8 +399,10 @@ Cloud API → celular.
   0028 = mensagens agendadas, 0029 = finalizar/arquivar conversas,
   0030 = `ai_agents`, 0031 = template tracking, 0032 = autoreply,
   0033 = departamentos, 0034 = logo da empresa,
-  0035 = conversas por número (ver seções próprias abaixo);
-  **próxima migração livre: 0036**.
+  0035 = conversas por número (ver seções próprias abaixo),
+  0036 = view de estado da integração de pagamentos,
+  0037 = painéis do dashboard (por usuário e por departamento);
+  **próxima migração livre: 0038**.
 - Env (privadas, nunca `NEXT_PUBLIC_`): `WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`,
   `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` (default `v21.0`).
 
@@ -621,6 +623,18 @@ os módulos ainda não migrados continuam importando dos repos mock em
   `docs/superpowers/specs/2026-08-14-conversas-template-lote-pipeline-design.md`.
 - ✅ Backend F2e: **Dashboard** com widgets calculando sobre dados reais
   (adapters `useDbPipelines/useDbOpportunities/useDbPipeline` em `db/pipeline.ts`).
+  **Painéis personalizados** (migração **0037**, aplicação no SQL Editor é passo
+  manual pendente) — `dashboard_views` guarda quais widgets aparecem, em que
+  ordem e com qual pipeline cada um resume, em dois escopos na mesma tabela:
+  `scope='user'` (pessoal, só o dono lê e edita) e `scope='department'` (o admin
+  monta, o departamento inteiro lê, só admin edita — a RLS exige
+  `private.is_admin`, não é filtro de UI). Helper novo
+  `private.user_department_ids()` (SECURITY DEFINER, mesmo motivo de
+  `channel_allowed`). Catálogo em `components/dashboard/widget-catalog.ts`;
+  quem nunca personalizou vê `DEFAULT_WIDGETS`, que é o painel fixo de antes.
+  Widgets novos de Pagamentos (vendas recentes, receita por mês, assinaturas)
+  só aparecem para quem enxerga o módulo. Spec:
+  `docs/superpowers/specs/2026-08-14-paineis-personalizados-design.md`.
 - ✅ Backend F2f: módulo **Calendários** real — compromissos do banco (repo
   db/appointments.ts), grade semanal com navegação e "Hoje", criar/excluir
   compromisso (com contato vinculado), lista futuro/passado. Sync Google = futura.
