@@ -15,6 +15,7 @@ const mapAppointment = (r: any): Appointment => ({
   // aplicar a migração.
   opportunityId: r.opportunity_id ?? null,
   reminderMinutes: r.reminder_minutes ?? null,
+  ownerId: r.owner_id ?? null,
   title: r.title,
   start: r.starts_at,
   end: r.ends_at,
@@ -71,6 +72,8 @@ export const appointmentActions = {
     contactId: string | null;
     opportunityId?: string | null;
     reminderMinutes?: number | null;
+    /** Ausente = o compromisso nasce de quem está criando. */
+    ownerId?: string | null;
     start: string; // ISO
     end: string; // ISO
     calendar?: string;
@@ -85,6 +88,9 @@ export const appointmentActions = {
         contact_id: input.contactId,
         opportunity_id: input.opportunityId ?? null,
         reminder_minutes: input.reminderMinutes ?? null,
+        // Sem dono explícito, o compromisso é de quem criou — é o que faz a
+        // agenda ser "a minha" por padrão (0043).
+        owner_id: input.ownerId !== undefined ? input.ownerId : useDbStore.getState().userId,
         title: input.title,
         starts_at: input.start,
         ends_at: input.end,
@@ -109,6 +115,7 @@ export const appointmentActions = {
       contactId?: string | null;
       opportunityId?: string | null;
       reminderMinutes?: number | null;
+      ownerId?: string | null;
       start?: string;
       end?: string;
       calendar?: string;
@@ -119,6 +126,7 @@ export const appointmentActions = {
     if (input.contactId !== undefined) patch.contact_id = input.contactId;
     if (input.opportunityId !== undefined) patch.opportunity_id = input.opportunityId;
     if (input.reminderMinutes !== undefined) patch.reminder_minutes = input.reminderMinutes;
+    if (input.ownerId !== undefined) patch.owner_id = input.ownerId;
     if (input.start !== undefined) patch.starts_at = input.start;
     if (input.end !== undefined) patch.ends_at = input.end;
     if (input.calendar !== undefined) patch.calendar = input.calendar;
@@ -179,8 +187,15 @@ export const appointmentActions = {
 
   async remove(id: string): Promise<boolean> {
     const supabase = createClient();
-    const { error } = await supabase.from("appointments").delete().eq("id", id);
-    if (error) return false;
+    // `select()` para detectar recusa da RLS: um delete negado não vem com
+    // `error`, vem com zero linhas — sem isso a tela diria "excluído" com o
+    // compromisso ainda no banco (0043 restringiu por dono).
+    const { data, error } = await supabase
+      .from("appointments")
+      .delete()
+      .eq("id", id)
+      .select("id");
+    if (error || !data?.length) return false;
     const s = useApptStore.getState();
     s.patch(s.appointments.filter((a) => a.id !== id));
     return true;

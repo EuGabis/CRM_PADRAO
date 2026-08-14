@@ -416,8 +416,9 @@ Cloud API → celular.
   0038 = `type='video'` em `messages` (ver mídia real abaixo),
   0039 = segmentação dos pipelines,
   0040 = só admin exclui conversa/mensagem,
-  0041 = compromisso vinculado a lead, 0042 = lembrete do compromisso;
-  **próxima migração livre: 0043**.
+  0041 = compromisso vinculado a lead, 0042 = lembrete do compromisso,
+  0043 = agenda por usuário;
+  **próxima migração livre: 0044**.
 - Env (privadas, nunca `NEXT_PUBLIC_`): `WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`,
   `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` (default `v21.0`).
 - **Mídia real (imagem/áudio/vídeo)** — helpers em `src/lib/whatsapp/client.ts`
@@ -699,6 +700,13 @@ os módulos ainda não migrados continuam importando dos repos mock em
   (`início - lembrete` até `início + 15min`), senão abrir o CRM à tarde
   despejaria a manhã inteira de avisos; e a agenda é relida a cada 5 min,
   senão compromisso criado em outro dispositivo nunca avisaria aqui.
+  **Agenda por usuário** (migração **0043**, também pendente) —
+  `appointments.owner_id`; cada um vê a própria agenda, admin vê tudo e pode
+  marcar na agenda de outra pessoa. `owner_id` NULO = agenda da empresa
+  (visível a todos) — é o que os compromissos existentes viram, já que não dá
+  para adivinhar o criador. É RLS: as policies do laço da 0001 são recriadas
+  por dono. O seletor "Todas as agendas / da empresa / <pessoa>" é recorte de
+  visualização para o admin.
   Spec: `docs/superpowers/specs/2026-08-14-calendario-editar-arrastar-design.md`.
 - ✅ **Cadastro fechado** (migração 0006): só entra quem tem convite pendente — o
   trigger de signup aborta a transação, então nem chamando a API de auth direto

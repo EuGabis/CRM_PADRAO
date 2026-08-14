@@ -4,7 +4,7 @@
 > clicar num horário e criar ali, clicar no evento e editar, vincular a um lead
 > (além do contato), arrastar o evento para outro dia/hora e ser avisado por um
 > popup no CRM na antecedência escolhida.
-> Data: 2026-08-14. Convenções: `AGENTS.md`. Migrações: **0041** e **0042**.
+> Data: 2026-08-14. Convenções: `AGENTS.md`. Migrações: **0041**, **0042** e **0043**.
 
 ## Objetivo
 
@@ -107,10 +107,33 @@ Fora da v1: notificação do sistema operacional (Notification API), lembrete po
 WhatsApp/e-mail (os toggles das Configurações do módulo seguem decorativos) e
 mais de um lembrete por compromisso.
 
+## Agenda por usuário (migração 0043)
+
+`appointments.owner_id`. Cada pessoa vê a própria agenda; **administrador vê
+tudo** e pode marcar na agenda de outra pessoa (o campo "Agenda de" no diálogo
+só aparece para admin — sem isso qualquer um lotaria o calendário do colega).
+
+**`owner_id` NULO = agenda da empresa, visível para todos.** É o que os
+compromissos JÁ EXISTENTES viram: não há como adivinhar quem os criou, e
+fazê-los sumir da agenda de todo mundo seria pior do que mantê-los
+compartilhados. Os novos nascem com dono (o criador, ou quem o admin escolher);
+"Toda a empresa" continua disponível como escolha explícita.
+
+**É RLS** (policies de SELECT/INSERT/UPDATE/DELETE recriadas sobre as do laço da
+0001), não filtro de tela: sem elas a agenda alheia continuaria a um GET de
+distância. O seletor "Todas as agendas / Agenda da empresa / <pessoa>" no
+calendário e na lista é recorte de visualização para o admin — quem não é admin
+já recebe só o que lhe cabe.
+
+`appointmentActions.remove` passou a conferir as linhas devolvidas: um delete
+recusado pela RLS não vem com `error`, e a tela diria "excluído" com o
+compromisso ainda no banco.
+
 ## Peças
 
 - `supabase/migrations/0041_compromissos_lead.sql`
 - `supabase/migrations/0042_compromissos_lembrete.sql`
+- `supabase/migrations/0043_compromissos_por_usuario.sql`
 - `src/components/calendar/appointment-reminders.tsx` — motor + popup, montado
   em `(app)/layout.tsx`.
 - `src/lib/data/types.ts` — `Appointment.opportunityId`.
@@ -124,6 +147,7 @@ mais de um lembrete por compromisso.
 
 ## Passo manual pendente
 
-Aplicar `0041_compromissos_lead.sql` e `0042_compromissos_lembrete.sql` no SQL
-Editor. Até lá tudo funciona menos o vínculo com lead e o lembrete (as colunas
-não existem e o salvamento falha).
+Aplicar `0041_compromissos_lead.sql`, `0042_compromissos_lembrete.sql` e
+`0043_compromissos_por_usuario.sql` no SQL Editor, nessa ordem. Até lá tudo
+funciona menos o vínculo com lead, o lembrete e a segmentação da agenda (as
+colunas não existem e o salvamento falha).
