@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,25 +15,24 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { pipelineActions, usePipelineDb } from "@/lib/data/repos/db/pipeline";
+import { useDbTeam } from "@/lib/data/repos/db/contacts";
+import { useDepartments, useMyMembership } from "@/lib/data/repos/db/team";
+import { PipelineScopeDialog, scopeBadge } from "./pipeline-scope-dialog";
 
 const STAGE_COLORS = ["#94a3b8", "#3b82f6", "#f43f5e", "#f59e0b", "#ec4899", "#22c55e", "#64748b", "#ef4444", "#8b5cf6"];
 
 export function PipelinesManageTab() {
   const { pipelines, opportunities, loaded } = usePipelineDb();
+  const { isAdmin, me } = useMyMembership();
+  const departments = useDepartments();
+  const team = useDbTeam();
+  const [scopeDialog, setScopeDialog] = useState<"new" | string | null>(null);
   const [stageDialogFor, setStageDialogFor] = useState<string | null>(null);
   const [stageName, setStageName] = useState("");
   const [stageColor, setStageColor] = useState(STAGE_COLORS[0]);
   const [saving, setSaving] = useState(false);
 
   const countFor = (stageId: string) => opportunities.filter((o) => o.stageId === stageId).length;
-
-  const newPipeline = async () => {
-    const name = window.prompt("Nome do novo pipeline:");
-    if (!name?.trim()) return;
-    (await pipelineActions.addPipeline(name.trim()))
-      ? toast.success(`Pipeline "${name.trim()}" criado — adicione as fases`)
-      : toast.error("Não foi possível criar o pipeline");
-  };
 
   const renamePipeline = async (id: string, current: string) => {
     const name = window.prompt("Novo nome do pipeline:", current);
@@ -93,9 +92,12 @@ export function PipelinesManageTab() {
           <h1 className="text-lg font-bold text-slate-900">Pipelines</h1>
           <p className="text-xs text-slate-500">
             Crie e organize os funis e as fases do seu processo comercial.
+            {isAdmin
+              ? " Como administrador, você escolhe se o funil é da empresa, de um departamento ou de uma pessoa."
+              : " Os funis que você criar ficam só para você."}
           </p>
         </div>
-        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={newPipeline}>
+        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setScopeDialog("new")}>
           <Plus className="size-3.5" /> Novo pipeline
         </Button>
       </div>
@@ -113,6 +115,14 @@ export function PipelinesManageTab() {
                 <Badge variant="secondary" className="text-[10px]">
                   {p.stages.length} fases
                 </Badge>
+                {(() => {
+                  const badge = scopeBadge(p, departments, team);
+                  return (
+                    <Badge variant="secondary" className={`text-[10px] ${badge.className}`}>
+                      {badge.label}
+                    </Badge>
+                  );
+                })()}
               </div>
               <div className="flex items-center gap-1">
                 <Button
@@ -123,6 +133,16 @@ export function PipelinesManageTab() {
                 >
                   <Pencil className="size-3" /> Renomear
                 </Button>
+                {isAdmin && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1 text-xs"
+                    onClick={() => setScopeDialog(p.id)}
+                  >
+                    <Users className="size-3" /> Quem vê
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -171,6 +191,21 @@ export function PipelinesManageTab() {
           </div>
         ))}
       </div>
+
+      <PipelineScopeDialog
+        open={!!scopeDialog}
+        mode={scopeDialog === "new" ? "create" : "edit"}
+        pipeline={
+          scopeDialog && scopeDialog !== "new"
+            ? (pipelines.find((p) => p.id === scopeDialog) ?? null)
+            : null
+        }
+        isAdmin={isAdmin}
+        myUserId={me?.userId ?? null}
+        departments={departments}
+        team={team}
+        onOpenChange={(o) => !o && setScopeDialog(null)}
+      />
 
       <Dialog open={!!stageDialogFor} onOpenChange={(o) => !o && setStageDialogFor(null)}>
         <DialogContent className="sm:max-w-xs">

@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
-import type { Opportunity, Pipeline, Stage } from "@/lib/data/types";
+import type { Opportunity, Pipeline, PipelineScope, Stage } from "@/lib/data/types";
 import { useDbStore } from "./contacts";
 import { logBulk } from "./contacts-module";
 
@@ -75,6 +75,12 @@ export const usePipelineDbStore = create<PipelineDbState>((set, get) => ({
         id: p.id,
         name: p.name,
         stages: stagesByPipe.get(p.id) ?? [],
+        // Colunas da 0039. `?? "empresa"` cobre o intervalo entre subir o
+        // código e aplicar a migração: sem elas, tudo é da empresa (que é
+        // exatamente como era antes).
+        scope: (p.scope ?? "empresa") as PipelineScope,
+        departmentId: p.department_id ?? null,
+        ownerId: p.owner_id ?? null,
       })),
       opportunities: (opps.data ?? []).map(mapOpportunity),
     });
@@ -195,18 +201,83 @@ export const oppActions = {
 };
 
 export const pipelineActions = {
-  async addPipeline(name: string): Promise<boolean> {
+  /**
+   * Cria um pipeline com escopo (0039). Usuário comum só consegue criar
+   * `scope: "user"` com ele mesmo de dono — a RLS recusa o resto, então aqui
+   * não há checagem duplicada de papel: quem manda é o banco.
+   */
+  async addPipeline(
+    name: string,
+    visibility: { scope: PipelineScope; departmentId?: string | null; ownerId?: string | null } = {
+      scope: "user",
+    }
+  ): Promise<boolean> {
     const location = loc();
     if (!location) return false;
     const supabase = createClient();
     const { data, error } = await supabase
       .from("pipelines")
-      .insert({ location_id: location, name, position: state().pipelines.length })
+      .insert({
+        location_id: location,
+        name,
+        position: state().pipelines.length,
+        scope: visibility.scope,
+        department_id: visibility.scope === "department" ? visibility.departmentId : null,
+        owner_id:
+          visibility.scope === "user" ? (visibility.ownerId ?? uid()) : null,
+        created_by: uid(),
+      })
       .select()
       .single();
     if (error || !data) return false;
     const s = state();
-    s.patch({ pipelines: [...s.pipelines, { id: data.id, name: data.name, stages: [] }] });
+    s.patch({
+      pipelines: [
+        ...s.pipelines,
+        {
+          id: data.id,
+          name: data.name,
+          stages: [],
+          scope: data.scope ?? "empresa",
+          departmentId: data.department_id ?? null,
+          ownerId: data.owner_id ?? null,
+        },
+      ],
+    });
+    return true;
+  },
+
+  /** Troca o escopo (só admin — a RLS recusa para os demais). */
+  async setPipelineScope(
+    id: string,
+    visibility: { scope: PipelineScope; departmentId?: string | null; ownerId?: string | null }
+  ): Promise<boolean> {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("pipelines")
+      .update({
+        scope: visibility.scope,
+        department_id: visibility.scope === "department" ? visibility.departmentId : null,
+        owner_id: visibility.scope === "user" ? visibility.ownerId : null,
+      })
+      .eq("id", id)
+      .select()
+      .maybeSingle();
+    // `data` nulo sem erro = RLS recusou. Sem checar, a tela diria "salvo".
+    if (error || !data) return false;
+    const s = state();
+    s.patch({
+      pipelines: s.pipelines.map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              scope: data.scope,
+              departmentId: data.department_id ?? null,
+              ownerId: data.owner_id ?? null,
+            }
+          : p
+      ),
+    });
     return true;
   },
 
