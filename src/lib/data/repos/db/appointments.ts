@@ -11,6 +11,9 @@ import { useDbStore } from "./contacts";
 const mapAppointment = (r: any): Appointment => ({
   id: r.id,
   contactId: r.contact_id,
+  // Coluna da 0041; `?? null` cobre o intervalo entre subir o código e
+  // aplicar a migração.
+  opportunityId: r.opportunity_id ?? null,
   title: r.title,
   start: r.starts_at,
   end: r.ends_at,
@@ -56,6 +59,7 @@ export const appointmentActions = {
   async add(input: {
     title: string;
     contactId: string | null;
+    opportunityId?: string | null;
     start: string; // ISO
     end: string; // ISO
     calendar?: string;
@@ -68,6 +72,7 @@ export const appointmentActions = {
       .insert({
         location_id: locationId,
         contact_id: input.contactId,
+        opportunity_id: input.opportunityId ?? null,
         title: input.title,
         starts_at: input.start,
         ends_at: input.end,
@@ -81,6 +86,80 @@ export const appointmentActions = {
     s.patch(
       [...s.appointments, mapAppointment(data)].sort((a, b) => a.start.localeCompare(b.start))
     );
+    return true;
+  },
+
+  /** Edição pelo diálogo do calendário (título, vínculos, horário). */
+  async update(
+    id: string,
+    input: {
+      title?: string;
+      contactId?: string | null;
+      opportunityId?: string | null;
+      start?: string;
+      end?: string;
+      calendar?: string;
+    }
+  ): Promise<boolean> {
+    const patch: Record<string, unknown> = {};
+    if (input.title !== undefined) patch.title = input.title;
+    if (input.contactId !== undefined) patch.contact_id = input.contactId;
+    if (input.opportunityId !== undefined) patch.opportunity_id = input.opportunityId;
+    if (input.start !== undefined) patch.starts_at = input.start;
+    if (input.end !== undefined) patch.ends_at = input.end;
+    if (input.calendar !== undefined) patch.calendar = input.calendar;
+    if (Object.keys(patch).length === 0) return true;
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("appointments")
+      .update(patch)
+      .eq("id", id)
+      .select()
+      .maybeSingle();
+    if (error || !data) return false;
+    const s = useApptStore.getState();
+    s.patch(
+      s.appointments
+        .map((a) => (a.id === id ? mapAppointment(data) : a))
+        .sort((a, b) => a.start.localeCompare(b.start))
+    );
+    return true;
+  },
+
+  /**
+   * Arrastar na grade: muda o início e mantém a DURAÇÃO. Recalcular o fim a
+   * partir do novo início evita o caso de uma reunião de 2h virar 45min só
+   * porque foi movida de dia.
+   *
+   * Otimista: a grade já mostra o evento no lugar novo antes da resposta, e
+   * volta sozinha se o banco recusar.
+   */
+  async move(id: string, newStart: string): Promise<boolean> {
+    const s = useApptStore.getState();
+    const current = s.appointments.find((a) => a.id === id);
+    if (!current) return false;
+    const duration = new Date(current.end).getTime() - new Date(current.start).getTime();
+    const end = new Date(new Date(newStart).getTime() + duration).toISOString();
+
+    const previous = s.appointments;
+    s.patch(
+      s.appointments
+        .map((a) => (a.id === id ? { ...a, start: newStart, end } : a))
+        .sort((a, b) => a.start.localeCompare(b.start))
+    );
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("appointments")
+      .update({ starts_at: newStart, ends_at: end })
+      .eq("id", id)
+      .select()
+      .maybeSingle();
+    if (error || !data) {
+      useApptStore.getState().patch(previous);
+      return false;
+    }
     return true;
   },
 
