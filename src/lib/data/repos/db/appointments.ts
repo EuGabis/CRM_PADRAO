@@ -14,6 +14,7 @@ const mapAppointment = (r: any): Appointment => ({
   // Coluna da 0041; `?? null` cobre o intervalo entre subir o código e
   // aplicar a migração.
   opportunityId: r.opportunity_id ?? null,
+  reminderMinutes: r.reminder_minutes ?? null,
   title: r.title,
   start: r.starts_at,
   end: r.ends_at,
@@ -26,6 +27,8 @@ interface ApptState {
   loading: boolean;
   appointments: Appointment[];
   load: () => Promise<void>;
+  /** Recarrega ignorando o cache — usado pelo motor de lembretes. */
+  reload: () => Promise<void>;
   patch: (a: Appointment[]) => void;
 }
 
@@ -41,6 +44,13 @@ export const useApptStore = create<ApptState>((set, get) => ({
     const supabase = createClient();
     const { data } = await supabase.from("appointments").select("*").order("starts_at");
     set({ loaded: true, loading: false, appointments: (data ?? []).map(mapAppointment) });
+  },
+
+  reload: async () => {
+    const supabase = createClient();
+    const { data, error } = await supabase.from("appointments").select("*").order("starts_at");
+    if (error) return; // falha de rede não pode zerar a agenda na tela
+    set({ appointments: (data ?? []).map(mapAppointment) });
   },
 
   patch: (appointments) => set({ appointments }),
@@ -60,6 +70,7 @@ export const appointmentActions = {
     title: string;
     contactId: string | null;
     opportunityId?: string | null;
+    reminderMinutes?: number | null;
     start: string; // ISO
     end: string; // ISO
     calendar?: string;
@@ -73,6 +84,7 @@ export const appointmentActions = {
         location_id: locationId,
         contact_id: input.contactId,
         opportunity_id: input.opportunityId ?? null,
+        reminder_minutes: input.reminderMinutes ?? null,
         title: input.title,
         starts_at: input.start,
         ends_at: input.end,
@@ -96,6 +108,7 @@ export const appointmentActions = {
       title?: string;
       contactId?: string | null;
       opportunityId?: string | null;
+      reminderMinutes?: number | null;
       start?: string;
       end?: string;
       calendar?: string;
@@ -105,6 +118,7 @@ export const appointmentActions = {
     if (input.title !== undefined) patch.title = input.title;
     if (input.contactId !== undefined) patch.contact_id = input.contactId;
     if (input.opportunityId !== undefined) patch.opportunity_id = input.opportunityId;
+    if (input.reminderMinutes !== undefined) patch.reminder_minutes = input.reminderMinutes;
     if (input.start !== undefined) patch.starts_at = input.start;
     if (input.end !== undefined) patch.ends_at = input.end;
     if (input.calendar !== undefined) patch.calendar = input.calendar;

@@ -321,6 +321,19 @@ function ConfigCalendarios() {
 /** Valor do item "sem vínculo" dos selects (ver comentário no uso). */
 const NONE = "__none__";
 
+/** Antecedência do lembrete dentro do CRM (migração 0042). */
+const REMINDERS: { value: string; label: string }[] = [
+  { value: NONE, label: "Sem lembrete" },
+  { value: "0", label: "Na hora do compromisso" },
+  { value: "5", label: "5 minutos antes" },
+  { value: "10", label: "10 minutos antes" },
+  { value: "15", label: "15 minutos antes" },
+  { value: "30", label: "30 minutos antes" },
+  { value: "60", label: "1 hora antes" },
+  { value: "120", label: "2 horas antes" },
+  { value: "1440", label: "1 dia antes" },
+];
+
 export interface AppointmentDraft {
   /** Compromisso em edição; null = criando. */
   appointment: Appointment | null;
@@ -346,6 +359,7 @@ function AppointmentDialog({
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [startTime, setStartTime] = useState("10:00");
   const [endTime, setEndTime] = useState("10:45");
+  const [reminder, setReminder] = useState<string>(NONE);
   const [saving, setSaving] = useState(false);
 
   // Espelha o rascunho ao (re)abrir. Ajuste durante o render em vez de efeito:
@@ -357,6 +371,11 @@ function AppointmentDialog({
     setTitle(editing?.title ?? "");
     setContactId(editing?.contactId ?? "");
     setOpportunityId(editing?.opportunityId ?? "");
+    setReminder(
+      editing?.reminderMinutes === null || editing?.reminderMinutes === undefined
+        ? NONE
+        : String(editing.reminderMinutes)
+    );
     if (editing) {
       const start = new Date(editing.start);
       const end = new Date(editing.end);
@@ -384,6 +403,7 @@ function AppointmentDialog({
       title: title.trim(),
       contactId: contactId || null,
       opportunityId: opportunityId || null,
+      reminderMinutes: reminder === NONE ? null : Number(reminder),
       start: `${date}T${startTime}:00-03:00`,
       end: `${date}T${endTime}:00-03:00`,
     };
@@ -503,6 +523,26 @@ function AppointmentDialog({
                 Nenhum lead no funil ainda — crie em Leads.
               </p>
             )}
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Lembrete no CRM</Label>
+            <Select value={reminder} onValueChange={(v) => setReminder(v ?? NONE)}>
+              <SelectTrigger className="h-8 w-full text-xs">
+                <SelectValue>
+                  {REMINDERS.find((r) => r.value === reminder)?.label ?? "Sem lembrete"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {REMINDERS.map((r) => (
+                  <SelectItem key={r.value} value={r.value} className="text-xs">
+                    {r.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-slate-400">
+              Aparece como aviso na tela para quem estiver com o CRM aberto.
+            </p>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
