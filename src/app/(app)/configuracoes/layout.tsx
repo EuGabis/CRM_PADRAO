@@ -12,7 +12,7 @@ const GROUPS: { title: string; items: { label: string; href?: string }[] }[] = [
     items: [
       { label: "Perfil da empresa", href: "/configuracoes/perfil" },
       { label: "Meu perfil", href: "/configuracoes/meu-perfil" },
-      { label: "Minha equipe", href: "/configuracoes/equipe" },
+      { label: "Departamentos", href: "/configuracoes/departamentos" },
       { label: "Leads & Pipelines", href: "/configuracoes/leads-pipelines" },
     ],
   },

@@ -8,6 +8,8 @@ interface InviteBody {
   role?: "admin" | "user";
   onlyAssigned?: boolean;
   permissions?: Record<string, boolean>;
+  /** Departamento que a pessoa assume ao entrar (migração 0033). */
+  departmentId?: string | null;
 }
 
 /**
@@ -71,6 +73,7 @@ export async function POST(request: Request) {
       role,
       only_assigned: role === "admin" ? false : Boolean(body.onlyAssigned),
       permissions: role === "admin" ? {} : (body.permissions ?? {}),
+      department_id: role === "admin" ? null : (body.departmentId ?? null),
       created_by: user.id,
     })
     .select()
