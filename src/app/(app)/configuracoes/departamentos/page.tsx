@@ -641,9 +641,36 @@ function InviteDialog({
   const [role, setRole] = useState<MemberRole>("user");
   const [onlyAssigned, setOnlyAssigned] = useState(false);
   const [departmentId, setDepartmentId] = useState<string>(SEM_DEPARTAMENTO);
+  const [permissions, setPermissions] = useState<ModulePermissions>({});
   const [saving, setSaving] = useState(false);
 
   const dep = departments.find((d) => d.id === departmentId) ?? null;
+  const baseline = (key: string) => dep?.permissions?.[key];
+  const effective = (key: string) =>
+    canAccess(key, { role: "user", permissions, departmentId: dep?.id ?? null }, departments);
+
+  // Trocar de departamento não apaga as exceções escolhidas — só descarta as
+  // que passaram a coincidir com o novo padrão (deixariam de ser exceção).
+  useEffect(() => {
+    setPermissions((p) => {
+      const next: ModulePermissions = {};
+      for (const [k, v] of Object.entries(p)) {
+        const base = baseline(k);
+        if (base !== v && !(base === undefined && v === true)) next[k] = v;
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [departmentId]);
+
+  const toggle = (key: string, allowed: boolean) =>
+    setPermissions((p) => {
+      const base = baseline(key);
+      const next = { ...p };
+      if (base === allowed || (base === undefined && allowed)) delete next[key];
+      else next[key] = allowed;
+      return next;
+    });
 
   const submit = async () => {
     if (!email.includes("@")) {
@@ -655,8 +682,8 @@ function InviteDialog({
       email,
       role,
       onlyAssigned,
-      // O acesso vem do departamento; sem exceções na entrada.
-      permissions: {},
+      // Só as divergências em relação ao departamento.
+      permissions: role === "admin" ? {} : permissions,
       departmentId: departmentId === SEM_DEPARTAMENTO ? null : departmentId,
     });
     setSaving(false);
@@ -673,8 +700,11 @@ function InviteDialog({
     setRole("user");
     setOnlyAssigned(false);
     setDepartmentId(SEM_DEPARTAMENTO);
+    setPermissions({});
     onOpenChange(false);
   };
+
+  const exceptions = Object.keys(permissions).length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -755,30 +785,22 @@ function InviteDialog({
               </span>
             </div>
           </div>
-          <div className="rounded-lg border bg-slate-50 p-3">
-            <p className="text-[11px] font-semibold text-slate-700">O que a pessoa vai acessar</p>
-            {role === "admin" ? (
-              <p className="mt-1 text-[11px] text-slate-500">
-                Administradores acessam todos os módulos.
-              </p>
-            ) : dep ? (
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {PERMISSION_MODULES.filter((m) => dep.permissions[m.key] === true).map((m) => (
-                  <span
-                    key={m.key}
-                    className="rounded-full bg-white px-2 py-0.5 text-[10px] text-slate-600"
-                  >
-                    {m.label}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-1 text-[11px] text-slate-500">
-                Sem departamento, a pessoa enxerga todos os módulos. Escolha um departamento
-                para restringir — ou ajuste depois, no lápis da linha dela.
-              </p>
-            )}
-          </div>
+          <ModuleGrid
+            disabled={role === "admin"}
+            hint="Administradores acessam todos os módulos"
+            isAllowed={effective}
+            baseline={baseline}
+            onToggle={toggle}
+          />
+          {role !== "admin" && (
+            <p className="text-[10px] leading-tight text-slate-400">
+              {dep
+                ? exceptions > 0
+                  ? `Começa em ${dep.name} e já entra com ${exceptions} exceç${exceptions === 1 ? "ão" : "ões"} — o que difere do departamento fica marcado.`
+                  : `Marcado conforme ${dep.name}. Mudar um módulo aqui cria uma exceção só para esta pessoa.`
+                : "Sem departamento: o que estiver desmarcado vira bloqueio individual."}
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
