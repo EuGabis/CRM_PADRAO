@@ -784,9 +784,10 @@ os módulos ainda não migrados continuam importando dos repos mock em
   exigiria alguém escrevendo nela em webhook/automação/cron e o caminho
   esquecido viraria aviso que nunca chega. Consultas próprias e enxutas em
   `components/layout/notifications-panel.tsx` — o store de Conversas carrega
-  TODAS as mensagens da empresa e o sino vive no shell. "Lido" é carimbo no
-  `localStorage`; compromisso fica fora da contagem (o `at` é futuro e o
-  contador nunca zeraria). Spec:
+  TODAS as mensagens da empresa e o sino vive no shell. Abas **Não lidas /
+  Lidas**: o "lido" é um CONJUNTO DE IDS no `localStorage` (por item, não um
+  carimbo de última abertura — senão abrir o sino esvaziaria "Não lidas"), e
+  abrir o painel não marca nada. Spec:
   `docs/superpowers/specs/2026-08-14-central-notificacoes-design.md`.
 - ⏳ Próximo: Automações reais (Edge Functions) tarefas 5–8, Agentes de IA.
 - ⏳ Backlog: personalizar template/remetente dos e-mails de auth do Supabase

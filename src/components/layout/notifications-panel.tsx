@@ -4,7 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { AlertTriangle, Bell, CalendarClock, MessageSquare } from "lucide-react";
+import {
+  AlertTriangle,
+  Bell,
+  CalendarClock,
+  Check,
+  MessageSquare,
+  Undo2,
+} from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { createClient } from "@/lib/supabase/client";
 import { useApptStore } from "@/lib/data/repos/db/appointments";
@@ -14,8 +21,7 @@ import { cn } from "@/lib/utils";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
- * Central de notificações do sino. Antes o botão só emitia um toast dizendo
- * que "chega em breve".
+ * Central de notificações do sino, com abas "Não lidas" e "Lidas".
  *
  * **Não existe tabela de notificações.** Os avisos são DERIVADOS do que já
  * está no banco — conversa não lida, compromisso próximo, agendamento que
@@ -28,11 +34,15 @@ import { cn } from "@/lib/utils";
  * pagar isso em toda tela pelo contador seria absurdo. Aqui são duas consultas
  * com `limit`, e só as colunas usadas.
  *
- * **"Lido" é um carimbo de tempo no `localStorage`** (não no banco): estado de
- * tela, por dispositivo, no mesmo espírito do lembrete de compromisso.
+ * **"Lido" é um conjunto de ids no `localStorage`** (não no banco): estado de
+ * tela, por dispositivo, no mesmo espírito do lembrete de compromisso. É por
+ * ITEM, e não um carimbo de "abri o sino às 14h" — com as duas abas, um
+ * carimbo mandaria tudo para "Lidas" de uma vez só por ter aberto o painel.
  */
 
-const SEEN_KEY = "lito.notifications.seen-at";
+const READ_KEY = "lito.notifications.read-ids";
+/** Teto do histórico local: a lista cresceria para sempre sem isso. */
+const READ_LIMIT = 300;
 const REFRESH_MS = 60_000;
 const UPCOMING_HOURS = 24;
 
@@ -60,17 +70,30 @@ const ICON_CLASS: Record<NotificationKind, string> = {
   agendamento: "bg-rose-50 text-rose-600",
 };
 
-function readSeenAt(): number {
-  if (typeof window === "undefined") return 0;
-  const raw = window.localStorage.getItem(SEEN_KEY);
-  const parsed = raw ? Number(raw) : 0;
-  return Number.isFinite(parsed) ? parsed : 0;
+function loadRead(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(READ_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRead(ids: string[]) {
+  try {
+    window.localStorage.setItem(READ_KEY, JSON.stringify(ids.slice(-READ_LIMIT)));
+  } catch {
+    // localStorage bloqueado — as lidas voltam no F5, nada quebra.
+  }
 }
 
 export function NotificationsPanel() {
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"nao-lidas" | "lidas">("nao-lidas");
   const [items, setItems] = useState<NotificationItem[]>([]);
-  const [seenAt, setSeenAt] = useState(0);
+  const [readIds, setReadIds] = useState<string[]>([]);
   const locationId = useDbStore((s) => s.locationId);
 
   const refresh = useCallback(async () => {
@@ -158,12 +181,12 @@ export function NotificationsPanel() {
 
   useEffect(() => {
     let alive = true;
-    // `seenAt` sai do localStorage aqui dentro (e não num inicializador de
+    // As lidas saem do localStorage aqui dentro (e não num inicializador de
     // estado) porque o servidor não tem localStorage: ler no render daria
-    // 0 no HTML e o valor real na hidratação, com o contador piscando.
+    // vazio no HTML e o valor real na hidratação, com o contador piscando.
     const run = async () => {
       await refresh();
-      if (alive) setSeenAt(readSeenAt());
+      if (alive) setReadIds(loadRead());
     };
     void run();
     const timer = setInterval(() => void run(), REFRESH_MS);
@@ -173,22 +196,25 @@ export function NotificationsPanel() {
     };
   }, [refresh, locationId]);
 
-  // "Novo" = ACONTECEU depois da última vez que o sino foi aberto. Compromisso
-  // fica de fora da conta: o `at` dele é no futuro, então seria eternamente
-  // "mais novo" que qualquer visita e o contador nunca zeraria. Ele aparece na
-  // lista como contexto — quem avisa da reunião é o lembrete da 0042.
-  const unseen = items.filter(
-    (i) => i.kind !== "compromisso" && new Date(i.at).getTime() > seenAt
-  ).length;
+  const read = new Set(readIds);
+  const unread = items.filter((i) => !read.has(i.id));
+  // "Lidas" só mostra o que ainda EXISTE: conversa respondida ou compromisso
+  // que já passou some da origem, e a aba não vira um cemitério de avisos
+  // resolvidos.
+  const readItems = items.filter((i) => read.has(i.id));
+  const visible = tab === "nao-lidas" ? unread : readItems;
 
-  const markSeen = () => {
-    const now = Date.now();
-    try {
-      window.localStorage.setItem(SEEN_KEY, String(now));
-    } catch {
-      // localStorage bloqueado — o contador volta no F5, nada quebra.
-    }
-    setSeenAt(now);
+  const markRead = (ids: string[]) => {
+    if (ids.length === 0) return;
+    const next = [...new Set([...readIds, ...ids])];
+    saveRead(next);
+    setReadIds(next);
+  };
+
+  const markUnread = (id: string) => {
+    const next = readIds.filter((x) => x !== id);
+    saveRead(next);
+    setReadIds(next);
   };
 
   return (
@@ -196,10 +222,9 @@ export function NotificationsPanel() {
       open={open}
       onOpenChange={(o) => {
         setOpen(o);
-        if (o) {
-          void refresh();
-          markSeen();
-        }
+        // Abrir NÃO marca nada como lido: com as duas abas, isso esvaziaria
+        // "Não lidas" só por ter espiado o sino.
+        if (o) void refresh();
       }}
     >
       <PopoverTrigger
@@ -211,57 +236,110 @@ export function NotificationsPanel() {
         }
       >
         <Bell className="size-4" />
-        {unseen > 0 && (
+        {unread.length > 0 && (
           <span className="absolute -right-0.5 -top-0.5 flex min-w-3.5 items-center justify-center rounded-full bg-orange-400 px-1 text-[9px] font-bold text-slate-900">
-            {unseen > 9 ? "9+" : unseen}
+            {unread.length > 9 ? "9+" : unread.length}
           </span>
         )}
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0">
         <div className="flex items-center justify-between border-b px-3 py-2">
           <p className="text-xs font-bold text-slate-700">Notificações</p>
-          <span className="text-[10px] text-slate-400">{items.length} itens</span>
-        </div>
-        <div className="max-h-96 overflow-y-auto">
-          {items.length === 0 && (
-            <p className="px-3 py-8 text-center text-[11px] leading-relaxed text-slate-400">
-              Nada por aqui. Aparecem avisos de conversas não lidas, compromissos das próximas
-              24 horas e mensagens agendadas que falharam.
-            </p>
+          {unread.length > 0 && (
+            <button
+              onClick={() => markRead(unread.map((i) => i.id))}
+              className="text-[10px] font-semibold text-indigo-600 hover:underline"
+            >
+              Marcar todas como lidas
+            </button>
           )}
-          {items.map((item) => {
-            const Icon = ICON[item.kind];
-            const isNew = item.kind !== "compromisso" && new Date(item.at).getTime() > seenAt;
-            return (
-              <Link
-                key={item.id}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                className={cn(
-                  "flex items-start gap-2.5 border-b px-3 py-2.5 last:border-0 hover:bg-slate-50",
-                  isNew && "bg-indigo-50/40"
-                )}
-              >
+        </div>
+        <div className="flex gap-1 border-b px-2 py-1.5">
+          {(
+            [
+              ["nao-lidas", "Não lidas", unread.length],
+              ["lidas", "Lidas", readItems.length],
+            ] as const
+          ).map(([key, label, count]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={cn(
+                "flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium",
+                tab === key ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"
+              )}
+            >
+              {label}
+              {count > 0 && (
                 <span
                   className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-full",
-                    ICON_CLASS[item.kind]
+                    "rounded-full px-1.5 text-[9px] font-bold",
+                    tab === key ? "bg-indigo-500 text-white" : "bg-slate-200 text-slate-600"
                   )}
                 >
-                  <Icon className="size-3.5" />
+                  {count}
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-semibold text-slate-800">
-                    {item.title}
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="max-h-96 overflow-y-auto">
+          {visible.length === 0 && (
+            <p className="px-3 py-8 text-center text-[11px] leading-relaxed text-slate-400">
+              {tab === "lidas"
+                ? "Nenhuma notificação lida ainda."
+                : "Nada por aqui. Aparecem avisos de conversas não lidas, compromissos das próximas 24 horas e mensagens agendadas que falharam."}
+            </p>
+          )}
+          {visible.map((item) => {
+            const Icon = ICON[item.kind];
+            const isRead = read.has(item.id);
+            return (
+              <div
+                key={item.id}
+                className={cn(
+                  "group flex items-start gap-2.5 border-b px-3 py-2.5 last:border-0 hover:bg-slate-50",
+                  !isRead && "bg-indigo-50/40"
+                )}
+              >
+                <Link
+                  href={item.href}
+                  // Abrir o item é o gesto natural de "vi isso" — marca como
+                  // lido junto, em vez de exigir dois cliques.
+                  onClick={() => {
+                    markRead([item.id]);
+                    setOpen(false);
+                  }}
+                  className="flex min-w-0 flex-1 items-start gap-2.5"
+                >
+                  <span
+                    className={cn(
+                      "flex size-7 shrink-0 items-center justify-center rounded-full",
+                      ICON_CLASS[item.kind]
+                    )}
+                  >
+                    <Icon className="size-3.5" />
                   </span>
-                  <span className="block truncate text-[11px] text-slate-500">
-                    {item.description}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-semibold text-slate-800">
+                      {item.title}
+                    </span>
+                    <span className="block truncate text-[11px] text-slate-500">
+                      {item.description}
+                    </span>
+                    <span className="block text-[10px] text-slate-400">
+                      {formatDistanceToNow(new Date(item.at), { addSuffix: true, locale: ptBR })}
+                    </span>
                   </span>
-                  <span className="block text-[10px] text-slate-400">
-                    {formatDistanceToNow(new Date(item.at), { addSuffix: true, locale: ptBR })}
-                  </span>
-                </span>
-              </Link>
+                </Link>
+                <button
+                  onClick={() => (isRead ? markUnread(item.id) : markRead([item.id]))}
+                  title={isRead ? "Marcar como não lida" : "Marcar como lida"}
+                  className="mt-0.5 shrink-0 rounded p-0.5 text-slate-300 opacity-0 transition-opacity hover:text-indigo-600 group-hover:opacity-100"
+                >
+                  {isRead ? <Undo2 className="size-3.5" /> : <Check className="size-3.5" />}
+                </button>
+              </div>
             );
           })}
         </div>

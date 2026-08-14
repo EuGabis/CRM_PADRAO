@@ -41,14 +41,25 @@ apenas dos contatos que apareceram.
 
 Atualiza a cada 60s e ao abrir o sino.
 
-## "Novo" e o contador
+## Abas "Não lidas" e "Lidas"
 
-`localStorage` guarda o carimbo da última abertura do sino — estado de tela,
-por dispositivo, no mesmo espírito do lembrete de compromisso.
+`localStorage` guarda o **conjunto de ids lidos** — estado de tela, por
+dispositivo, no mesmo espírito do lembrete de compromisso. É por ITEM, e não um
+carimbo de "abri o sino às 14h": com as duas abas, um carimbo mandaria tudo
+para "Lidas" de uma vez só por ter aberto o painel. Pelo mesmo motivo, **abrir
+o sino não marca nada como lido**.
 
-**Compromisso não entra na contagem.** O `at` dele é no futuro, então seria
-eternamente "mais novo" que qualquer visita e o contador nunca zeraria. Ele
-aparece na lista como contexto; quem avisa da reunião é o lembrete (0042).
+Marca-se lendo (clicar no item abre a tela e marca junto — é o gesto natural de
+"vi isso"), pelo check que aparece ao passar o mouse, ou por "Marcar todas como
+lidas". O check vira "desfazer" na aba Lidas.
+
+O contador do sino é o total de não lidas, incluindo compromissos — com estado
+por item, o aviso futuro é marcado e some da conta, o que não era possível com
+o carimbo único.
+
+**"Lidas" só mostra o que ainda existe.** Os itens são derivados: conversa
+respondida ou compromisso que passou some da origem, e a aba não vira um
+cemitério de avisos resolvidos. O histórico local é limitado a 300 ids.
 
 ## Peças
 
@@ -59,5 +70,6 @@ aparece na lista como contexto; quem avisa da reunião é o lembrete (0042).
 
 ## Fora da v1
 
-Histórico de notificações, marcar item a item como lido, preferências de quais
-tipos receber, e notificação do sistema operacional (Notification API).
+Histórico de notificações que já sumiram da origem, preferências de quais tipos
+receber, sincronizar "lido" entre dispositivos e notificação do sistema
+operacional (Notification API).
