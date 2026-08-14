@@ -387,7 +387,9 @@ Cloud API → celular.
   `conversations.channel_id`. Migração 0023 = Google Ads, 0024 = Formulários,
   0025 = atribuição de conversas, 0026 = `ai_logs`, 0027 = rail das conversas,
   0028 = mensagens agendadas, 0029 = finalizar/arquivar conversas,
-  0030 = `ai_agents`, 0031 = template tracking, 0032 = autoreply (ver seções próprias abaixo); **próxima migração livre: 0033**.
+  0030 = `ai_agents`, 0031 = template tracking, 0032 = autoreply,
+  0033 = departamentos (ver seções próprias abaixo);
+  **próxima migração livre: 0034**.
 - Env (privadas, nunca `NEXT_PUBLIC_`): `WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`,
   `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` (default `v21.0`).
 
@@ -611,7 +613,26 @@ os módulos ainda não migrados continuam importando dos repos mock em
   modo "ver apenas dados atribuídos" aplicado nas políticas RLS de contacts e
   opportunities via `private.sees_all()`, trigger `protect_last_admin` impedindo
   a empresa ficar sem administrador. Sidebar respeita permissões; a tela
-  /configuracoes/equipe é restrita a admins.
+  /configuracoes/departamentos é restrita a admins.
+- ✅ **Departamentos** (migração 0033) — segmentação de acesso compartilhada, em
+  `public.departments` (nome, descrição, `permissions` jsonb com o mapa completo
+  dos módulos) + `location_members.department_id` e `invitations.department_id`.
+  A tela "Minha equipe" virou **/configuracoes/departamentos**: cria/edita
+  departamento, mostra quem está em cada um e permite trocar o departamento do
+  usuário na própria tabela.
+  **Ordem de resolução do acesso** (`canAccess` em `db/team.ts`): admin vê tudo →
+  exceção individual (`location_members.permissions`) → departamento → libera
+  (legado dos membros com `{}`). Ou seja, `location_members.permissions` deixou
+  de ser "o acesso do usuário" e passou a ser **só as exceções** — a UI grava
+  apenas as chaves que divergem do departamento, então editar o departamento
+  reflete em todo mundo que o segue.
+  Padrões criados para toda empresa (existentes na migração, novas por trigger
+  em `locations`): **Secretaria** (conversas, calendários, assinaturas, leads,
+  contatos, automações, agentes de IA, painel, mídia) e **Comercial** (o mesmo
+  sem assinaturas). O convite já sai com departamento — como o
+  `private.handle_new_user` é compartilhado, quem aplica é um gatilho aditivo
+  (`private.apply_invite_department` em `location_members`), sem reescrever a
+  função de signup.
 - ✅ **Pagamentos** — integração real com a Guru, webhook + sincronização a cada
   minuto (ver seção própria acima).
 - ⏳ **Email Marketing** — código pronto, faltam passos manuais de produção (ver

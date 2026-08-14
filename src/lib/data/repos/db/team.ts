@@ -9,8 +9,21 @@ import { useDbStore } from "./contacts";
 
 export type MemberRole = "admin" | "user";
 
-/** Permissões por módulo: chave = slug da rota. Ausente/true = liberado. */
+/** Permissões por módulo: chave = slug da rota. */
 export type ModulePermissions = Record<string, boolean>;
+
+/**
+ * Departamento = segmentação de acesso compartilhada (migração 0033).
+ * O `permissions` dele é a BASE; `location_members.permissions` guarda só as
+ * exceções de cada pessoa.
+ */
+export interface Department {
+  id: string;
+  name: string;
+  description: string;
+  permissions: ModulePermissions;
+  createdAt: string;
+}
 
 export interface TeamMember {
   userId: string;
@@ -19,7 +32,9 @@ export interface TeamMember {
   color: string;
   role: MemberRole;
   onlyAssigned: boolean;
+  /** Só as exceções ao departamento. Vazio = segue o departamento à risca. */
   permissions: ModulePermissions;
+  departmentId: string | null;
   createdAt: string;
 }
 
@@ -29,8 +44,39 @@ export interface Invitation {
   role: MemberRole;
   onlyAssigned: boolean;
   permissions: ModulePermissions;
+  departmentId: string | null;
   status: "pending" | "accepted" | "revoked";
   createdAt: string;
+}
+
+/**
+ * Acesso efetivo a um módulo. A ordem é a decidida com o Gabriel:
+ * admin vê tudo → exceção individual → departamento → libera (legado).
+ */
+export function canAccess(
+  moduleKey: string,
+  member: Pick<TeamMember, "role" | "permissions" | "departmentId"> | null,
+  departments: Department[]
+): boolean {
+  if (!member) return true;
+  if (member.role === "admin") return true;
+  const own = member.permissions?.[moduleKey];
+  if (typeof own === "boolean") return own;
+  const dep = departments.find((d) => d.id === member.departmentId);
+  const fromDep = dep?.permissions?.[moduleKey];
+  if (typeof fromDep === "boolean") return fromDep;
+  return true;
+}
+
+/** Mapa de acesso efetivo de um membro, módulo a módulo. */
+export function effectivePermissions(
+  member: Pick<TeamMember, "role" | "permissions" | "departmentId">,
+  departments: Department[],
+  moduleKeys: string[]
+): ModulePermissions {
+  return Object.fromEntries(
+    moduleKeys.map((k) => [k, canAccess(k, member, departments)])
+  );
 }
 
 const mapInvite = (r: any): Invitation => ({
@@ -39,7 +85,16 @@ const mapInvite = (r: any): Invitation => ({
   role: r.role,
   onlyAssigned: r.only_assigned,
   permissions: r.permissions ?? {},
+  departmentId: r.department_id ?? null,
   status: r.status,
+  createdAt: r.created_at,
+});
+
+const mapDepartment = (r: any): Department => ({
+  id: r.id,
+  name: r.name,
+  description: r.description ?? "",
+  permissions: r.permissions ?? {},
   createdAt: r.created_at,
 });
 
@@ -48,8 +103,9 @@ interface TeamState {
   loading: boolean;
   members: TeamMember[];
   invitations: Invitation[];
+  departments: Department[];
   load: (force?: boolean) => Promise<void>;
-  patch: (p: Partial<Pick<TeamState, "members" | "invitations">>) => void;
+  patch: (p: Partial<Pick<TeamState, "members" | "invitations" | "departments">>) => void;
 }
 
 export const useTeamStore = create<TeamState>((set, get) => ({
@@ -57,6 +113,7 @@ export const useTeamStore = create<TeamState>((set, get) => ({
   loading: false,
   members: [],
   invitations: [],
+  departments: [],
 
   load: async (force = false) => {
     if ((get().loaded && !force) || get().loading) return;
@@ -68,7 +125,7 @@ export const useTeamStore = create<TeamState>((set, get) => ({
       return;
     }
     const supabase = createClient();
-    const [memberships, profiles, invites] = await Promise.all([
+    const [memberships, profiles, invites, departments] = await Promise.all([
       supabase.from("location_members").select("*").eq("location_id", locationId),
       supabase.from("profiles").select("*"),
       supabase
@@ -76,6 +133,11 @@ export const useTeamStore = create<TeamState>((set, get) => ({
         .select("*")
         .eq("location_id", locationId)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("departments")
+        .select("*")
+        .eq("location_id", locationId)
+        .order("name"),
     ]);
 
     const profileById = new Map((profiles.data ?? []).map((p: any) => [p.id, p]));
@@ -89,6 +151,7 @@ export const useTeamStore = create<TeamState>((set, get) => ({
         role: m.role,
         onlyAssigned: m.only_assigned,
         permissions: m.permissions ?? {},
+        departmentId: m.department_id ?? null,
         createdAt: m.created_at,
       };
     });
@@ -98,6 +161,7 @@ export const useTeamStore = create<TeamState>((set, get) => ({
       loading: false,
       members: members.sort((a, b) => a.name.localeCompare(b.name)),
       invitations: (invites.data ?? []).map(mapInvite),
+      departments: (departments.data ?? []).map(mapDepartment),
     });
   },
 
@@ -113,9 +177,19 @@ export function useTeam() {
   return store;
 }
 
+/** Departamentos da empresa (segmentações de acesso). */
+export function useDepartments() {
+  const { departments, load } = useTeamStore();
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return departments;
+}
+
 /** Membership do usuário logado (papel e permissões efetivas). */
 export function useMyMembership() {
-  const { members, loaded, load } = useTeamStore();
+  const { members, departments, loaded, load } = useTeamStore();
   const userId = useDbStore((s) => s.userId);
   useEffect(() => {
     void load();
@@ -127,10 +201,11 @@ export function useMyMembership() {
       loaded,
       me,
       isAdmin: me?.role === "admin",
-      /** Admin vê tudo; usuário vê o que não estiver explicitamente desligado. */
-      can: (moduleKey: string) => (me?.role === "admin" ? true : me?.permissions?.[moduleKey] !== false),
+      department: departments.find((d) => d.id === me?.departmentId) ?? null,
+      /** Admin → exceção individual → departamento → libera. */
+      can: (moduleKey: string) => canAccess(moduleKey, me, departments),
     };
-  }, [members, userId, loaded]);
+  }, [members, departments, userId, loaded]);
 }
 
 const locationId = () => useDbStore.getState().locationId;
@@ -138,6 +213,88 @@ const locationId = () => useDbStore.getState().locationId;
 async function reload() {
   await useTeamStore.getState().load(true);
 }
+
+export const departmentActions = {
+  async create(input: {
+    name: string;
+    description: string;
+    permissions: ModulePermissions;
+  }): Promise<{ ok: boolean; error?: string }> {
+    const loc = locationId();
+    if (!loc) return { ok: false, error: "Empresa não encontrada" };
+    const supabase = createClient();
+    const { data: auth } = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from("departments")
+      .insert({
+        location_id: loc,
+        name: input.name.trim(),
+        description: input.description.trim(),
+        permissions: input.permissions,
+        created_by: auth.user?.id ?? null,
+      })
+      .select()
+      .single();
+    if (error || !data) {
+      return {
+        ok: false,
+        error: error?.code === "23505" ? "Já existe um departamento com esse nome" : "Não foi possível criar",
+      };
+    }
+    const s = useTeamStore.getState();
+    s.patch({
+      departments: [...s.departments, mapDepartment(data)].sort((a, b) =>
+        a.name.localeCompare(b.name)
+      ),
+    });
+    return { ok: true };
+  },
+
+  async update(
+    id: string,
+    patch: { name?: string; description?: string; permissions?: ModulePermissions }
+  ): Promise<{ ok: boolean; error?: string }> {
+    const row: Record<string, unknown> = {};
+    if (patch.name !== undefined) row.name = patch.name.trim();
+    if (patch.description !== undefined) row.description = patch.description.trim();
+    if (patch.permissions !== undefined) row.permissions = patch.permissions;
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("departments")
+      .update(row)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error || !data) {
+      return {
+        ok: false,
+        error: error?.code === "23505" ? "Já existe um departamento com esse nome" : "Não foi possível salvar",
+      };
+    }
+    const s = useTeamStore.getState();
+    s.patch({
+      departments: s.departments
+        .map((d) => (d.id === id ? mapDepartment(data) : d))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    });
+    return { ok: true };
+  },
+
+  /** Excluir não derruba ninguém: quem estava nele fica sem departamento. */
+  async remove(id: string): Promise<{ ok: boolean; error?: string }> {
+    const supabase = createClient();
+    const { error } = await supabase.from("departments").delete().eq("id", id);
+    if (error) return { ok: false, error: "Não foi possível excluir" };
+    const s = useTeamStore.getState();
+    s.patch({
+      departments: s.departments.filter((d) => d.id !== id),
+      members: s.members.map((m) =>
+        m.departmentId === id ? { ...m, departmentId: null } : m
+      ),
+    });
+    return { ok: true };
+  },
+};
 
 export const teamActions = {
   /**
@@ -149,6 +306,7 @@ export const teamActions = {
     role: MemberRole;
     onlyAssigned: boolean;
     permissions: ModulePermissions;
+    departmentId?: string | null;
   }): Promise<{ ok: boolean; error?: string; warning?: string }> {
     const email = input.email.trim().toLowerCase();
     const state = useTeamStore.getState();
@@ -166,6 +324,7 @@ export const teamActions = {
           role: input.role,
           onlyAssigned: input.onlyAssigned,
           permissions: input.permissions,
+          departmentId: input.departmentId ?? null,
         }),
       });
       payload = await res.json();
@@ -207,7 +366,12 @@ export const teamActions = {
 
   async updateMember(
     userId: string,
-    patch: { role?: MemberRole; onlyAssigned?: boolean; permissions?: ModulePermissions }
+    patch: {
+      role?: MemberRole;
+      onlyAssigned?: boolean;
+      permissions?: ModulePermissions;
+      departmentId?: string | null;
+    }
   ): Promise<{ ok: boolean; error?: string }> {
     const loc = locationId();
     if (!loc) return { ok: false, error: "Empresa não encontrada" };
@@ -215,6 +379,7 @@ export const teamActions = {
     if (patch.role !== undefined) row.role = patch.role;
     if (patch.onlyAssigned !== undefined) row.only_assigned = patch.onlyAssigned;
     if (patch.permissions !== undefined) row.permissions = patch.permissions;
+    if (patch.departmentId !== undefined) row.department_id = patch.departmentId;
 
     const supabase = createClient();
     const { error } = await supabase
@@ -240,6 +405,8 @@ export const teamActions = {
               role: patch.role ?? m.role,
               onlyAssigned: patch.onlyAssigned ?? m.onlyAssigned,
               permissions: patch.permissions ?? m.permissions,
+              departmentId:
+                patch.departmentId !== undefined ? patch.departmentId : m.departmentId,
             }
           : m
       ),
