@@ -596,6 +596,13 @@ os módulos ainda não migrados continuam importando dos repos mock em
   seção própria acima).
 - ⏳ **WhatsApp (Meta Cloud API)** — código pronto, faltam passos manuais de
   produção (envs na Vercel, webhook na Meta, criar canal — ver seção própria acima).
+  Aba **Templates** funcional: criar/excluir templates via Graph API (sem tabela
+  local; Meta é fonte da verdade). Rastreio de entrega **exclusivamente de
+  templates** — colunas `template_name`, `delivered_at`, `read_at`, `failed_at`,
+  `error_detail` na tabela `messages` (migração **0031**, aplicação no banco é
+  passo manual pendente); webhook carimba horários sem rebaixar status (usa
+  `isAdvance`); aba **Logs** com Realtime. Criar/excluir templates exige token
+  Meta com permissão `whatsapp_business_management`.
 - ⏳ Próximo: Automações reais (Edge Functions) tarefas 5–8, Agentes de IA.
 - ⏳ Backlog: personalizar template/remetente dos e-mails de auth do Supabase
   (pedido do Gabriel), storage (Mídia Drive/arquivos), dark mode, mobile.
