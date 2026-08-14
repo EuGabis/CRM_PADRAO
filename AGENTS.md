@@ -603,6 +603,20 @@ os módulos ainda não migrados continuam importando dos repos mock em
   passo manual pendente); webhook carimba horários sem rebaixar status (usa
   `isAdvance`); aba **Logs** com Realtime. Criar/excluir templates exige token
   Meta com permissão `whatsapp_business_management`.
+  - **PENDENTE (rodar amanhã):** aplicar a migração `0031` no Supabase SQL Editor
+    (senão as colunas de rastreio não existem e a aba Logs / o webhook falham).
+    O CA `scripts/supabase-ca.crt` não está no repo, então `apply-migration.mjs`
+    não conecta — aplicação é manual pelo SQL Editor.
+  - **Nota de sessão / observação de bug (não bloqueante):** ao abrir `/whatsapp`
+    a aba Canais chegou a mostrar "Nenhum canal" mesmo com o canal existindo —
+    é corrida em `useChannelsStore.load` (`db/whatsapp.ts`): ele faz
+    `await useDbStore.getState().load()` mas, se o `useDbStore` já estava a meio
+    carregamento (guard `if (loaded||loading) return`), a chamada volta na hora
+    sem aguardar, lê `locationId` ainda nulo e cacheia a lista vazia com
+    `loaded:true` (nunca revalida). Resolve sozinho ao recarregar quando a
+    location já está pronta. Mesmo padrão em `appointments.ts`. Follow-up:
+    blindar o load pra só marcar `loaded:true` quando houver `locationId`
+    (ou aguardar o `useDbStore` terminar de fato).
 - ⏳ Próximo: Automações reais (Edge Functions) tarefas 5–8, Agentes de IA.
 - ⏳ Backlog: personalizar template/remetente dos e-mails de auth do Supabase
   (pedido do Gabriel), storage (Mídia Drive/arquivos), dark mode, mobile.
