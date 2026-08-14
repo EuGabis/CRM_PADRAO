@@ -72,7 +72,20 @@ import {
 } from "@/lib/data/repos/db/payment-contacts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMyMembership } from "@/lib/data/repos/db/team";
-import { classifyGuruStatus, guruStatusLabel } from "@/lib/data/guru";
+import {
+  classifyGuruStatus,
+  guruStatusLabel,
+  SALE_STATUS_OPTIONS,
+  SUBSCRIPTION_STATUS_OPTIONS,
+} from "@/lib/data/guru";
+import {
+  countActiveFilters,
+  emptyFilters,
+  matchesFilters,
+  FilterButton,
+  FilterPanel,
+  type PaymentFilters,
+} from "@/components/payments/filters";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -529,13 +542,29 @@ function TransacoesMockTab() {
   );
 }
 
+const VENDAS_DATE_FIELDS = [
+  { value: "guru_created_at", label: "Criada em" },
+  { value: "guru_updated_at", label: "Atualizada em" },
+  { value: "received_at", label: "Recebida no CRM" },
+];
+
 function TransacoesGuruTab() {
   const salesReport = usePaymentSalesReport();
   const [rawEvent, setRawEvent] = useState<PaymentEvent | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState<number>(EVENTS_PAGE_SIZE);
-  const { rows: events, total, loading } = usePaymentEventsPage(page, sortAsc, pageSize);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<PaymentFilters>(() =>
+    emptyFilters("guru_created_at")
+  );
+  const { rows: events, total, loading } = usePaymentEventsPage(
+    page,
+    sortAsc,
+    pageSize,
+    filters
+  );
+  const activeFilters = countActiveFilters(filters);
 
   // KPIs vêm de payment_sales_monthly (histórico completo agregado no
   // banco), não do array `events` (só as 100 vendas mais recentes) — com
@@ -570,6 +599,11 @@ function TransacoesGuruTab() {
         </div>
         <div className="flex items-center gap-2">
           <GuruLiveBadge />
+          <FilterButton
+            active={activeFilters}
+            open={filtersOpen}
+            onClick={() => setFiltersOpen((v) => !v)}
+          />
           <Select
             value={String(pageSize)}
             onValueChange={(v) => {
@@ -597,6 +631,18 @@ function TransacoesGuruTab() {
           />
         </div>
       </div>
+      <FilterPanel
+        open={filtersOpen}
+        value={filters}
+        onApply={(f) => {
+          setFilters(f);
+          setPage(0); // resultado novo começa da primeira página
+        }}
+        onClose={() => setFiltersOpen(false)}
+        dateFields={VENDAS_DATE_FIELDS}
+        statusOptions={SALE_STATUS_OPTIONS}
+        searchPlaceholder="Código, contato ou e-mail"
+      />
       <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Receita do mês" value={formatBRL(kpis.revenue)} />
         <KpiCard label="Vendas aprovadas (mês)" value={String(kpis.count)} />
@@ -607,6 +653,12 @@ function TransacoesGuruTab() {
           hint={`${kpis.refundCount} transações`}
         />
       </div>
+      {activeFilters > 0 && (
+        <p className="mb-2 text-[11px] text-slate-500">
+          Os KPIs acima somam o histórico do mês inteiro — não seguem o filtro. A lista
+          abaixo é a filtrada.
+        </p>
+      )}
       {total === 0 && !loading ? (
         <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
           Nenhuma venda sincronizada ainda. A primeira sincronização roda no próximo minuto após
@@ -688,10 +740,34 @@ function AssinaturasMockTab() {
   );
 }
 
+const ASSINATURAS_DATE_FIELDS = [
+  { value: "guruStartedAt", label: "Iniciada em" },
+  { value: "guruUpdatedAt", label: "Atualizada em" },
+  { value: "nextCycleAt", label: "Próxima cobrança" },
+];
+
 function AssinaturasGuruTab() {
-  const subscriptions = usePaymentSubscriptions();
+  const all = usePaymentSubscriptions();
   const [rawSub, setRawSub] = useState<PaymentSubscription | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<PaymentFilters>(() => emptyFilters("guruStartedAt"));
+  const activeFilters = countActiveFilters(filters);
+
+  // Assinaturas vêm inteiras para a store, então o filtro é em memória — e os
+  // KPIs seguem o filtro, ao contrário de Vendas (lá são do banco agregado).
+  const subscriptions = useMemo(
+    () =>
+      all.filter((s) =>
+        matchesFilters(filters, {
+          date: (s[filters.dateField as keyof PaymentSubscription] as string | null) ?? null,
+          status: s.status,
+          product: s.productName,
+          haystack: [s.code ?? "", s.contactName ?? "", s.contactEmail ?? ""],
+        })
+      ),
+    [all, filters]
+  );
 
   const sortedSubscriptions = useMemo(
     () => (sortAsc ? [...subscriptions].reverse() : subscriptions),
@@ -719,19 +795,38 @@ function AssinaturasGuruTab() {
         </div>
         <div className="flex items-center gap-2">
           <GuruLiveBadge />
+          <FilterButton
+            active={activeFilters}
+            open={filtersOpen}
+            onClick={() => setFiltersOpen((v) => !v)}
+          />
           <SortToggle ascending={sortAsc} onToggle={() => setSortAsc((v) => !v)} />
         </div>
       </div>
+      <FilterPanel
+        open={filtersOpen}
+        value={filters}
+        onApply={setFilters}
+        onClose={() => setFiltersOpen(false)}
+        dateFields={ASSINATURAS_DATE_FIELDS}
+        statusOptions={SUBSCRIPTION_STATUS_OPTIONS}
+        searchPlaceholder="Código, contato ou e-mail"
+      />
       <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard label="Ativas" value={String(counts.ativa)} />
         <KpiCard label="Atrasadas" value={String(counts.atrasado)} />
         <KpiCard label="Canceladas / expiradas" value={String(counts.cancelado)} />
-        <KpiCard label="Total de assinantes" value={String(subscriptions.length)} />
+        <KpiCard
+          label={activeFilters > 0 ? "Assinantes no filtro" : "Total de assinantes"}
+          value={String(subscriptions.length)}
+          hint={activeFilters > 0 ? `de ${all.length} no total` : undefined}
+        />
       </div>
       {subscriptions.length === 0 ? (
         <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
-          Nenhuma assinatura sincronizada ainda. A primeira sincronização roda no próximo minuto
-          após conectar — as assinaturas aparecem aqui automaticamente.
+          {activeFilters > 0
+            ? "Nenhuma assinatura bate com o filtro."
+            : "Nenhuma assinatura sincronizada ainda. A primeira sincronização roda no próximo minuto após conectar — as assinaturas aparecem aqui automaticamente."}
         </div>
       ) : (
         <MiniTable
@@ -826,6 +921,9 @@ function ProdutosGuruTab() {
     error: string | null;
     products: GuruProductRow[];
   }>({ loading: true, error: null, products: [] });
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<PaymentFilters>(() => emptyFilters("created_at"));
+  const activeFilters = countActiveFilters(filters);
 
   useEffect(() => {
     let active = true;
@@ -847,9 +945,49 @@ function ProdutosGuruTab() {
     };
   }, []);
 
+  const visible = useMemo(
+    () =>
+      state.products.filter((p) =>
+        matchesFilters(filters, {
+          // A Guru devolve created_at em unix; o filtro compara "yyyy-mm-dd".
+          date: p.created_at ? new Date(p.created_at * 1000).toISOString() : null,
+          status: p.is_hidden ? "hidden" : "visible",
+          product: p.name,
+          haystack: [p.name ?? "", p.group?.name ?? "", p.marketplace_name ?? ""],
+        })
+      ),
+    [state.products, filters]
+  );
+
   return (
     <>
-      <SectionHeader title="Produtos" subtitle="Catálogo de produtos da Guru (GET /api/v2/products)" />
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-slate-900">Produtos</h1>
+          <p className="text-xs text-slate-500">
+            Catálogo de produtos da Guru (GET /api/v2/products)
+          </p>
+        </div>
+        <FilterButton
+          active={activeFilters}
+          open={filtersOpen}
+          onClick={() => setFiltersOpen((v) => !v)}
+        />
+      </div>
+      <FilterPanel
+        open={filtersOpen}
+        value={filters}
+        onApply={setFilters}
+        onClose={() => setFiltersOpen(false)}
+        dateFields={[{ value: "created_at", label: "Criado em" }]}
+        statusOptions={[
+          { value: "visible", label: "Visível" },
+          { value: "hidden", label: "Oculto" },
+        ]}
+        showProduct={false}
+        searchLabel="Buscar"
+        searchPlaceholder="Nome, grupo ou marketplace"
+      />
       {state.loading ? (
         <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
           Carregando produtos da Guru...
@@ -858,13 +996,15 @@ function ProdutosGuruTab() {
         <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center text-xs text-red-600">
           {state.error}
         </div>
-      ) : state.products.length === 0 ? (
+      ) : visible.length === 0 ? (
         <div className="rounded-xl border bg-white p-8 text-center text-xs text-slate-400">
-          Nenhum produto encontrado na conta da Guru.
+          {state.products.length === 0
+            ? "Nenhum produto encontrado na conta da Guru."
+            : "Nenhum produto bate com o filtro."}
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {state.products.map((p) => (
+          {visible.map((p) => (
             <div key={p.id} className="flex flex-col rounded-xl border bg-white p-4">
               <div className="mb-2 flex items-center justify-between">
                 <Badge variant="secondary" className="bg-slate-100 text-slate-600">

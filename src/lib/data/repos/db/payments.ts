@@ -224,7 +224,26 @@ export const EVENTS_PAGE_SIZE_OPTIONS = [50, 100, 150] as const;
  * (histórico completo) não tinham como bater com o que a tabela mostrava
  * — não dava pra conferir na tela se os números eram reais.
  */
-export function usePaymentEventsPage(page: number, ascending: boolean, pageSize: number = EVENTS_PAGE_SIZE) {
+/**
+ * Filtro das vendas. Aplicado no BANCO, não em memória: são milhares de
+ * registros e a tela carrega uma página por vez — filtrar no client filtraria
+ * só a página visível, dando um resultado errado e convincente.
+ */
+export interface PaymentEventsFilter {
+  dateField: string; // "guru_created_at" | "guru_updated_at" | "received_at"
+  from: string; // yyyy-mm-dd
+  to: string;
+  status: string[];
+  product: string;
+  search: string;
+}
+
+export function usePaymentEventsPage(
+  page: number,
+  ascending: boolean,
+  pageSize: number = EVENTS_PAGE_SIZE,
+  filter?: PaymentEventsFilter
+) {
   const [rows, setRows] = useState<PaymentEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -246,11 +265,28 @@ export function usePaymentEventsPage(page: number, ascending: boolean, pageSize:
       const supabase = createClient();
       const from = page * pageSize;
       const to = from + pageSize - 1;
-      const { data, count } = await supabase
+      const dateField = filter?.dateField || "guru_created_at";
+      let query = supabase
         .from("payment_events")
         .select("*", { count: "exact" })
-        .eq("location_id", loc)
-        .order("guru_created_at", { ascending, nullsFirst: false })
+        .eq("location_id", loc);
+
+      if (filter) {
+        if (filter.from) query = query.gte(dateField, `${filter.from}T00:00:00`);
+        // `to` inclusivo: o usuário escolhe o dia, não o instante.
+        if (filter.to) query = query.lte(dateField, `${filter.to}T23:59:59.999`);
+        if (filter.status.length > 0) query = query.in("status", filter.status);
+        if (filter.product.trim()) query = query.ilike("product_name", `%${filter.product.trim()}%`);
+        if (filter.search.trim()) {
+          const q = filter.search.trim().replace(/[,()]/g, " ");
+          query = query.or(
+            `code.ilike.%${q}%,contact_name.ilike.%${q}%,contact_email.ilike.%${q}%`
+          );
+        }
+      }
+
+      const { data, count } = await query
+        .order(dateField, { ascending, nullsFirst: false })
         .range(from, to);
       if (!active) return;
       setRows((data ?? []).map(mapPaymentEvent));
@@ -260,7 +296,10 @@ export function usePaymentEventsPage(page: number, ascending: boolean, pageSize:
     return () => {
       active = false;
     };
-  }, [page, ascending, pageSize]);
+    // Serializa o filtro: o objeto muda de identidade a cada render do
+    // chamador e refazer a consulta por isso derrubaria a tela em loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, ascending, pageSize, JSON.stringify(filter ?? null)]);
 
   return { rows, total, loading };
 }
