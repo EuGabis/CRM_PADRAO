@@ -5,6 +5,7 @@ import {
   Clock,
   DollarSign,
   Eye,
+  LayoutTemplate,
   Loader2,
   Mic,
   Paperclip,
@@ -73,6 +74,9 @@ export function Composer({ conversationId }: { conversationId: string }) {
   const [recording, setRecording] = useState(false);
   const [recSecs, setRecSecs] = useState(0);
   const [templateOpen, setTemplateOpen] = useState(false);
+  // Diferencia "abri porque quis" de "abri porque a janela de 24h fechou" — o
+  // texto do seletor muda.
+  const [templateForced, setTemplateForced] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -192,6 +196,7 @@ export function Composer({ conversationId }: { conversationId: string }) {
         setBody("");
         toast.success("Mensagem enviada via WhatsApp");
       } else if (res.needsTemplate) {
+        setTemplateForced(true);
         setTemplateOpen(true);
       } else {
         toast.error(res.error ?? "Não foi possível enviar");
@@ -437,6 +442,36 @@ export function Composer({ conversationId }: { conversationId: string }) {
             </TooltipTrigger>
             <TooltipContent className="text-[10px]">Agendar mensagem</TooltipContent>
           </Tooltip>
+
+          {/* Template aprovado — atalho direto. Antes o seletor só abria
+              sozinho quando a janela de 24h já tinha fechado (erro 409 do
+              envio); mandar template por escolha, dentro da janela, não tinha
+              caminho nenhum. */}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  onClick={() => {
+                    if (!isWhatsapp) {
+                      toast.info(
+                        "Templates são do WhatsApp — esta conversa não está num canal conectado."
+                      );
+                      return;
+                    }
+                    setTemplateForced(false);
+                    setTemplateOpen(true);
+                  }}
+                  className={cn(
+                    "flex size-7 items-center justify-center rounded-md hover:bg-slate-100 hover:text-slate-600",
+                    isWhatsapp ? "text-slate-400" : "text-slate-300"
+                  )}
+                />
+              }
+            >
+              <LayoutTemplate className="size-4" />
+            </TooltipTrigger>
+            <TooltipContent className="text-[10px]">Enviar template</TooltipContent>
+          </Tooltip>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -485,6 +520,7 @@ export function Composer({ conversationId }: { conversationId: string }) {
       <TemplatePicker
         open={templateOpen}
         onOpenChange={setTemplateOpen}
+        outsideWindow={templateForced}
         channelId={conversation?.channelId ?? null}
         onPick={async (tpl) => {
           setSending(true);

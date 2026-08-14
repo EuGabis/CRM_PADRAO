@@ -22,11 +22,18 @@ export function TemplatePicker({
   onOpenChange,
   channelId,
   onPick,
+  /**
+   * true quando o seletor abriu porque o envio bateu no 409 da janela de 24h.
+   * Aberto pelo atalho do composer (dentro da janela), a explicação seria
+   * falsa — daí a mensagem mudar.
+   */
+  outsideWindow = false,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   channelId: string | null;
   onPick: (t: { name: string; language: string; components?: unknown[] }) => void;
+  outsideWindow?: boolean;
 }) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(false);
@@ -47,7 +54,9 @@ export function TemplatePicker({
           <DialogTitle>Escolher template</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-slate-500">
-          A janela de 24h fechou — fora dela, o WhatsApp só permite iniciar com um template aprovado.
+          {outsideWindow
+            ? "A janela de 24h fechou — fora dela, o WhatsApp só permite iniciar com um template aprovado."
+            : "Templates aprovados na Meta. Enviam mesmo fora da janela de 24h."}
         </p>
         <div className="max-h-72 space-y-1 overflow-y-auto">
           {loading && <p className="p-4 text-center text-xs text-slate-400">Carregando…</p>}
