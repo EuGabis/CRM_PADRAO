@@ -102,7 +102,31 @@ export function usePaymentContactsSummary(): GuruContactsSummary | null {
  * e indexado), com compras/total gasto/assinaturas/última atividade
  * enriquecidos só para essa página a partir de payment_contacts.
  */
-export function usePaymentContactsPage(page: number, search: string) {
+/**
+ * Filtro dos contatos. Os campos de VALOR (última atividade, compras,
+ * assinaturas) não existem em `payment_guru_contacts` — só na view agregada
+ * `payment_contacts`. Por isso o hook troca de fonte quando algum deles está
+ * ativo: filtrar em memória filtraria apenas a página visível.
+ */
+export interface PaymentContactsFilter {
+  /** yyyy-mm-dd sobre last_activity. */
+  from: string;
+  to: string;
+  /** Só contatos com ao menos uma compra aprovada. */
+  onlyBuyers: boolean;
+  /** Só contatos com assinatura ativa. */
+  onlySubscribers: boolean;
+}
+
+export function hasValueFilter(f?: PaymentContactsFilter): boolean {
+  return !!f && (!!f.from || !!f.to || f.onlyBuyers || f.onlySubscribers);
+}
+
+export function usePaymentContactsPage(
+  page: number,
+  search: string,
+  filter?: PaymentContactsFilter
+) {
   const [rows, setRows] = useState<GuruContact[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -124,12 +148,55 @@ export function usePaymentContactsPage(page: number, search: string) {
       const supabase = createClient();
       const from = page * CONTACTS_PAGE_SIZE;
       const to = from + CONTACTS_PAGE_SIZE - 1;
+      const term = sanitizeSearch(search);
+
+      // Caminho com filtro de valor: a view agregada é a única fonte que tem
+      // last_activity/purchases/active_subs. Mais pesada, mas correta — o
+      // enriquecimento por página não serviria para filtrar.
+      if (hasValueFilter(filter)) {
+        let vq = supabase
+          .from("payment_contacts")
+          .select("contact_key, name, email, phone, doc, purchases, total_spent, active_subs, last_activity", {
+            count: "exact",
+          })
+          .eq("location_id", loc);
+        if (term) {
+          vq = vq.or(
+            `name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%,doc.ilike.%${term}%`
+          );
+        }
+        if (filter!.from) vq = vq.gte("last_activity", `${filter!.from}T00:00:00`);
+        if (filter!.to) vq = vq.lte("last_activity", `${filter!.to}T23:59:59.999`);
+        if (filter!.onlyBuyers) vq = vq.gt("purchases", 0);
+        if (filter!.onlySubscribers) vq = vq.gt("active_subs", 0);
+
+        const { data: vRows, count: vCount } = await vq
+          .order("total_spent", { ascending: false, nullsFirst: false })
+          .range(from, to);
+        if (!active) return;
+        setRows(
+          (vRows ?? []).map((r: any) => ({
+            contactKey: r.contact_key,
+            name: r.name ?? null,
+            email: r.email ?? null,
+            phone: r.phone ?? null,
+            doc: r.doc ?? null,
+            purchases: r.purchases ?? 0,
+            totalSpent: Number(r.total_spent ?? 0),
+            activeSubs: r.active_subs ?? 0,
+            lastActivity: r.last_activity ?? null,
+          }))
+        );
+        if (typeof vCount === "number") setTotal(vCount);
+        setLoading(false);
+        return;
+      }
+
       let query = supabase
         .from("payment_guru_contacts")
         .select("*", { count: "exact" })
         .eq("location_id", loc);
 
-      const term = sanitizeSearch(search);
       if (term) {
         query = query.or(
           `name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%,doc.ilike.%${term}%`
@@ -183,7 +250,10 @@ export function usePaymentContactsPage(page: number, search: string) {
     return () => {
       active = false;
     };
-  }, [page, search]);
+    // Filtro serializado: o objeto muda de identidade a cada render do
+    // chamador e refazer a consulta por isso derrubaria a tela em loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, search, JSON.stringify(filter ?? null)]);
 
   return { rows, total, loading };
 }

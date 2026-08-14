@@ -65,6 +65,22 @@ const EMPTY_GURU: GuruCredential = {
   historyBackfillDone: false,
 };
 
+/**
+ * Estado da integração para quem NÃO é admin: mesma forma do crédito, mas sem
+ * token nenhum — a view da 0036 não expõe api_key/webhook_token.
+ */
+function mapGuruStatus(row: any): GuruCredential {
+  return {
+    connected: true,
+    apiKey: "",
+    webhookToken: "",
+    connectedAt: row.connected_at ?? null,
+    lastSyncedAt: row.last_synced_at ?? null,
+    historyBackfillCursor: row.history_backfill_cursor ?? null,
+    historyBackfillDone: row.history_backfill_done ?? false,
+  };
+}
+
 function mapGuruCredential(row: any): GuruCredential {
   return {
     connected: true,
@@ -146,7 +162,17 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
       return;
     }
     const supabase = createClient();
-    const [{ data: credential }, { data: subscriptions }] = await Promise.all([
+    const [{ data: status }, { data: credential }, { data: subscriptions }] = await Promise.all([
+      // Estado da integração — legível por qualquer membro (view da 0036).
+      // Sem isso, usuário não-admin via "Conectar Guru" numa empresa já
+      // conectada, porque payment_credentials é admin-only.
+      supabase
+        .from("payment_integration_status")
+        .select("*")
+        .eq("location_id", locationId)
+        .eq("provider", "guru")
+        .maybeSingle(),
+      // Só o admin recebe linha aqui (tokens). Para os demais volta vazio.
       supabase
         .from("payment_credentials")
         .select("*")
@@ -163,7 +189,11 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
     set({
       loaded: true,
       loading: false,
-      guru: credential ? mapGuruCredential(credential) : EMPTY_GURU,
+      guru: credential
+        ? mapGuruCredential(credential)
+        : status
+          ? mapGuruStatus(status)
+          : EMPTY_GURU,
       subscriptions: (subscriptions ?? []).map(mapPaymentSubscription),
     });
 
@@ -224,7 +254,26 @@ export const EVENTS_PAGE_SIZE_OPTIONS = [50, 100, 150] as const;
  * (histórico completo) não tinham como bater com o que a tabela mostrava
  * — não dava pra conferir na tela se os números eram reais.
  */
-export function usePaymentEventsPage(page: number, ascending: boolean, pageSize: number = EVENTS_PAGE_SIZE) {
+/**
+ * Filtro das vendas. Aplicado no BANCO, não em memória: são milhares de
+ * registros e a tela carrega uma página por vez — filtrar no client filtraria
+ * só a página visível, dando um resultado errado e convincente.
+ */
+export interface PaymentEventsFilter {
+  dateField: string; // "guru_created_at" | "guru_updated_at" | "received_at"
+  from: string; // yyyy-mm-dd
+  to: string;
+  status: string[];
+  product: string;
+  search: string;
+}
+
+export function usePaymentEventsPage(
+  page: number,
+  ascending: boolean,
+  pageSize: number = EVENTS_PAGE_SIZE,
+  filter?: PaymentEventsFilter
+) {
   const [rows, setRows] = useState<PaymentEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -246,11 +295,28 @@ export function usePaymentEventsPage(page: number, ascending: boolean, pageSize:
       const supabase = createClient();
       const from = page * pageSize;
       const to = from + pageSize - 1;
-      const { data, count } = await supabase
+      const dateField = filter?.dateField || "guru_created_at";
+      let query = supabase
         .from("payment_events")
         .select("*", { count: "exact" })
-        .eq("location_id", loc)
-        .order("guru_created_at", { ascending, nullsFirst: false })
+        .eq("location_id", loc);
+
+      if (filter) {
+        if (filter.from) query = query.gte(dateField, `${filter.from}T00:00:00`);
+        // `to` inclusivo: o usuário escolhe o dia, não o instante.
+        if (filter.to) query = query.lte(dateField, `${filter.to}T23:59:59.999`);
+        if (filter.status.length > 0) query = query.in("status", filter.status);
+        if (filter.product.trim()) query = query.ilike("product_name", `%${filter.product.trim()}%`);
+        if (filter.search.trim()) {
+          const q = filter.search.trim().replace(/[,()]/g, " ");
+          query = query.or(
+            `code.ilike.%${q}%,contact_name.ilike.%${q}%,contact_email.ilike.%${q}%`
+          );
+        }
+      }
+
+      const { data, count } = await query
+        .order(dateField, { ascending, nullsFirst: false })
         .range(from, to);
       if (!active) return;
       setRows((data ?? []).map(mapPaymentEvent));
@@ -260,7 +326,10 @@ export function usePaymentEventsPage(page: number, ascending: boolean, pageSize:
     return () => {
       active = false;
     };
-  }, [page, ascending, pageSize]);
+    // Serializa o filtro: o objeto muda de identidade a cada render do
+    // chamador e refazer a consulta por isso derrubaria a tela em loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, ascending, pageSize, JSON.stringify(filter ?? null)]);
 
   return { rows, total, loading };
 }

@@ -52,6 +52,17 @@ const SUBSCRIPTION_STATUS: Record<string, { category: GuruStatusCategory; label:
   expired: { category: "expirado", label: "Expirada" },
 };
 
+/** Opções de status para os filtros — mesma ordem/rótulo do painel da Guru. */
+export const SALE_STATUS_OPTIONS = Object.entries(SALE_STATUS).map(([value, v]) => ({
+  value,
+  label: v.label,
+  category: v.category,
+}));
+
+export const SUBSCRIPTION_STATUS_OPTIONS = Object.entries(SUBSCRIPTION_STATUS).map(
+  ([value, v]) => ({ value, label: v.label, category: v.category })
+);
+
 function lookup(raw: string | null | undefined) {
   if (!raw) return undefined;
   const key = raw.toLowerCase();
