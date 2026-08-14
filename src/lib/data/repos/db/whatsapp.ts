@@ -191,7 +191,7 @@ export interface TemplateLog {
 }
 
 function mapLog(r: any): TemplateLog {
-  const c = r.contacts ?? {};
+  const c = r.conversations?.contacts ?? {};
   const name = [c.first_name, c.last_name].filter(Boolean).join(" ").trim();
   return {
     id: r.id,
@@ -222,7 +222,7 @@ export function useTemplateLogs(channelId: string | null) {
     const query = () =>
       supabase
         .from("messages")
-        .select("id, template_name, status, created_at, delivered_at, read_at, failed_at, error_detail, contacts(first_name, last_name)")
+        .select("id, template_name, status, created_at, delivered_at, read_at, failed_at, error_detail, conversations(contacts(first_name, last_name))")
         .eq("channel_id", channelId)
         .not("template_name", "is", null)
         .order("created_at", { ascending: false })
