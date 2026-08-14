@@ -619,6 +619,18 @@ os módulos ainda não migrados continuam importando dos repos mock em
   Reabrir/Desarquivar ao lado. **Mensagem de entrada reabre E desarquiva**
   (webhook do WhatsApp) — perder mensagem de cliente é pior do que desfazer um
   arquivamento.
+  **Template em lote + enviar para pipeline** (sem migração/env/rota nova) — o
+  ícone de seleção na barra do título liga os checkboxes; a barra "N
+  selecionadas" dispara um **template aprovado** para todas via um
+  `POST /api/whatsapp/send` por conversa, **em série** (a rota já valida canal,
+  janela de 24h e limite diário — endpoint em lote duplicaria a regra; em rajada
+  o limite diário devolveria 429 pra metade da lista sem controle). Falhas são
+  listadas por nome. ⚠️ A rota marca `bot_paused = true`, então um disparo em
+  lote **pausa o auto-responder** em todas as conversas atingidas. No painel do
+  contato (direita), "Enviar para pipeline" cria oportunidade real
+  (`oppActions.add`, `source: "Conversas"`) mostrando as que o contato já tem —
+  senão o funil enche de duplicata. Spec:
+  `docs/superpowers/specs/2026-08-14-conversas-template-lote-pipeline-design.md`.
 - ✅ Backend F2e: **Dashboard** com widgets calculando sobre dados reais
   (adapters `useDbPipelines/useDbOpportunities/useDbPipeline` em `db/pipeline.ts`).
 - ✅ Backend F2f: módulo **Calendários** real — compromissos do banco (repo
