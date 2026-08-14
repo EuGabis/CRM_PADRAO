@@ -519,12 +519,20 @@ export const conversationActions = {
   },
 
   /** Exclui a conversa e todas as mensagens dela. */
+  /** Só administrador (a RLS da 0040 recusa os demais). */
   async remove(conversationId: string): Promise<boolean> {
     const supabase = createClient();
-    // remove mensagens primeiro (cobre o caso sem ON DELETE CASCADE)
-    await supabase.from("messages").delete().eq("conversation_id", conversationId);
-    const { error } = await supabase.from("conversations").delete().eq("id", conversationId);
-    if (error) return false;
+    // Só a conversa: `messages.conversation_id` tem ON DELETE CASCADE, então
+    // as mensagens vão junto. Apagá-las antes, à mão, destruía o histórico
+    // mesmo quando a exclusão da conversa era recusada logo depois.
+    const { data, error } = await supabase
+      .from("conversations")
+      .delete()
+      .eq("id", conversationId)
+      .select("id");
+    // Zero linhas sem erro = a RLS recusou. `error` sozinho não detecta isso,
+    // e a tela diria "conversa excluída" com ela ainda no banco.
+    if (error || !data?.length) return false;
     const s = useConvStore.getState();
     s.patch({
       conversations: s.conversations.filter((c) => c.id !== conversationId),

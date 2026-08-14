@@ -414,8 +414,9 @@ Cloud API → celular.
   0035 = conversas por número, 0036 = view de estado da integração de pagamentos,
   0037 = painéis do dashboard (por usuário e por departamento),
   0038 = `type='video'` em `messages` (ver mídia real abaixo),
-  0039 = segmentação dos pipelines;
-  **próxima migração livre: 0040**.
+  0039 = segmentação dos pipelines,
+  0040 = só admin exclui conversa/mensagem;
+  **próxima migração livre: 0041**.
 - Env (privadas, nunca `NEXT_PUBLIC_`): `WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`,
   `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` (default `v21.0`).
 - **Mídia real (imagem/áudio/vídeo)** — helpers em `src/lib/whatsapp/client.ts`
@@ -634,6 +635,15 @@ os módulos ainda não migrados continuam importando dos repos mock em
   integração de envio = publicar na conversa. Log completo na aba
   **Conversas → Agendadas** (quem agendou, para quando, status, motivo da falha,
   cancelar) e resumo dentro da própria bolha da mensagem.
+  **Excluir conversa é só de administrador** (migração **0040**, aplicação no
+  SQL Editor é passo manual pendente) — excluir apaga o histórico junto (as
+  mensagens caem por cascade) e não tem desfazer; quem não é admin usa
+  Arquivar. É RLS: as policies "membros excluem" de `conversations` E
+  `messages` (nascidas do laço da 0001) viram admin-only — sem isso, esconder
+  o botão só mudaria a tela. `conversationActions.remove` deixou de apagar as
+  mensagens à mão (o cascade já faz) e passou a conferir as linhas devolvidas:
+  delete recusado pela RLS não vem com `error`, e a tela dizia "excluída" com
+  a conversa ainda no banco.
   **Finalizar e arquivar** (migração 0029) — dois eixos independentes em
   `conversations`: `closed_at|closed_by` (atendimento resolvido) e
   `archived_at|archived_by` (fora de vista). Guardados separados de propósito:
