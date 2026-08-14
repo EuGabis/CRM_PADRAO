@@ -112,14 +112,56 @@ export function ContactPanel({ contactId }: { contactId: string }) {
               >
                 Ver contato completo
               </Link>
-              {/* Fica no cabeçalho, e não dentro da aba "Ações", pra estar
-                  visível em qualquer aba do painel. */}
+              {/* Botão E situação no funil ficam no cabeçalho, e não dentro da
+                  aba "Ações": saber que o contato JÁ está num pipeline é a
+                  informação que evita mandar o mesmo lead duas vezes — não
+                  pode depender de trocar de aba pra aparecer. */}
               <button
                 onClick={() => setPipelineOpen(true)}
                 className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 py-1.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
               >
                 <Target className="size-3" /> Enviar para pipeline
               </button>
+              {opportunities.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    {opportunities.length === 1 ? "No pipeline" : "Nos pipelines"}
+                  </p>
+                  {opportunities.map((o) => {
+                    const pipeline = pipelines.find((p) => p.id === o.pipelineId);
+                    const stage = pipeline?.stages.find((s) => s.id === o.stageId);
+                    return (
+                      <Link
+                        key={o.id}
+                        href={`/leads?pipeline=${o.pipelineId}`}
+                        title="Abrir no funil de Leads"
+                        className="flex items-center gap-1.5 rounded-md border bg-white px-2 py-1.5 hover:border-indigo-300 hover:bg-slate-50"
+                      >
+                        <span
+                          className="size-1.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: stage?.color ?? "#94a3b8" }}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[11px] font-semibold text-slate-700">
+                            {pipeline?.name ?? "Pipeline"}
+                          </span>
+                          <span className="block truncate text-[10px] text-slate-500">
+                            {stage?.name ?? "—"}
+                            {o.status === "won"
+                              ? " · Ganho"
+                              : o.status === "lost"
+                                ? " · Perdido"
+                                : ""}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-[10px] font-bold text-slate-600">
+                          {formatBRL(o.value)}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div className="flex gap-1 border-b px-2 py-1.5">
               {(
