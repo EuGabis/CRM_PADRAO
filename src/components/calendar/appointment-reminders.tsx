@@ -4,15 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarClock, Clock, Target, User } from "lucide-react";
+import { CalendarClock, Clock, Target, User, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { contactName } from "@/lib/data/repos/contacts";
 import { useApptStore, useDbAppointments } from "@/lib/data/repos/db/appointments";
 import { useDbContacts } from "@/lib/data/repos/db/contacts";
@@ -132,56 +125,68 @@ export function AppointmentReminders() {
     : null;
 
   return (
-    <Dialog open onOpenChange={(o) => !o && dismiss()}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <CalendarClock className="size-4 text-indigo-500" />
-            {minutesLeft > 0
-              ? `Compromisso em ${minutesLeft} min`
-              : minutesLeft === 0
-                ? "Compromisso agora"
-                : `Compromisso começou há ${Math.abs(minutesLeft)} min`}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-2">
-          <p className="text-sm font-semibold text-slate-800">{appointment.title}</p>
+    // Canto superior direito, logo abaixo da topbar (h-12). Card fixo em vez de
+    // diálogo: o aviso não pode bloquear a tela nem tirar o foco de quem está
+    // no meio de uma conversa.
+    <div
+      role="alert"
+      className="fixed right-4 top-16 z-50 w-80 animate-in slide-in-from-top-2 fade-in rounded-xl border border-indigo-200 bg-white p-3 shadow-lg"
+    >
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-bold text-indigo-700">
+          <CalendarClock className="size-3.5" />
+          {minutesLeft > 0
+            ? `Compromisso em ${minutesLeft} min`
+            : minutesLeft === 0
+              ? "Compromisso agora"
+              : `Compromisso começou há ${Math.abs(minutesLeft)} min`}
+        </p>
+        <button
+          onClick={dismiss}
+          title="Dispensar"
+          className="flex size-5 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+      <div className="space-y-1.5">
+        <p className="text-sm font-semibold text-slate-800">{appointment.title}</p>
+        <p className="flex items-center gap-1.5 text-xs text-slate-600">
+          <Clock className="size-3.5 shrink-0 text-slate-400" />
+          {format(start, "EEEE, dd 'de' MMMM · HH:mm", { locale: ptBR })}–{format(end, "HH:mm")}
+        </p>
+        {contact && (
           <p className="flex items-center gap-1.5 text-xs text-slate-600">
-            <Clock className="size-3.5 text-slate-400" />
-            {format(start, "EEEE, dd 'de' MMMM · HH:mm", { locale: ptBR })}–
-            {format(end, "HH:mm")}
-          </p>
-          {contact && (
-            <p className="flex items-center gap-1.5 text-xs text-slate-600">
-              <User className="size-3.5 text-slate-400" />
+            <User className="size-3.5 shrink-0 text-slate-400" />
+            <span className="truncate">
               {contactName(contact)}
               {contact.phone ? ` · ${contact.phone}` : ""}
-            </p>
-          )}
-          {opportunity && (
-            <p className="flex items-center gap-1.5 text-xs text-slate-600">
-              <Target className="size-3.5 text-slate-400" />
-              {opportunity.name}
-            </p>
-          )}
-          <p className="text-[11px] text-slate-400">Calendário: {appointment.calendar}</p>
-        </div>
-        <DialogFooter className="flex-row items-center justify-between sm:justify-between">
-          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={snooze}>
-            Lembrar em 5 min
-          </Button>
-          <span className="flex items-center gap-2">
-            <Link href="/calendarios" onClick={dismiss}>
-              <Button variant="outline" size="sm" className="h-8 text-xs">
-                Abrir agenda
-              </Button>
-            </Link>
-            <Button size="sm" className="h-8 text-xs" onClick={dismiss}>
-              Ok
+            </span>
+          </p>
+        )}
+        {opportunity && (
+          <p className="flex items-center gap-1.5 text-xs text-slate-600">
+            <Target className="size-3.5 shrink-0 text-slate-400" />
+            <span className="truncate">{opportunity.name}</span>
+          </p>
+        )}
+        <p className="text-[11px] text-slate-400">Calendário: {appointment.calendar}</p>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={snooze}>
+          Lembrar em 5 min
+        </Button>
+        <span className="flex items-center gap-1.5">
+          <Link href="/calendarios" onClick={dismiss}>
+            <Button variant="outline" size="sm" className="h-7 text-[11px]">
+              Abrir agenda
             </Button>
-          </span>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </Link>
+          <Button size="sm" className="h-7 text-[11px]" onClick={dismiss}>
+            Ok
+          </Button>
+        </span>
+      </div>
+    </div>
   );
 }
