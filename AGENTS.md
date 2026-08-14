@@ -413,8 +413,9 @@ Cloud API → celular.
   0033 = departamentos, 0034 = logo da empresa,
   0035 = conversas por número, 0036 = view de estado da integração de pagamentos,
   0037 = painéis do dashboard (por usuário e por departamento),
-  0038 = `type='video'` em `messages` (ver mídia real abaixo);
-  **próxima migração livre: 0039**.
+  0038 = `type='video'` em `messages` (ver mídia real abaixo),
+  0039 = segmentação dos pipelines;
+  **próxima migração livre: 0040**.
 - Env (privadas, nunca `NEXT_PUBLIC_`): `WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`,
   `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` (default `v21.0`).
 - **Mídia real (imagem/áudio/vídeo)** — helpers em `src/lib/whatsapp/client.ts`
@@ -584,6 +585,19 @@ os módulos ainda não migrados continuam importando dos repos mock em
 - ✅ Backend F2b: módulo **Contatos 100% funcional** com Supabase — lista/CRUD/edição,
   listas inteligentes, tarefas, empresas (derivadas), campos personalizados (aparecem
   no cadastro e detalhe), importação/exportação CSV, log real de ações em massa.
+- ✅ **Segmentação de pipelines** (migração **0039**, aplicação no SQL Editor é
+  passo manual pendente) — `pipelines.scope` (`empresa` | `department` | `user`)
+  + `department_id`/`owner_id`. Todo pipeline existente vira `empresa` (default
+  da coluna), então nada muda nos dados de hoje. Usuário comum só cria funil
+  `user` para si; admin cria em qualquer escopo e muda quem vê pelo botão
+  "Quem vê". É RLS: o `with check` do INSERT/UPDATE impede promover o próprio
+  funil a `empresa` pela API. `private.pipeline_visible` /
+  `private.pipeline_manageable` (SECURITY DEFINER) entram nas policies de
+  `stages` e `opportunities` — funil escondido esconde fases e leads junto,
+  inclusive no painel e nos relatórios.
+  ⚠️ A 0039 **recria** as policies de `opportunities` nascidas da 0004
+  (`private.sees_all`) — ao mexer nelas, mantenha as DUAS condições.
+  Spec: `docs/superpowers/specs/2026-08-14-pipelines-segmentacao-design.md`.
 - ✅ Backend F2c: módulo **Leads/Pipelines 100% funcional** — kanban real com drag &
   drop persistente (status ganho/perda deduzido pela fase), criar oportunidade,
   vista lista com ações em massa, gestão completa de pipelines/fases,

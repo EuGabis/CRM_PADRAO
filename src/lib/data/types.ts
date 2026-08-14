@@ -31,10 +31,18 @@ export interface Stage {
   order: number;
 }
 
+/** Quem enxerga o pipeline (migração 0039). Ausente nos repos mock. */
+export type PipelineScope = "empresa" | "department" | "user";
+
 export interface Pipeline {
   id: string;
   name: string;
   stages: Stage[];
+  scope?: PipelineScope;
+  /** Preenchido quando scope = "department". */
+  departmentId?: string | null;
+  /** Preenchido quando scope = "user". */
+  ownerId?: string | null;
 }
 
 export interface Opportunity {
