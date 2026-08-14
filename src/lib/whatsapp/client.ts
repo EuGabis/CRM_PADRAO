@@ -4,6 +4,8 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { buildBodyComponents } from "./templates";
+
 const VERSION = process.env.WHATSAPP_GRAPH_VERSION || "v21.0";
 const BASE = `https://graph.facebook.com/${VERSION}`;
 
@@ -63,17 +65,42 @@ export function sendTemplate(
   });
 }
 
-export async function listTemplates(wabaId: string) {
-  const json = await graph(`${wabaId}/message_templates?status=APPROVED&limit=100`, {
-    method: "GET",
-  });
+export async function listTemplates(wabaId: string, opts?: { all?: boolean }) {
+  const statusFilter = opts?.all ? "" : "&status=APPROVED";
+  const json = await graph(
+    `${wabaId}/message_templates?limit=100${statusFilter}`,
+    { method: "GET" },
+  );
   return (json.data ?? []) as Array<{
+    id?: string;
     name: string;
     language: string;
     status: string;
     category: string;
     components: unknown[];
   }>;
+}
+
+export async function createTemplate(
+  wabaId: string,
+  input: { name: string; category: string; language: string; bodyText: string; examples: string[] },
+): Promise<{ id: string; status: string }> {
+  const json = await graph(`${wabaId}/message_templates`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: input.name,
+      category: input.category,
+      language: input.language,
+      components: buildBodyComponents(input.bodyText, input.examples),
+    }),
+  });
+  return { id: json?.id ?? "", status: json?.status ?? "PENDING" };
+}
+
+export async function deleteTemplate(wabaId: string, name: string): Promise<void> {
+  await graph(`${wabaId}/message_templates?name=${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
 }
 
 export function getNumberInfo(phoneNumberId: string) {
