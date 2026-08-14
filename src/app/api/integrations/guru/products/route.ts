@@ -1,12 +1,20 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchGuruProducts } from "@/lib/integrations/guru";
 
 /**
  * Proxy autenticado pro catálogo de produtos da Guru (GET /api/v2/products).
  * O User Token nunca pode ir para o navegador (a própria Guru pede isso na
- * doc) — esta rota roda no servidor com a sessão do usuário, lê o token de
- * `payment_credentials` (a RLS já restringe a leitura a admins da empresa)
- * e repassa o resultado.
+ * doc), então quem fala com a Guru é o servidor.
+ *
+ * Duas etapas, de propósito:
+ *   1. AUTORIZAÇÃO com a sessão do usuário — só responde a quem é membro da
+ *      empresa (a RLS de `location_members` garante isso).
+ *   2. LEITURA DO TOKEN com a service role. `payment_credentials` é admin-only
+ *      (0008) e continua sendo; ler com a sessão do usuário fazia a aba
+ *      Produtos responder "Guru não conectada" para todo mundo que não fosse
+ *      administrador — a conexão é da empresa, não de quem está logado.
+ *      O token não sai daqui: para o cliente vai só a lista de produtos.
  */
 export async function GET() {
   const supabase = await createClient();
@@ -24,7 +32,14 @@ export async function GET() {
     return Response.json({ error: "empresa não encontrada" }, { status: 404 });
   }
 
-  const { data: credential } = await supabase
+  let db;
+  try {
+    db = createAdminClient();
+  } catch {
+    return Response.json({ error: "servidor sem credenciais" }, { status: 503 });
+  }
+
+  const { data: credential } = await db
     .from("payment_credentials")
     .select("api_key")
     .eq("location_id", membership.location_id)
