@@ -1,8 +1,19 @@
 "use client";
 
-import { useMemo } from "react";
-import { Archive, ArrowUpDown, CheckCircle2, ChevronDown, Plus, Search, Star, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  Archive,
+  ArrowUpDown,
+  CheckCircle2,
+  ChevronDown,
+  ListChecks,
+  Plus,
+  Search,
+  Star,
+  X,
+} from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -24,6 +35,7 @@ import {
 import { useMyMembership } from "@/lib/data/repos/db/team";
 import { cn } from "@/lib/utils";
 import { SORT_OPTIONS, scopeLabel, statusLabel, useInboxUi } from "./inbox-filters";
+import { BulkTemplateDialog, type BulkTarget } from "./bulk-template-dialog";
 import type { ConversationFilter, InboxStatusView } from "@/lib/data/types";
 
 const FILTER_TABS: { key: ConversationFilter; label: string }[] = [
@@ -57,6 +69,11 @@ export function ConversationList({
     setStatus,
     reset,
   } = useInboxUi();
+  // Seleção múltipla: fica local porque só a própria lista (checkbox, barra de
+  // ações) mexe nela — ao contrário dos filtros, que o rail também controla.
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [templateOpen, setTemplateOpen] = useState(false);
   const all = useConversations(filter);
   const { contacts } = useDbContacts();
   const realtime = useRealtimeStatus();
@@ -103,6 +120,29 @@ export function ConversationList({
       : sort === "Mais antigas · Todas as mensagens" || sort === "Mais antigas · Mensagens manuais"
         ? [...conversations].reverse()
         : conversations;
+
+  // Alvos do envio em lote. `channelId` null = conversa sem canal de WhatsApp
+  // conectado (e-mail, Instagram, WhatsApp antigo) — o diálogo mostra essas
+  // separadas em vez de tentar enviar e falhar.
+  const targets: BulkTarget[] = useMemo(
+    () =>
+      [...selected]
+        // Busca em `todas`, não na lista filtrada: se o usuário selecionar e
+        // depois trocar de aba, o alvo sumiria da lista e o envio sairia com
+        // menos conversas do que o contador mostra.
+        .map((id) => {
+          const conv = todas.find((c) => c.id === id);
+          if (!conv) return null;
+          const contact = contacts.find((x) => x.id === conv.contactId);
+          return {
+            conversationId: conv.id,
+            contactName: contact ? contactName(contact) : "Contato",
+            channelId: conv.channel === "whatsapp" ? conv.channelId ?? null : null,
+          };
+        })
+        .filter((t): t is BulkTarget => !!t),
+    [selected, todas, contacts]
+  );
 
   const q = query.trim().toLowerCase();
   const visible = q
@@ -158,6 +198,19 @@ export function ConversationList({
           )}
         </h2>
         <div className="flex items-center gap-1">
+        <button
+          onClick={() => {
+            setSelecting((v) => !v);
+            setSelected(new Set());
+          }}
+          title="Selecionar várias conversas"
+          className={cn(
+            "flex size-7 items-center justify-center rounded-md",
+            selecting ? "bg-indigo-100 text-indigo-600" : "text-slate-400 hover:bg-slate-100"
+          )}
+        >
+          <ListChecks className="size-4" />
+        </button>
         <button
           onClick={onNew}
           title="Nova conversa"
@@ -228,6 +281,39 @@ export function ConversationList({
           </button>
         ))}
       </div>
+      {selecting && (
+        <div className="flex items-center gap-2 border-b bg-slate-50 px-3 py-1.5">
+          <Checkbox
+            checked={visible.length > 0 && selected.size === visible.length}
+            onCheckedChange={() =>
+              setSelected(
+                selected.size === visible.length ? new Set() : new Set(visible.map((c) => c.id))
+              )
+            }
+            aria-label="Selecionar todas as conversas visíveis"
+          />
+          <span className="text-[11px] font-medium text-slate-600">
+            {selected.size > 0 ? `${selected.size} selecionada${selected.size > 1 ? "s" : ""}` : "Selecionar"}
+          </span>
+          <button
+            onClick={() => setTemplateOpen(true)}
+            disabled={selected.size === 0}
+            className="ml-auto rounded-md bg-indigo-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
+          >
+            Enviar template
+          </button>
+          <button
+            onClick={() => {
+              setSelecting(false);
+              setSelected(new Set());
+            }}
+            title="Sair da seleção"
+            className="flex size-5 items-center justify-center rounded text-slate-400 hover:bg-slate-200"
+          >
+            <X className="size-3" />
+          </button>
+        </div>
+      )}
       <div className="border-b px-2 py-1.5">
         <div className="flex items-center gap-1.5 rounded-md border px-2">
           <Search className="size-3.5 text-slate-400" />
@@ -244,16 +330,36 @@ export function ConversationList({
           const contact = contacts.find((c) => c.id === conv.contactId);
           if (!contact) return null;
           return (
-            <button
+            <div
               key={conv.id}
+              className={cn(
+                "flex w-full items-start border-b hover:bg-slate-50",
+                selectedId === conv.id && "bg-indigo-50/70",
+                selecting && selected.has(conv.id) && "bg-indigo-50"
+              )}
+            >
+              {selecting && (
+                <span className="flex shrink-0 items-center self-stretch pl-3">
+                  <Checkbox
+                    checked={selected.has(conv.id)}
+                    onCheckedChange={() =>
+                      setSelected((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(conv.id)) next.delete(conv.id);
+                        else next.add(conv.id);
+                        return next;
+                      })
+                    }
+                    aria-label={`Selecionar conversa com ${contactName(contact)}`}
+                  />
+                </span>
+              )}
+            <button
               onClick={() => {
                 onSelect(conv.id);
                 conversationActions.markRead(conv.id);
               }}
-              className={cn(
-                "flex w-full items-start gap-2.5 border-b px-3 py-2.5 text-left hover:bg-slate-50",
-                selectedId === conv.id && "bg-indigo-50/70"
-              )}
+              className="flex min-w-0 flex-1 items-start gap-2.5 px-3 py-2.5 text-left"
             >
               <div className="relative shrink-0">
                 <Avatar className="size-9">
@@ -308,6 +414,7 @@ export function ConversationList({
                 />
               </span>
             </button>
+            </div>
           );
         })}
         {visible.length === 0 && (
@@ -326,6 +433,15 @@ export function ConversationList({
           </p>
         )}
       </div>
+      <BulkTemplateDialog
+        open={templateOpen}
+        onOpenChange={setTemplateOpen}
+        targets={targets}
+        onDone={() => {
+          setSelected(new Set());
+          setSelecting(false);
+        }}
+      />
     </div>
   );
 }

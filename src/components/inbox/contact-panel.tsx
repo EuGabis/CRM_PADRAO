@@ -9,6 +9,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Target,
   User,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -25,7 +26,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { EmptyState } from "@/components/shared/empty-state";
+import { SendToPipelineDialog } from "./send-to-pipeline-dialog";
 import { contactName } from "@/lib/data/repos/contacts";
 import { useDbContact } from "@/lib/data/repos/db/contacts";
 import { usePipelineDb } from "@/lib/data/repos/db/pipeline";
@@ -91,6 +92,7 @@ export function ContactPanel({ contactId }: { contactId: string }) {
   const [panel, setPanel] = useState<Panel>("campos");
   const [tab, setTab] = useState<"todos" | "dnd" | "acoes">("todos");
   const [fileTab, setFileTab] = useState("Todos");
+  const [pipelineOpen, setPipelineOpen] = useState(false);
   const { contact } = useDbContact(contactId);
   const { pipelines, opportunities: allOpps } = usePipelineDb();
   const opportunities = allOpps.filter((o) => o.contactId === contactId);
@@ -110,6 +112,14 @@ export function ContactPanel({ contactId }: { contactId: string }) {
               >
                 Ver contato completo
               </Link>
+              {/* Fica no cabeçalho, e não dentro da aba "Ações", pra estar
+                  visível em qualquer aba do painel. */}
+              <button
+                onClick={() => setPipelineOpen(true)}
+                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 py-1.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
+              >
+                <Target className="size-3" /> Enviar para pipeline
+              </button>
             </div>
             <div className="flex gap-1 border-b px-2 py-1.5">
               {(
@@ -185,7 +195,9 @@ export function ContactPanel({ contactId }: { contactId: string }) {
                     Oportunidades
                   </p>
                   {opportunities.length === 0 && (
-                    <p className="text-[11px] text-slate-400">Nenhuma oportunidade.</p>
+                    <p className="text-[11px] text-slate-400">
+                      Nenhuma oportunidade — use “Enviar para pipeline” acima.
+                    </p>
                   )}
                   {opportunities.map((o) => {
                     const pipeline = pipelines.find((p) => p.id === o.pipelineId);
@@ -284,6 +296,12 @@ export function ContactPanel({ contactId }: { contactId: string }) {
           </Tooltip>
         ))}
       </div>
+      <SendToPipelineDialog
+        open={pipelineOpen}
+        onOpenChange={setPipelineOpen}
+        contactId={contact.id}
+        contactName={contactName(contact)}
+      />
     </div>
   );
 }
