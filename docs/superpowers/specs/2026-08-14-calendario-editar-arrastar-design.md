@@ -92,6 +92,9 @@ módulo Calendários aberto não serviria para nada. Mostra título, horário,
 contato (com telefone), lead e calendário, com "Lembrar em 5 min", "Abrir
 agenda" e "Ok".
 
+**Card no canto superior direito, não diálogo no meio da tela**: o aviso não
+pode bloquear a tela nem tirar o foco de quem está no meio de uma conversa.
+
 Três decisões do motor:
 
 - **"Já avisei" fica no `localStorage`**, não no banco: é estado de tela, por

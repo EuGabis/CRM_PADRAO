@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bell, Headset, LifeBuoy, LogOut, Phone } from "lucide-react";
-import { toast } from "sonner";
+import { Headset, LifeBuoy, LogOut, Phone } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -15,6 +14,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { createClient } from "@/lib/supabase/client";
 import { clearBrowserSession } from "@/lib/auth/session-marker";
+import { NotificationsPanel } from "./notifications-panel";
 import { SupportPanel } from "./support-panel";
 import { WebphonePanel } from "./webphone-panel";
 import { useWebphone } from "./webphone-store";
@@ -76,13 +76,9 @@ export function Topbar() {
       >
         <Phone className="size-3.5" />
       </button>
-      <button
-        onClick={() => toast.info("Central de notificações chega em breve")}
-        className="relative flex size-7 items-center justify-center rounded-full text-slate-300 hover:bg-slate-700"
-      >
-        <Bell className="size-4" />
-        <span className="absolute right-1 top-1 size-1.5 rounded-full bg-orange-400" />
-      </button>
+      {/* O sino agora abre a central de verdade (avisos derivados de conversas,
+          agenda e agendamentos que falharam), no lugar do toast "chega em breve". */}
+      <NotificationsPanel />
       <DropdownMenu>
         <DropdownMenuTrigger render={<button className="rounded-full" />}>
           <Avatar className="size-7">

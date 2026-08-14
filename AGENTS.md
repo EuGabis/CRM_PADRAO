@@ -778,6 +778,16 @@ os módulos ainda não migrados continuam importando dos repos mock em
     location já está pronta. Mesmo padrão em `appointments.ts`. Follow-up:
     blindar o load pra só marcar `loaded:true` quando houver `locationId`
     (ou aguardar o `useDbStore` terminar de fato).
+- ✅ **Central de notificações** (sino da topbar; **sem migração e sem env**) —
+  os avisos são DERIVADOS do banco (conversa não lida, mensagem agendada que
+  falhou, compromisso nas próximas 24h), sem tabela de notificações: uma tabela
+  exigiria alguém escrevendo nela em webhook/automação/cron e o caminho
+  esquecido viraria aviso que nunca chega. Consultas próprias e enxutas em
+  `components/layout/notifications-panel.tsx` — o store de Conversas carrega
+  TODAS as mensagens da empresa e o sino vive no shell. "Lido" é carimbo no
+  `localStorage`; compromisso fica fora da contagem (o `at` é futuro e o
+  contador nunca zeraria). Spec:
+  `docs/superpowers/specs/2026-08-14-central-notificacoes-design.md`.
 - ⏳ Próximo: Automações reais (Edge Functions) tarefas 5–8, Agentes de IA.
 - ⏳ Backlog: personalizar template/remetente dos e-mails de auth do Supabase
   (pedido do Gabriel), storage (Mídia Drive/arquivos), dark mode, mobile.
