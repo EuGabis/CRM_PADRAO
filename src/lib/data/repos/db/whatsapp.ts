@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
 import { useDbStore } from "./contacts";
@@ -146,4 +146,113 @@ export const whatsappActions = {
     const json = await res.json().catch(() => ({}));
     return res.ok ? json.templates ?? [] : [];
   },
+
+  async listAllTemplates(channelId: string) {
+    const res = await fetch(
+      `/api/whatsapp/templates?channelId=${encodeURIComponent(channelId)}&all=1`,
+    );
+    const json = await res.json().catch(() => ({}));
+    return res.ok ? json.templates ?? [] : [];
+  },
+
+  async createTemplate(
+    channelId: string,
+    input: { name: string; category: string; language: string; bodyText: string; examples: string[] },
+  ): Promise<{ ok: boolean; error?: string }> {
+    const res = await fetch("/api/whatsapp/templates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channelId, ...input }),
+    });
+    const json = await res.json().catch(() => ({}));
+    return res.ok ? { ok: true } : { ok: false, error: json?.error };
+  },
+
+  async deleteTemplate(channelId: string, name: string): Promise<{ ok: boolean; error?: string }> {
+    const res = await fetch(
+      `/api/whatsapp/templates?channelId=${encodeURIComponent(channelId)}&name=${encodeURIComponent(name)}`,
+      { method: "DELETE" },
+    );
+    const json = await res.json().catch(() => ({}));
+    return res.ok ? { ok: true } : { ok: false, error: json?.error };
+  },
 };
+
+export interface TemplateLog {
+  id: string;
+  contactName: string;
+  templateName: string;
+  status: string | null;
+  createdAt: string;
+  deliveredAt: string | null;
+  readAt: string | null;
+  failedAt: string | null;
+  errorDetail: string | null;
+}
+
+function mapLog(r: any): TemplateLog {
+  const c = r.contacts ?? {};
+  const name = [c.first_name, c.last_name].filter(Boolean).join(" ").trim();
+  return {
+    id: r.id,
+    contactName: name || "—",
+    templateName: r.template_name,
+    status: r.status ?? null,
+    createdAt: r.created_at,
+    deliveredAt: r.delivered_at ?? null,
+    readAt: r.read_at ?? null,
+    failedAt: r.failed_at ?? null,
+    errorDetail: r.error_detail ?? null,
+  };
+}
+
+export function useTemplateLogs(channelId: string | null) {
+  const [logs, setLogs] = useState<TemplateLog[]>([]);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (!channelId) {
+      setLogs([]);
+      setReady(true);
+      return;
+    }
+    const supabase = createClient();
+    let active = true;
+
+    const query = () =>
+      supabase
+        .from("messages")
+        .select("id, template_name, status, created_at, delivered_at, read_at, failed_at, error_detail, contacts(first_name, last_name)")
+        .eq("channel_id", channelId)
+        .not("template_name", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+    setReady(false);
+    void query().then(({ data }) => {
+      if (!active) return;
+      setLogs((data ?? []).map(mapLog));
+      setReady(true);
+    });
+
+    const channel = supabase
+      .channel(`tmpl-logs-${channelId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "messages", filter: `channel_id=eq.${channelId}` },
+        () => {
+          void query().then(({ data }) => {
+            if (active) setLogs((data ?? []).map(mapLog));
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [channelId]);
+
+  return { logs, ready };
+}
