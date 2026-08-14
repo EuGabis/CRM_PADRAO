@@ -28,7 +28,9 @@ import {
 } from "@/components/ui/select";
 import { appointmentActions, useDbAppointments } from "@/lib/data/repos/db/appointments";
 import { useDbContacts } from "@/lib/data/repos/db/contacts";
+import { useDbOpportunities, useDbPipelines } from "@/lib/data/repos/db/pipeline";
 import { contactName } from "@/lib/data/repos/contacts";
+import type { Appointment, Opportunity } from "@/lib/data/types";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -39,9 +41,16 @@ const TABS = [
 
 /* -------------------------- Lista de compromissos ------------------------ */
 
-function ListaCompromissos({ onNew }: { onNew: () => void }) {
+function ListaCompromissos({
+  onNew,
+  onEdit,
+}: {
+  onNew: () => void;
+  onEdit: (a: Appointment) => void;
+}) {
   const { appointments } = useDbAppointments();
   const { contacts } = useDbContacts();
+  const opportunities = useDbOpportunities();
   const [filtro, setFiltro] = useState<"Futuro" | "Passado">("Futuro");
 
   const remove = async (id: string, title: string) => {
@@ -59,6 +68,9 @@ function ListaCompromissos({ onNew }: { onNew: () => void }) {
         ...a,
         startDate: new Date(a.start),
         contato: a.contactId ? byId.get(a.contactId) ?? "—" : "—",
+        lead: a.opportunityId
+          ? opportunities.find((o) => o.id === a.opportunityId)?.name ?? "—"
+          : "—",
       }))
       .filter((a) => (filtro === "Futuro" ? a.startDate.getTime() >= now : a.startDate.getTime() < now))
       .sort((a, b) =>
@@ -66,7 +78,7 @@ function ListaCompromissos({ onNew }: { onNew: () => void }) {
           ? a.startDate.getTime() - b.startDate.getTime()
           : b.startDate.getTime() - a.startDate.getTime()
       );
-  }, [appointments, contacts, filtro]);
+  }, [appointments, contacts, opportunities, filtro]);
 
   return (
     <>
@@ -106,12 +118,18 @@ function ListaCompromissos({ onNew }: { onNew: () => void }) {
               <th className="whitespace-nowrap px-4 py-2.5 font-medium">Calendário</th>
               <th className="whitespace-nowrap px-4 py-2.5 font-medium">Origem</th>
               <th className="whitespace-nowrap px-4 py-2.5 font-medium">Contato</th>
+              <th className="whitespace-nowrap px-4 py-2.5 font-medium">Lead</th>
               <th className="w-10 px-4 py-2.5" />
             </tr>
           </thead>
           <tbody>
             {rows.map((a) => (
-              <tr key={a.id} className="border-b last:border-0">
+              <tr
+                key={a.id}
+                onClick={() => onEdit(a)}
+                title="Clique para editar"
+                className="cursor-pointer border-b last:border-0 hover:bg-slate-50"
+              >
                 <td className="whitespace-nowrap px-4 py-2.5 font-medium text-slate-800">
                   {a.title}
                 </td>
@@ -134,9 +152,13 @@ function ListaCompromissos({ onNew }: { onNew: () => void }) {
                   </Badge>
                 </td>
                 <td className="whitespace-nowrap px-4 py-2.5 text-slate-600">{a.contato}</td>
+                <td className="whitespace-nowrap px-4 py-2.5 text-slate-600">{a.lead}</td>
                 <td className="px-4 py-2.5">
                   <button
-                    onClick={() => remove(a.id, a.title)}
+                    onClick={(e) => {
+                      e.stopPropagation(); // a linha inteira abre a edição
+                      remove(a.id, a.title);
+                    }}
                     className="text-slate-300 hover:text-red-500"
                     title="Excluir compromisso"
                   >
@@ -147,7 +169,7 @@ function ListaCompromissos({ onNew }: { onNew: () => void }) {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="py-10 text-center text-sm text-slate-500">
+                <td colSpan={7} className="py-10 text-center text-sm text-slate-500">
                   Nenhum compromisso {filtro === "Futuro" ? "futuro" : "passado"}
                 </td>
               </tr>
@@ -294,24 +316,61 @@ function ConfigCalendarios() {
   );
 }
 
-/* --------------------------- Novo compromisso ---------------------------- */
+/* --------------------- Compromisso (criar / editar) ---------------------- */
 
-function NewAppointmentDialog({
-  open,
+/** Valor do item "sem vínculo" dos selects (ver comentário no uso). */
+const NONE = "__none__";
+
+export interface AppointmentDraft {
+  /** Compromisso em edição; null = criando. */
+  appointment: Appointment | null;
+  /** Pré-preenchimento vindo do clique numa célula da grade. */
+  slot?: { date: string; startTime: string; endTime: string };
+}
+
+function AppointmentDialog({
+  draft,
   onOpenChange,
 }: {
-  open: boolean;
+  draft: AppointmentDraft | null;
   onOpenChange: (o: boolean) => void;
 }) {
   const { contacts } = useDbContacts();
+  const opportunities = useDbOpportunities();
+  const pipelines = useDbPipelines();
+  const editing = draft?.appointment ?? null;
+
   const [title, setTitle] = useState("");
   const [contactId, setContactId] = useState("");
+  const [opportunityId, setOpportunityId] = useState("");
   const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [startTime, setStartTime] = useState("10:00");
   const [endTime, setEndTime] = useState("10:45");
   const [saving, setSaving] = useState(false);
 
-  const create = async () => {
+  // Espelha o rascunho ao (re)abrir. Ajuste durante o render em vez de efeito:
+  // um setState em useEffect só para copiar prop dispara render extra a cada
+  // abertura.
+  const [snapshot, setSnapshot] = useState<AppointmentDraft | null>(null);
+  if (draft && snapshot !== draft) {
+    setSnapshot(draft);
+    setTitle(editing?.title ?? "");
+    setContactId(editing?.contactId ?? "");
+    setOpportunityId(editing?.opportunityId ?? "");
+    if (editing) {
+      const start = new Date(editing.start);
+      const end = new Date(editing.end);
+      setDate(format(start, "yyyy-MM-dd"));
+      setStartTime(format(start, "HH:mm"));
+      setEndTime(format(end, "HH:mm"));
+    } else if (draft.slot) {
+      setDate(draft.slot.date);
+      setStartTime(draft.slot.startTime);
+      setEndTime(draft.slot.endTime);
+    }
+  }
+
+  const save = async () => {
     if (!title.trim() || !date || !startTime || !endTime) {
       toast.error("Preencha título, data e horários");
       return;
@@ -321,28 +380,48 @@ function NewAppointmentDialog({
       return;
     }
     setSaving(true);
-    const ok = await appointmentActions.add({
+    const payload = {
       title: title.trim(),
       contactId: contactId || null,
+      opportunityId: opportunityId || null,
       start: `${date}T${startTime}:00-03:00`,
       end: `${date}T${endTime}:00-03:00`,
-    });
+    };
+    const ok = editing
+      ? await appointmentActions.update(editing.id, payload)
+      : await appointmentActions.add(payload);
     setSaving(false);
     if (!ok) {
-      toast.error("Não foi possível criar o compromisso");
+      toast.error(
+        editing ? "Não foi possível salvar o compromisso" : "Não foi possível criar o compromisso"
+      );
       return;
     }
-    toast.success("Compromisso criado");
-    setTitle("");
-    setContactId("");
+    toast.success(editing ? "Compromisso atualizado" : "Compromisso criado");
     onOpenChange(false);
   };
 
+  const removeAppointment = async () => {
+    if (!editing) return;
+    if (!window.confirm(`Excluir o compromisso "${editing.title}"?`)) return;
+    if (await appointmentActions.remove(editing.id)) {
+      toast.success("Compromisso excluído");
+      onOpenChange(false);
+    } else {
+      toast.error("Não foi possível excluir");
+    }
+  };
+
+  const opportunityLabel = (o: Opportunity) => {
+    const pipe = pipelines.find((p) => p.id === o.pipelineId)?.name;
+    return pipe ? `${o.name} · ${pipe}` : o.name;
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={!!draft} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Novo compromisso</DialogTitle>
+          <DialogTitle>{editing ? "Editar compromisso" : "Novo compromisso"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
@@ -356,15 +435,26 @@ function NewAppointmentDialog({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Contato (opcional)</Label>
-            <Select value={contactId} onValueChange={(v) => setContactId(v ?? "")}>
+            {/* Sentinela "none" em vez de "": um SelectItem de valor vazio não
+                é um caso que o Base UI trate — o item nem fica selecionável. */}
+            <Select
+              value={contactId || NONE}
+              onValueChange={(v) => setContactId(!v || v === NONE ? "" : v)}
+            >
               <SelectTrigger className="h-8 w-full text-xs">
                 <SelectValue>
                   {contactId
-                    ? contactName(contacts.find((c) => c.id === contactId)!)
+                    ? (() => {
+                        const c = contacts.find((x) => x.id === contactId);
+                        return c ? contactName(c) : "Sem contato vinculado";
+                      })()
                     : "Sem contato vinculado"}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={NONE} className="text-xs">
+                  Sem contato vinculado
+                </SelectItem>
                 {contacts.slice(0, 100).map((c) => (
                   <SelectItem key={c.id} value={c.id} className="text-xs">
                     {contactName(c)}
@@ -372,6 +462,47 @@ function NewAppointmentDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Lead (opcional)</Label>
+            <Select
+              value={opportunityId || NONE}
+              onValueChange={(v) => {
+                const id = !v || v === NONE ? "" : v;
+                setOpportunityId(id);
+                // Escolher o lead já traz o contato dele quando não havia
+                // nenhum — é sempre o mesmo contato, e digitar de novo só
+                // criaria chance de vincular a pessoa errada.
+                const opp = opportunities.find((o) => o.id === id);
+                if (opp && !contactId) setContactId(opp.contactId);
+              }}
+            >
+              <SelectTrigger className="h-8 w-full text-xs">
+                <SelectValue>
+                  {opportunityId
+                    ? (() => {
+                        const o = opportunities.find((x) => x.id === opportunityId);
+                        return o ? opportunityLabel(o) : "Sem lead vinculado";
+                      })()
+                    : "Sem lead vinculado"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE} className="text-xs">
+                  Sem lead vinculado
+                </SelectItem>
+                {opportunities.slice(0, 100).map((o) => (
+                  <SelectItem key={o.id} value={o.id} className="text-xs">
+                    {opportunityLabel(o)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {opportunities.length === 0 && (
+              <p className="text-[10px] text-slate-400">
+                Nenhum lead no funil ainda — crie em Leads.
+              </p>
+            )}
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
@@ -403,13 +534,27 @@ function NewAppointmentDialog({
             </div>
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button onClick={create} disabled={saving}>
-            {saving ? "Criando..." : "Criar compromisso"}
-          </Button>
+        <DialogFooter className="flex-row items-center justify-between sm:justify-between">
+          {editing ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-xs text-red-600 hover:text-red-700"
+              onClick={removeAppointment}
+            >
+              <Trash2 className="size-3.5" /> Excluir
+            </Button>
+          ) : (
+            <span />
+          )}
+          <span className="flex items-center gap-2">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? "Salvando..." : editing ? "Salvar" : "Criar compromisso"}
+            </Button>
+          </span>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -420,7 +565,21 @@ function NewAppointmentDialog({
 
 export default function CalendariosPage() {
   const [tab, setTab] = useState(TABS[0].label);
-  const [newOpen, setNewOpen] = useState(false);
+  // Um diálogo só para criar e editar: o rascunho diz qual dos dois é.
+  const [draft, setDraft] = useState<AppointmentDraft | null>(null);
+
+  const openNew = () => setDraft({ appointment: null });
+  const openSlot = (day: Date, hour: number) =>
+    setDraft({
+      appointment: null,
+      slot: {
+        date: format(day, "yyyy-MM-dd"),
+        startTime: `${String(hour).padStart(2, "0")}:00`,
+        // 45min é a duração padrão sugerida nas Configurações do módulo.
+        endTime: `${String(hour).padStart(2, "0")}:45`,
+      },
+    });
+
   return (
     <div>
       <SubNav tabs={TABS} active={tab} onChange={setTab} />
@@ -431,22 +590,29 @@ export default function CalendariosPage() {
               <h1 className="text-lg font-bold text-slate-900">Calendários</h1>
               <div className="flex items-center gap-3">
                 <p className="text-xs text-slate-500">
-                  Eventos indigo são do CRM · verdes virão do Google (integração futura)
+                  Clique num horário para criar · clique no evento para editar · arraste para
+                  mudar de dia ou hora
                 </p>
-                <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setNewOpen(true)}>
+                <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={openNew}>
                   <Plus className="size-3.5" /> Novo compromisso
                 </Button>
               </div>
             </div>
-            <WeekCalendar />
+            <WeekCalendar
+              onCreateAt={openSlot}
+              onEdit={(appointment) => setDraft({ appointment })}
+            />
           </>
         ) : tab === "Lista de compromissos" ? (
-          <ListaCompromissos onNew={() => setNewOpen(true)} />
+          <ListaCompromissos
+            onNew={openNew}
+            onEdit={(appointment) => setDraft({ appointment })}
+          />
         ) : (
           <ConfigCalendarios />
         )}
       </div>
-      <NewAppointmentDialog open={newOpen} onOpenChange={setNewOpen} />
+      <AppointmentDialog draft={draft} onOpenChange={(o) => !o && setDraft(null)} />
     </div>
   );
 }

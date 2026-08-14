@@ -415,8 +415,9 @@ Cloud API → celular.
   0037 = painéis do dashboard (por usuário e por departamento),
   0038 = `type='video'` em `messages` (ver mídia real abaixo),
   0039 = segmentação dos pipelines,
-  0040 = só admin exclui conversa/mensagem;
-  **próxima migração livre: 0041**.
+  0040 = só admin exclui conversa/mensagem,
+  0041 = compromisso vinculado a lead;
+  **próxima migração livre: 0042**.
 - Env (privadas, nunca `NEXT_PUBLIC_`): `WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`,
   `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_GRAPH_VERSION` (default `v21.0`).
 - **Mídia real (imagem/áudio/vídeo)** — helpers em `src/lib/whatsapp/client.ts`
@@ -682,6 +683,14 @@ os módulos ainda não migrados continuam importando dos repos mock em
 - ✅ Backend F2f: módulo **Calendários** real — compromissos do banco (repo
   db/appointments.ts), grade semanal com navegação e "Hoje", criar/excluir
   compromisso (com contato vinculado), lista futuro/passado. Sync Google = futura.
+  **Editar, criar pela grade, vincular a lead e arrastar** (migração **0041**,
+  aplicação no SQL Editor é passo manual pendente) — `appointments.opportunity_id`
+  (`on delete set null`: excluir o lead não apaga a reunião de ninguém); clicar
+  numa célula cria naquele dia/hora, clicar no evento edita, arrastar muda de
+  dia/hora com dnd-kit. `move()` **preserva os minutos e a duração** (a célula é
+  de 1h; zerar minutos mudaria em silêncio um horário combinado) e é otimista
+  com rollback. Escolher o lead preenche o contato só quando ele está vazio.
+  Spec: `docs/superpowers/specs/2026-08-14-calendario-editar-arrastar-design.md`.
 - ✅ **Cadastro fechado** (migração 0006): só entra quem tem convite pendente — o
   trigger de signup aborta a transação, então nem chamando a API de auth direto
   a conta é criada. Reabrir: `update private.app_settings set signup_mode = 'open';`

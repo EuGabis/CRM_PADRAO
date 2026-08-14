@@ -167,6 +167,8 @@ export interface Workflow {
 export interface Appointment {
   id: string;
   contactId: string | null;
+  /** Lead (oportunidade) da negociação — migração 0041. */
+  opportunityId?: string | null;
   title: string;
   start: string;
   end: string;
