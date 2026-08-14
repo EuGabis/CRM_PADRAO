@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Select,
   SelectContent,
@@ -9,6 +9,35 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDbPipelines } from "@/lib/data/repos/db/pipeline";
+
+/**
+ * Pipeline do widget: controlado pela visualização salva quando ela existe,
+ * local quando o widget é usado solto. Sem isso, escolher o pipeline do funil
+ * seria esquecido a cada recarregamento — que é justamente o que se quer
+ * guardar num painel personalizado.
+ */
+export interface WidgetPipelineProps {
+  pipelineId?: string;
+  onPipelineChange?: (id: string) => void;
+}
+
+export function usePipelineSelection(
+  { pipelineId, onPipelineChange }: WidgetPipelineProps,
+  fallback: string
+): [string, (id: string) => void] {
+  const [local, setLocal] = useState(pipelineId ?? fallback);
+  // Controlado SÓ quando há para onde gravar. Sem o handler (painel de fábrica,
+  // ou painel do departamento aberto por quem não edita) o seletor volta a ser
+  // local — senão ficaria travado no valor salvo, sem reagir ao clique.
+  const value = onPipelineChange ? (pipelineId ?? fallback) : local;
+  return [
+    value,
+    (id: string) => {
+      if (onPipelineChange) onPipelineChange(id);
+      else setLocal(id);
+    },
+  ];
+}
 
 export function WidgetCard({
   title,

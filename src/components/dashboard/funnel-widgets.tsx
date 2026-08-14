@@ -1,16 +1,15 @@
 "use client";
 
-import { useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { WidgetCard } from "./widget-card";
+import { WidgetCard, usePipelineSelection, type WidgetPipelineProps } from "./widget-card";
 import { formatBRL } from "@/lib/data/repos/opportunities";
 import { useDbPipeline } from "@/lib/data/repos/db/pipeline";
 import { useDashboardOps } from "./date-range";
 import { DrilldownDialog, useDrilldown } from "./drilldown";
 import { TOOLTIP_STYLE } from "./opportunity-widgets";
 
-export function FunnelWidget() {
-  const [pipeId, setPipeId] = useState("");
+export function FunnelWidget(props: WidgetPipelineProps = {}) {
+  const [pipeId, setPipeId] = usePipelineSelection(props, "");
   const pipeline = useDbPipeline(pipeId);
   const ops = useDashboardOps();
   const { drilldown, open, close } = useDrilldown();
@@ -75,8 +74,8 @@ export function FunnelWidget() {
   );
 }
 
-export function StageDistribution() {
-  const [pipeId, setPipeId] = useState("");
+export function StageDistribution(props: WidgetPipelineProps = {}) {
+  const [pipeId, setPipeId] = usePipelineSelection(props, "");
   const pipeline = useDbPipeline(pipeId);
   const ops = useDashboardOps();
   const { drilldown, open, close } = useDrilldown();

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -14,7 +13,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { WidgetCard } from "./widget-card";
+import { WidgetCard, usePipelineSelection, type WidgetPipelineProps } from "./widget-card";
 import { formatBRL } from "@/lib/data/repos/opportunities";
 import { useDashboardOps } from "./date-range";
 import { DrilldownDialog, useDrilldown } from "./drilldown";
@@ -37,8 +36,8 @@ const STATUS_COLOR: Record<string, string> = {
   lost: "#ef4444",
 };
 
-export function StatusDonut() {
-  const [pipe, setPipe] = useState("all");
+export function StatusDonut(props: WidgetPipelineProps = {}) {
+  const [pipe, setPipe] = usePipelineSelection(props, "all");
   const ops = useDashboardOps(pipe);
   const { drilldown, open, close } = useDrilldown();
   const data = (["open", "won", "lost"] as const)
@@ -119,8 +118,8 @@ export function StatusDonut() {
   );
 }
 
-export function ValueBars() {
-  const [pipe, setPipe] = useState("all");
+export function ValueBars(props: WidgetPipelineProps = {}) {
+  const [pipe, setPipe] = usePipelineSelection(props, "all");
   const ops = useDashboardOps(pipe);
   const { drilldown, open, close } = useDrilldown();
   const data = (["open", "won", "lost"] as const).map((s) => ({
@@ -171,8 +170,8 @@ export function ValueBars() {
   );
 }
 
-export function ConversionGauge() {
-  const [pipe, setPipe] = useState("all");
+export function ConversionGauge(props: WidgetPipelineProps = {}) {
+  const [pipe, setPipe] = usePipelineSelection(props, "all");
   const ops = useDashboardOps(pipe);
   const { drilldown, open, close } = useDrilldown();
   const won = ops.filter((o) => o.status === "won");
