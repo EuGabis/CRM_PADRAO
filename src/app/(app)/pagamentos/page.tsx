@@ -143,22 +143,30 @@ function GuruProviderCard() {
           </>
         )
       )}
-      <Button
-        variant={loaded && guru.connected ? "outline" : "default"}
-        size="sm"
-        className="mt-3 h-7 text-xs"
-        disabled={!loaded}
-        onClick={() => {
-          if (!isAdmin) {
-            toast.info("Apenas administradores podem configurar integrações de pagamento");
-            return;
-          }
-          setOpen(true);
-        }}
-      >
-        {!loaded ? "..." : guru.connected ? "Gerenciar" : "Conectar"}
-      </Button>
-      <GuruDialog open={open} onOpenChange={setOpen} />
+      {/* Configurar a Guru é coisa de admin — para os demais o botão nem
+          aparece, em vez de aparecer e recusar com um toast. */}
+      {isAdmin ? (
+        <>
+          <Button
+            variant={loaded && guru.connected ? "outline" : "default"}
+            size="sm"
+            className="mt-3 h-7 text-xs"
+            disabled={!loaded}
+            onClick={() => setOpen(true)}
+          >
+            {!loaded ? "..." : guru.connected ? "Gerenciar" : "Conectar"}
+          </Button>
+          <GuruDialog open={open} onOpenChange={setOpen} />
+        </>
+      ) : (
+        loaded && (
+          <p className="mt-3 text-[10px] text-slate-400">
+            {guru.connected
+              ? "Conexão gerenciada pelos administradores da empresa."
+              : "A Guru ainda não foi conectada. Fale com um administrador."}
+          </p>
+        )
+      )}
     </div>
   );
 }
@@ -1857,11 +1865,21 @@ function ArquivosTab() {
 /* ---------------------------------- Page --------------------------------- */
 
 export default function PagamentosPage() {
+  const { isAdmin, loaded: meLoaded } = useMyMembership();
+  // Integrações é tela de configuração: só admin. Quem não é cai em Vendas.
+  const tabs = useMemo(
+    () => (isAdmin ? TABS : TABS.filter((t) => t.label !== "Integrações")),
+    [isAdmin]
+  );
   const [tab, setTab] = useState("Integrações");
+
+  useEffect(() => {
+    if (meLoaded && !isAdmin && tab === "Integrações") setTab("Vendas");
+  }, [meLoaded, isAdmin, tab]);
 
   return (
     <div>
-      <SubNav tabs={TABS} active={tab} onChange={setTab} />
+      <SubNav tabs={tabs} active={tab} onChange={setTab} />
       <div className="p-6">
         {tab === "Integrações" ? (
           <>

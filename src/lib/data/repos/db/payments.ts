@@ -65,6 +65,22 @@ const EMPTY_GURU: GuruCredential = {
   historyBackfillDone: false,
 };
 
+/**
+ * Estado da integração para quem NÃO é admin: mesma forma do crédito, mas sem
+ * token nenhum — a view da 0036 não expõe api_key/webhook_token.
+ */
+function mapGuruStatus(row: any): GuruCredential {
+  return {
+    connected: true,
+    apiKey: "",
+    webhookToken: "",
+    connectedAt: row.connected_at ?? null,
+    lastSyncedAt: row.last_synced_at ?? null,
+    historyBackfillCursor: row.history_backfill_cursor ?? null,
+    historyBackfillDone: row.history_backfill_done ?? false,
+  };
+}
+
 function mapGuruCredential(row: any): GuruCredential {
   return {
     connected: true,
@@ -146,7 +162,17 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
       return;
     }
     const supabase = createClient();
-    const [{ data: credential }, { data: subscriptions }] = await Promise.all([
+    const [{ data: status }, { data: credential }, { data: subscriptions }] = await Promise.all([
+      // Estado da integração — legível por qualquer membro (view da 0036).
+      // Sem isso, usuário não-admin via "Conectar Guru" numa empresa já
+      // conectada, porque payment_credentials é admin-only.
+      supabase
+        .from("payment_integration_status")
+        .select("*")
+        .eq("location_id", locationId)
+        .eq("provider", "guru")
+        .maybeSingle(),
+      // Só o admin recebe linha aqui (tokens). Para os demais volta vazio.
       supabase
         .from("payment_credentials")
         .select("*")
@@ -163,7 +189,11 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
     set({
       loaded: true,
       loading: false,
-      guru: credential ? mapGuruCredential(credential) : EMPTY_GURU,
+      guru: credential
+        ? mapGuruCredential(credential)
+        : status
+          ? mapGuruStatus(status)
+          : EMPTY_GURU,
       subscriptions: (subscriptions ?? []).map(mapPaymentSubscription),
     });
 
