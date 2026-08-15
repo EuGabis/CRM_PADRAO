@@ -401,7 +401,7 @@ git commit --author="EuGabis <pereiragabriel08790@gmail.com>" -m "feat(whatsapp)
 
 ```sql
 -- ============================================================
--- Lito CRM — Rastreio de entrega dos TEMPLATES de WhatsApp
+-- CRM ON — Rastreio de entrega dos TEMPLATES de WhatsApp
 --
 -- template_name marca a mensagem como rastreável (só envios de template).
 -- delivered_at/read_at/failed_at guardam a linha do tempo carimbada pelo

@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Calendários: agenda por usuário
+-- CRM ON — Calendários: agenda por usuário
 --
 -- Até aqui a agenda era uma só: todo membro via (e apagava) o compromisso de
 -- qualquer um. Agora cada compromisso tem dono e cada pessoa vê a própria

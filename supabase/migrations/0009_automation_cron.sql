@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Automações: agendamento pelo pg_cron
+-- CRM ON — Automações: agendamento pelo pg_cron
 -- Migração única: rode este arquivo inteiro de uma vez no SQL Editor.
 --
 -- PRÉ-REQUISITOS (antes de aplicar):
@@ -25,7 +25,7 @@ revoke all on private.automation_config from anon, authenticated;
 insert into private.automation_config (id, tick_url, secret)
 values (
   true,
-  'https://lito-crm.vercel.app/api/automations/tick',
+  'https://SEU-DOMINIO/api/automations/tick',
   'COLE_O_AUTOMATION_SECRET_AQUI'
 )
 on conflict (id) do update
@@ -65,13 +65,13 @@ $$;
 revoke all on function private.automation_tick() from public, anon, authenticated;
 
 -- ---------- Agendar a cada minuto ----------
-select cron.unschedule('lito-automation-tick')
-where exists (select 1 from cron.job where jobname = 'lito-automation-tick');
+select cron.unschedule('crm-automation-tick')
+where exists (select 1 from cron.job where jobname = 'crm-automation-tick');
 
-select cron.schedule('lito-automation-tick', '* * * * *', $$select private.automation_tick()$$);
+select cron.schedule('crm-automation-tick', '* * * * *', $$select private.automation_tick()$$);
 
 -- ---------- Verificação (rode depois de aplicar) ----------
--- select jobname, schedule, active from cron.job where jobname = 'lito-automation-tick';
+-- select jobname, schedule, active from cron.job where jobname = 'crm-automation-tick';
 -- select status_code, count(*) from net._http_response
 --   where created > now() - interval '5 minutes' group by status_code;
 --   -> esperado: 200

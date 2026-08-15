@@ -11,7 +11,12 @@ export const brand = {
  * a entregabilidade. EDITE com o endereço real da empresa.
  */
 export const emailBrand = {
-  name: "Lito Aviation Academy",
-  shortName: "Lito",
-  address: "Lito Aviation Academy · Rua Brás Cubas, 231 · Vila Lanzara, Guarulhos/SP · CEP 07115-080",
+  name: brand.name,
+  shortName: brand.shortName,
+  /**
+   * PREENCHA com o endereço postal real da empresa antes de disparar campanha.
+   * Vazio por enquanto: um endereço inventado é pior que nenhum, e o rodapé
+   * simplesmente não mostra a linha quando está em branco.
+   */
+  address: "",
 } as const;

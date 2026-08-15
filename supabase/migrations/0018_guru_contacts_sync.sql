@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Contatos reais da Guru (GET /api/v2/contacts)
+-- CRM ON — Contatos reais da Guru (GET /api/v2/contacts)
 --
 -- A aba Contatos até aqui (migração 0016) agregava contatos a partir de
 -- payment_events/payment_subscriptions — só cobre quem já apareceu numa

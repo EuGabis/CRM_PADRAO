@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Sincronização ativa com a Guru (pg_cron a cada minuto)
+-- CRM ON — Sincronização ativa com a Guru (pg_cron a cada minuto)
 --
 -- Além do webhook (migração 0008), a Guru também expõe uma API REST
 -- (digitalmanager.guru/api/v2/transactions|subscriptions, autenticada com
@@ -63,15 +63,15 @@ alter table public.payment_subscriptions
 -- de escrito direto aqui. Rode 0013 e 0014 juntos, em ordem; 0014 troca
 -- o job por uma versão que não expõe o segredo em texto puro.
 -- ============================================================
-select cron.unschedule('lito-guru-sync')
-where exists (select 1 from cron.job where jobname = 'lito-guru-sync');
+select cron.unschedule('crm-guru-sync')
+where exists (select 1 from cron.job where jobname = 'crm-guru-sync');
 
 select cron.schedule(
-  'lito-guru-sync',
+  'crm-guru-sync',
   '* * * * *',
   $$
   select net.http_post(
-    url := 'https://lito-crm.vercel.app/api/integrations/guru/sync',
+    url := 'https://SEU-DOMINIO/api/integrations/guru/sync',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'x-guru-sync-secret', 'SUBSTITUIDO_PELA_MIGRACAO_0014'

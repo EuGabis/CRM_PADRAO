@@ -1,6 +1,6 @@
 # Construtor de Formulários de Captação — Design Spec
 
-> Módulo **Sites → Formulários** do Lito CRM: criar formulários de captação de leads,
+> Módulo **Sites → Formulários** do CRM ON: criar formulários de captação de leads,
 > incorporá-los no site (embed `<script>`, igual ao RVOPS) e cada envio vira **Contato**
 > no CRM, agrupado numa **Lista Inteligente** por formulário, pronto pra e-mail marketing.
 > Data: 2026-08-12. Convenções: `AGENTS.md`.
@@ -9,7 +9,7 @@
 
 Substituir o mock da aba **Sites → Formulários** por um construtor real: o usuário monta
 o formulário (campos + detalhes), o CRM gera um **snippet `<script>`** pra colar no site
-(litoaviation.com), e cada preenchimento **cria/atualiza um Contato** com a **tag do
+(seudominio.com.br), e cada preenchimento **cria/atualiza um Contato** com a **tag do
 formulário**. Cada formulário nasce com uma **Lista Inteligente** homônima (filtra por essa
 tag), então os leads capturados ficam prontos pra **disparo de e-mail marketing** (o
 composer de campanha já mira `tag` ou `smart_list`).
@@ -107,7 +107,7 @@ Responde **JavaScript** (`Content-Type: application/javascript`), público, cach
 O script:
 - Lê a config do form (inline no próprio JS gerado, ou fetch da config pública).
 - Renderiza o `<form>` **sem classes de estilo** (herda o CSS do site) num container: onde o
-  `<script>` está, ou um `<div id="lito-form-{slug}">` se existir.
+  `<script>` está, ou um `<div id="crm-form-{slug}">` se existir.
 - Inclui um campo **honeypot** oculto (anti-spam).
 - No `submit`: `fetch POST /api/forms/{slug}/submit` (JSON dos campos + honeypot). Em
   sucesso → redireciona pra `success_value` (se `redirect`) ou substitui o form pela

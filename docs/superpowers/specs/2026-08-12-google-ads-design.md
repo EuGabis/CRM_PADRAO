@@ -1,6 +1,6 @@
 # Google Ads (Visão geral, somente leitura) — Design Spec
 
-> Módulo **Relatórios → Google Ads** do Lito CRM: espelhar a tela
+> Módulo **Relatórios → Google Ads** do CRM ON: espelhar a tela
 > "Visão geral" do Google Ads (KPIs + gráfico + campanhas) com dados reais da
 > conta conectada, via **API oficial do Google Ads**, **somente leitura**.
 > Data: 2026-08-12. Convenções: `AGENTS.md`.
@@ -74,7 +74,7 @@ máquina-a-máquina e fica fora do matcher). Nenhuma alteração no `proxy.ts`.
 
 Redirect URI registrado no Google Cloud (Authorized redirect URIs):
 `http://localhost:3000/api/google-ads/oauth/callback` (dev) e
-`https://lito-crm.vercel.app/api/google-ads/oauth/callback` (prod).
+`https://SEU-DOMINIO/api/google-ads/oauth/callback` (prod).
 
 ## Modelo de dados (migração `0023_google_ads.sql`)
 

@@ -1,19 +1,18 @@
-import { emailBrand } from "@/lib/config/brand";
-
 /**
- * Remetente dos e-mails transacionais.
+ * Remetente dos e-mails transacionais, vindo de `EMAIL_FROM`.
  *
- * Usa `EMAIL_FROM`, MAS ignora o remetente de teste do Resend (`@resend.dev`),
- * que só entrega ao dono da conta e derruba envios em produção. Se `EMAIL_FROM`
- * estiver vazio ou apontar para resend.dev, cai no domínio verificado da marca.
+ * Ignora o remetente de teste do Resend (`@resend.dev`): ele só entrega ao dono
+ * da conta, então em produção o e-mail some sem erro visível.
+ *
+ * Devolve `null` quando não há remetente utilizável — e NÃO tem domínio de
+ * fallback embutido de propósito. Um fallback fixo faria o CRM enviar em nome
+ * de um domínio que talvez não seja seu: o Resend recusa (domínio não
+ * verificado na sua conta) ou, pior, o e-mail sai com uma identidade errada.
+ * Configure `EMAIL_FROM` com um endereço do seu domínio verificado no Resend.
  */
-const VERIFIED_DEFAULT = `${emailBrand.name} <nao-responder@news.litoaviation.com>`;
-
-export function senderAddress(): string {
+export function senderAddress(): string | null {
   const configured = process.env.EMAIL_FROM?.trim();
-  if (!configured || /@resend\.dev>?/i.test(configured)) {
-    return VERIFIED_DEFAULT;
-  }
+  if (!configured || /@resend\.dev>?/i.test(configured)) return null;
   return configured;
 }
 

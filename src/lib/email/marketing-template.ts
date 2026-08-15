@@ -58,9 +58,11 @@ export function renderCampaignEmail(opts: {
                   Você recebeu este e-mail do ${emailBrand.name}. Se não quiser mais receber nossas
                   campanhas, <a href="${unsubscribeUrl}" style="color:#64748b;text-decoration:underline;">descadastre-se aqui</a>.
                 </p>
-                <p style="margin:6px 0 0;color:#cbd5e1;font-size:11px;line-height:1.6;">
-                  ${emailBrand.address}
-                </p>
+                ${
+                  emailBrand.address
+                    ? `<p style="margin:6px 0 0;color:#cbd5e1;font-size:11px;line-height:1.6;">${emailBrand.address}</p>`
+                    : ""
+                }
               </td>
             </tr>
           </table>
@@ -71,7 +73,9 @@ export function renderCampaignEmail(opts: {
   </body>
 </html>`;
 
-  const text = `${stripHtml(bodyHtml)}\n\n—\nPara descadastrar: ${unsubscribeUrl}\n${emailBrand.address}`;
+  const text = `${stripHtml(bodyHtml)}\n\n—\nPara descadastrar: ${unsubscribeUrl}${
+    emailBrand.address ? `\n${emailBrand.address}` : ""
+  }`;
 
   return { html, text };
 }

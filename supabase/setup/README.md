@@ -22,7 +22,7 @@ pelo painel.
 Supabase → **Database** → **Extensions** → habilite **`pg_cron`**.
 
 Pular este passo já mordeu uma vez: a `0007` termina com
-`cron.schedule('lito-aniversarios', ...)`. Sem a extensão, essa linha falha, e como
+`cron.schedule('crm-aniversarios', ...)`. Sem a extensão, essa linha falha, e como
 o SQL Editor roda tudo em transação **a migração inteira volta atrás** — sem erro
 visível se você não leu a saída até o fim. O sintoma é `automation_runs` e
 `automation_logs` não existirem depois de você jurar que rodou a `0007`.
@@ -88,11 +88,24 @@ where schemaname = 'public' and rowsecurity = false;
 
 A segunda consulta **tem que voltar vazia**. Qualquer tabela aí é dado exposto.
 
+## Banco já instalado antes de 2026-08-15
+
+Se o banco foi montado com a versão anterior destes arquivos, ele carrega duas
+heranças que a instalação nova não tem. Rode, em ordem:
+
+1. `migrations/0033_departamentos.sql` — o gerador lia os arquivos como ANSI e
+   gravava UTF-8, então os acentos chegaram corrompidos. O caso com dado real é
+   a descrição do departamento Comercial, que vive dentro do corpo de uma função
+   e só apareceria ao criar a primeira empresa. A migração é idempotente e
+   redefine a função com o texto certo.
+2. `migrations/0045_remove_marca_antiga.sql` — renomeia o job do `pg_cron` e
+   limpa o remetente padrão das campanhas.
+
 ## O que ficou de fora (de propósito)
 
-Três migrações não entraram porque agendam `pg_cron` chamando
-**`https://lito-crm.vercel.app`** — a produção do projeto antigo. Aplicadas aqui,
-nosso banco passaria a bater na aplicação de outra pessoa a cada minuto:
+Três migrações não entraram porque agendam `pg_cron` chamando uma URL pública
+que ainda não existe — elas trazem o placeholder **`https://SEU-DOMINIO`**, que
+precisa virar o domínio real antes de aplicá-las:
 
 | Migração | O que faz |
 |---|---|

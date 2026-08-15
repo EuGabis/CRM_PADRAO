@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Email Marketing: agendamento pelo pg_cron
+-- CRM ON — Email Marketing: agendamento pelo pg_cron
 -- Migração única: rode este arquivo inteiro de uma vez no SQL Editor.
 --
 -- PRÉ-REQUISITOS (antes de aplicar):
@@ -24,7 +24,7 @@ revoke all on private.marketing_config from anon, authenticated;
 insert into private.marketing_config (id, tick_url, secret)
 values (
   true,
-  'https://lito-crm.vercel.app/api/marketing/tick',
+  'https://SEU-DOMINIO/api/marketing/tick',
   'COLE_O_AUTOMATION_SECRET_AQUI'
 )
 on conflict (id) do update
@@ -61,12 +61,12 @@ $$;
 revoke all on function private.marketing_tick() from public, anon, authenticated;
 
 -- ---------- Agendar a cada minuto ----------
-select cron.unschedule('lito-marketing-tick')
-where exists (select 1 from cron.job where jobname = 'lito-marketing-tick');
+select cron.unschedule('crm-marketing-tick')
+where exists (select 1 from cron.job where jobname = 'crm-marketing-tick');
 
-select cron.schedule('lito-marketing-tick', '* * * * *', $$select private.marketing_tick()$$);
+select cron.schedule('crm-marketing-tick', '* * * * *', $$select private.marketing_tick()$$);
 
 -- ---------- Verificação (rode depois de aplicar) ----------
--- select jobname, schedule, active from cron.job where jobname = 'lito-marketing-tick';
+-- select jobname, schedule, active from cron.job where jobname = 'crm-marketing-tick';
 -- select status_code, count(*) from net._http_response
 --   where created > now() - interval '5 minutes' group by status_code;  -- esperado: 200

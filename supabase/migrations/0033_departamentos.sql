@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Departamentos (segmentação de acesso padrão)
+-- CRM ON — Departamentos (segmentação de acesso padrão)
 --
 -- Até aqui a permissão por módulo era individual: cada usuário tinha seu
 -- `location_members.permissions`, e montar um perfil novo era repetir a mesma

@@ -305,6 +305,9 @@ export async function runAction(step: Step, ctx: RunContext): Promise<ActionResu
       const apiKey = process.env.RESEND_API_KEY;
       if (!apiKey) return { status: "skipped", message: "RESEND_API_KEY ausente" };
 
+      const from = senderAddress();
+      if (!from) return { status: "skipped", message: "EMAIL_FROM ausente" };
+
       const subject = renderTemplate(str(config, "subject"), vars);
       const body = renderTemplate(str(config, "body"), vars);
       if (!subject || !body) return { status: "skipped", message: "Assunto ou corpo vazios" };
@@ -316,7 +319,7 @@ export async function runAction(step: Step, ctx: RunContext): Promise<ActionResu
         const { html, text } = renderCampaignEmail({ subject, bodyHtml, unsubscribeUrl: unsub });
         const reply = replyToAddress();
         const { error } = await resend.emails.send({
-          from: senderAddress(),
+          from,
           to: contact.email,
           subject,
           html,

@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Cadastro apenas por convite
+-- CRM ON — Cadastro apenas por convite
 --
 -- O bloqueio acontece no trigger de criação de usuário: sem convite
 -- pendente, a transação é abortada e a conta NÃO é criada — vale

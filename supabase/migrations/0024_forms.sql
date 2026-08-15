@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Formulários de captação (Sites → Formulários)
+-- CRM ON — Formulários de captação (Sites → Formulários)
 --
 -- `forms`: config do formulário (campos, ação de sucesso, tag, lista inteligente).
 -- `form_submissions`: histórico de cada envio. O envio público (rota /api/forms/*)

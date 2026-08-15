@@ -44,12 +44,13 @@ $partes = [ordered]@{
     "0043_compromissos_por_usuario.sql",
     # 0044 por ULTIMO de proposito: concede privilegio em "all tables in
     # schema public", entao precisa rodar depois que todas ja existem.
-    "0044_grants_service_role.sql"
+    "0044_grants_service_role.sql",
+    "0045_remove_marca_antiga.sql"
   )
 }
 
-# Agendam pg_cron apontando para lito-crm.vercel.app (producao do projeto
-# antigo). Ver "O que ficou de fora" no README do setup.
+# Agendam pg_cron chamando uma URL publica que ainda nao existe (o
+# placeholder https://SEU-DOMINIO). Ver "O que ficou de fora" no README.
 $excluidas = @("0009_automation_cron.sql","0011_marketing_cron.sql","0014_guru_sync_config.sql")
 
 $todas = @()
@@ -80,7 +81,10 @@ foreach ($nome in $partes.Keys) {
   [void]$sb.AppendLine("")
 
   foreach ($arq in $partes[$nome]) {
-    $linhas = Get-Content (Join-Path $src $arq)
+    # -Encoding UTF8 e OBRIGATORIO: o Get-Content do PowerShell 5.1 assume a
+    # codepage ANSI do sistema e transforma cada acento em mojibake. Isso ja
+    # corrompeu a descricao de departamento da 0033 dentro do banco.
+    $linhas = Get-Content (Join-Path $src $arq) -Encoding UTF8
 
     # O 0013 termina com um cron.schedule apontando pra producao antiga.
     # As colunas dele importam; o agendamento nao.

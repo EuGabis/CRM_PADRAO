@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Módulo Contatos completo
+-- CRM ON — Módulo Contatos completo
 -- smart_lists, tasks, contact_fields, bulk_logs
 -- Mesmo padrão de segurança da 0001: RLS deny-by-default,
 -- políticas TO authenticated com checagem de tenant, sem anon.

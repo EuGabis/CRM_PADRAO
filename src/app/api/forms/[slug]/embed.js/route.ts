@@ -44,16 +44,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   // O script renderiza o form (sem estilo) onde o <script> está e envia por fetch.
   const body = `(function(){
   var F = ${config};
-  var mount = document.getElementById("lito-form-" + F.slug) || document.currentScript.parentNode;
+  var mount = document.getElementById("crm-form-" + F.slug) || document.currentScript.parentNode;
   var form = document.createElement("form");
   F.fields.forEach(function(f){
     var wrap = document.createElement("p");
     var label = document.createElement("label");
     label.textContent = f.label + (f.required ? " *" : "");
-    label.setAttribute("for", "litf_" + f.key);
+    label.setAttribute("for", "crmf_" + f.key);
     var input = f.type === "textarea" ? document.createElement("textarea") : document.createElement("input");
     if (f.type !== "textarea") input.type = (f.type === "email" ? "email" : f.type === "tel" ? "tel" : "text");
-    input.id = "litf_" + f.key; input.name = f.key; if (f.required) input.required = true;
+    input.id = "crmf_" + f.key; input.name = f.key; if (f.required) input.required = true;
     wrap.appendChild(label); wrap.appendChild(document.createElement("br")); wrap.appendChild(input);
     form.appendChild(wrap);
   });

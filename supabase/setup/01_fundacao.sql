@@ -9,28 +9,28 @@
 -- 0001_initial_schema.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Schema inicial (multi-tenant, seguranÃ§a mÃ¡xima)
+-- CRM ON — Schema inicial (multi-tenant, segurança máxima)
 -- Espelha src/lib/data/types.ts
 --
--- PrincÃ­pios:
+-- Princípios:
 --  * RLS habilitada em TODAS as tabelas (deny-by-default)
---  * Nenhum acesso para anon (CRM exige login) â€” revoke explÃ­cito
---  * Todas as polÃ­ticas: TO authenticated + checagem de tenant
+--  * Nenhum acesso para anon (CRM exige login) — revoke explícito
+--  * Todas as políticas: TO authenticated + checagem de tenant
 --  * UPDATE sempre com USING + WITH CHECK (evita troca de tenant)
---  * Helpers SECURITY DEFINER isolados no schema "private" (nÃ£o exposto
+--  * Helpers SECURITY DEFINER isolados no schema "private" (não exposto
 --    pela API), com search_path fixo
 -- ============================================================
 
--- Permite definir funÃ§Ãµes que referenciam tabelas criadas mais adiante
--- no mesmo script (a validaÃ§Ã£o acontece na execuÃ§Ã£o, nÃ£o na criaÃ§Ã£o):
+-- Permite definir funções que referenciam tabelas criadas mais adiante
+-- no mesmo script (a validação acontece na execução, não na criação):
 set check_function_bodies = off;
 
 -- ---------- Schema privado para helpers ----------
 create schema if not exists private;
 grant usage on schema private to authenticated;
 
--- Locations (subcontas/tenants) do usuÃ¡rio logado.
--- SECURITY DEFINER para evitar recursÃ£o de RLS em location_members.
+-- Locations (subcontas/tenants) do usuário logado.
+-- SECURITY DEFINER para evitar recursão de RLS em location_members.
 create or replace function private.user_locations()
 returns setof uuid
 language sql
@@ -64,7 +64,7 @@ revoke all on function private.is_admin(uuid) from public, anon;
 grant execute on function private.user_locations() to authenticated;
 grant execute on function private.is_admin(uuid) to authenticated;
 
--- updated_at automÃ¡tico
+-- updated_at automático
 create or replace function private.set_updated_at()
 returns trigger
 language plpgsql
@@ -97,7 +97,7 @@ create table public.location_members (
   location_id uuid not null references public.locations (id) on delete cascade,
   user_id uuid not null references auth.users (id) on delete cascade,
   role text not null default 'user' check (role in ('admin', 'user')),
-  only_assigned boolean not null default false, -- "ver apenas dados atribuÃ­dos"
+  only_assigned boolean not null default false, -- "ver apenas dados atribuídos"
   created_at timestamptz not null default now(),
   primary key (location_id, user_id)
 );
@@ -202,12 +202,12 @@ create table public.appointments (
   title text not null,
   starts_at timestamptz not null,
   ends_at timestamptz not null,
-  calendar text not null default 'ReuniÃµes',
+  calendar text not null default 'Reuniões',
   source text not null default 'crm' check (source in ('google', 'crm')),
   created_at timestamptz not null default now()
 );
 
--- ---------- Ãndices ----------
+-- ---------- Índices ----------
 create index contacts_location_idx on public.contacts (location_id);
 create index contacts_owner_idx on public.contacts (owner_id);
 create index pipelines_location_idx on public.pipelines (location_id);
@@ -245,13 +245,13 @@ alter table public.messages enable row level security;
 alter table public.workflows enable row level security;
 alter table public.appointments enable row level security;
 
--- CRM nÃ£o tem acesso anÃ´nimo a nada:
+-- CRM não tem acesso anônimo a nada:
 revoke all on all tables in schema public from anon;
 alter default privileges in schema public revoke all on tables from anon;
 
--- ---------- PolÃ­ticas ----------
+-- ---------- Políticas ----------
 
--- locations: membro vÃª; sÃ³ admin edita; criaÃ§Ã£o/exclusÃ£o via fluxo controlado
+-- locations: membro vê; só admin edita; criação/exclusão via fluxo controlado
 create policy "membros veem sua location" on public.locations
   for select to authenticated
   using (id in (select private.user_locations()));
@@ -261,7 +261,7 @@ create policy "admin edita location" on public.locations
   using (private.is_admin(id))
   with check (private.is_admin(id));
 
--- profiles: o prÃ³prio + colegas de location; sÃ³ o prÃ³prio edita
+-- profiles: o próprio + colegas de location; só o próprio edita
 create policy "ver perfis da equipe" on public.profiles
   for select to authenticated
   using (
@@ -273,12 +273,12 @@ create policy "ver perfis da equipe" on public.profiles
     )
   );
 
-create policy "editar o prÃ³prio perfil" on public.profiles
+create policy "editar o próprio perfil" on public.profiles
   for update to authenticated
   using (id = (select auth.uid()))
   with check (id = (select auth.uid()));
 
--- location_members: membros veem a equipe; sÃ³ admin gerencia
+-- location_members: membros veem a equipe; só admin gerencia
 create policy "ver equipe da location" on public.location_members
   for select to authenticated
   using (location_id in (select private.user_locations()));
@@ -296,8 +296,8 @@ create policy "admin remove membros" on public.location_members
   for delete to authenticated
   using (private.is_admin(location_id));
 
--- Tabelas de domÃ­nio: CRUD completo para membros da location.
--- (Refinamento "apenas dados atribuÃ­dos" entra numa fase futura.)
+-- Tabelas de domínio: CRUD completo para membros da location.
+-- (Refinamento "apenas dados atribuídos" entra numa fase futura.)
 do $$
 declare
   t text;
@@ -332,7 +332,7 @@ begin
 end;
 $$;
 
--- ---------- Onboarding: novo usuÃ¡rio => perfil + location + pipeline padrÃ£o ----------
+-- ---------- Onboarding: novo usuário => perfil + location + pipeline padrão ----------
 create or replace function private.handle_new_user()
 returns trigger
 language plpgsql
@@ -358,15 +358,15 @@ begin
   values (loc, new.id, 'admin');
 
   insert into public.pipelines (location_id, name, position)
-  values (loc, 'âœ… Controle de Leads', 0)
+  values (loc, '✅ Controle de Leads', 0)
   returning id into pipe;
 
   insert into public.stages (location_id, pipeline_id, name, color, position)
   values
     (loc, pipe, 'NOVO LEAD', '#94a3b8', 0),
     (loc, pipe, 'NEGOCIANDO', '#3b82f6', 1),
-    (loc, pipe, 'QUENTE ðŸ”¥', '#f43f5e', 2),
-    (loc, pipe, 'TESTE GRÃTIS', '#f59e0b', 3),
+    (loc, pipe, 'QUENTE 🔥', '#f43f5e', 2),
+    (loc, pipe, 'TESTE GRÁTIS', '#f59e0b', 3),
     (loc, pipe, 'FINALIZOU TESTE', '#ec4899', 4),
     (loc, pipe, 'ASSINOU', '#22c55e', 5),
     (loc, pipe, 'FILA DEMO', '#94a3b8', 6),
@@ -388,10 +388,10 @@ create trigger on_auth_user_created
 -- 0002_contacts_module.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” MÃ³dulo Contatos completo
+-- CRM ON — Módulo Contatos completo
 -- smart_lists, tasks, contact_fields, bulk_logs
--- Mesmo padrÃ£o de seguranÃ§a da 0001: RLS deny-by-default,
--- polÃ­ticas TO authenticated com checagem de tenant, sem anon.
+-- Mesmo padrão de segurança da 0001: RLS deny-by-default,
+-- políticas TO authenticated com checagem de tenant, sem anon.
 -- ============================================================
 
 create table public.smart_lists (
@@ -483,10 +483,10 @@ $$;
 -- 0003_conversas_realtime.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Conversas: trechos (snippets) + Realtime
+-- CRM ON — Conversas: trechos (snippets) + Realtime
 -- ============================================================
 
--- Trechos (respostas rÃ¡pidas usadas no composer)
+-- Trechos (respostas rápidas usadas no composer)
 create table public.snippets (
   id uuid primary key default gen_random_uuid(),
   location_id uuid not null references public.locations (id) on delete cascade,
@@ -515,7 +515,7 @@ create policy "membros excluem" on public.snippets
   using (location_id in (select private.user_locations()));
 
 -- Realtime: transmite INSERTs/UPDATEs dessas tabelas aos clientes conectados.
--- A RLS continua valendo: cada usuÃ¡rio sÃ³ recebe eventos das linhas que pode ler.
+-- A RLS continua valendo: cada usuário só recebe eventos das linhas que pode ler.
 alter publication supabase_realtime add table public.messages;
 alter publication supabase_realtime add table public.conversations;
 
@@ -524,17 +524,17 @@ alter publication supabase_realtime add table public.conversations;
 -- 0004_equipe_permissoes.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Equipe, convites e permissÃµes
+-- CRM ON — Equipe, convites e permissões
 --
--- CompatÃ­vel com o que jÃ¡ existe: membros atuais continuam com
+-- Compatível com o que já existe: membros atuais continuam com
 -- acesso total (permissions '{}' = tudo liberado, only_assigned = false).
 -- ============================================================
 
 set check_function_bodies = off;
 
--- ---------- 1. PermissÃµes por membro ----------
--- '{}' significa "sem restriÃ§Ã£o" (todos os mÃ³dulos liberados).
--- Chaves sÃ£o os slugs dos mÃ³dulos: {"pagamentos": false, "relatorios": false}
+-- ---------- 1. Permissões por membro ----------
+-- '{}' significa "sem restrição" (todos os módulos liberados).
+-- Chaves são os slugs dos módulos: {"pagamentos": false, "relatorios": false}
 alter table public.location_members
   add column if not exists permissions jsonb not null default '{}';
 
@@ -582,7 +582,7 @@ create policy "admins excluem convites" on public.invitations
   for delete to authenticated
   using (private.is_admin(location_id));
 
--- ---------- 3. Helper: o usuÃ¡rio vÃª todos os dados da empresa? ----------
+-- ---------- 3. Helper: o usuário vê todos os dados da empresa? ----------
 create or replace function private.sees_all(loc uuid)
 returns boolean
 language sql
@@ -602,8 +602,8 @@ $$;
 revoke all on function private.sees_all(uuid) from public, anon;
 grant execute on function private.sees_all(uuid) to authenticated;
 
--- ---------- 4. "Ver apenas dados atribuÃ­dos" nas polÃ­ticas ----------
--- SÃ³ restringe quem tiver only_assigned = true (ninguÃ©m, por padrÃ£o).
+-- ---------- 4. "Ver apenas dados atribuídos" nas políticas ----------
+-- Só restringe quem tiver only_assigned = true (ninguém, por padrão).
 do $$
 declare
   t text;
@@ -644,7 +644,7 @@ begin
 end;
 $$;
 
--- ---------- 5. ProteÃ§Ã£o: a empresa nunca fica sem administrador ----------
+-- ---------- 5. Proteção: a empresa nunca fica sem administrador ----------
 create or replace function private.protect_last_admin()
 returns trigger
 language plpgsql
@@ -685,7 +685,7 @@ create trigger protect_last_admin_delete
 
 -- ---------- 6. Onboarding: aceitar convite pendente ----------
 -- Quem foi convidado entra na empresa que convidou (com o papel definido).
--- Quem nÃ£o tem convite cria a prÃ³pria empresa (comportamento original).
+-- Quem não tem convite cria a própria empresa (comportamento original).
 create or replace function private.handle_new_user()
 returns trigger
 language plpgsql
@@ -730,15 +730,15 @@ begin
   values (loc, new.id, 'admin');
 
   insert into public.pipelines (location_id, name, position)
-  values (loc, 'âœ… Controle de Leads', 0)
+  values (loc, '✅ Controle de Leads', 0)
   returning id into pipe;
 
   insert into public.stages (location_id, pipeline_id, name, color, position)
   values
     (loc, pipe, 'NOVO LEAD', '#94a3b8', 0),
     (loc, pipe, 'NEGOCIANDO', '#3b82f6', 1),
-    (loc, pipe, 'QUENTE ðŸ”¥', '#f43f5e', 2),
-    (loc, pipe, 'TESTE GRÃTIS', '#f59e0b', 3),
+    (loc, pipe, 'QUENTE 🔥', '#f43f5e', 2),
+    (loc, pipe, 'TESTE GRÁTIS', '#f59e0b', 3),
     (loc, pipe, 'FINALIZOU TESTE', '#ec4899', 4),
     (loc, pipe, 'ASSINOU', '#22c55e', 5),
     (loc, pipe, 'FILA DEMO', '#94a3b8', 6),
@@ -756,7 +756,7 @@ revoke all on function private.handle_new_user() from public, anon, authenticate
 -- 0005_activation_checklist.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Checklist de ativaÃ§Ã£o persistente (por empresa)
+-- CRM ON — Checklist de ativação persistente (por empresa)
 -- Guarda quem concluiu cada passo e quando.
 -- ============================================================
 
@@ -791,13 +791,13 @@ create policy "membros excluem" on public.activation_steps
 -- 0006_cadastro_por_convite.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Cadastro apenas por convite
+-- CRM ON — Cadastro apenas por convite
 --
--- O bloqueio acontece no trigger de criaÃ§Ã£o de usuÃ¡rio: sem convite
--- pendente, a transaÃ§Ã£o Ã© abortada e a conta NÃƒO Ã© criada â€” vale
+-- O bloqueio acontece no trigger de criação de usuário: sem convite
+-- pendente, a transação é abortada e a conta NÃO é criada — vale
 -- inclusive para quem chamar a API de auth diretamente.
 --
--- Para reabrir o cadastro pÃºblico no futuro:
+-- Para reabrir o cadastro público no futuro:
 --   update private.app_settings set signup_mode = 'open';
 -- Para fechar de novo:
 --   update private.app_settings set signup_mode = 'invite_only';
@@ -805,7 +805,7 @@ create policy "membros excluem" on public.activation_steps
 
 set check_function_bodies = off;
 
--- ConfiguraÃ§Ã£o global (schema privado â€” nÃ£o exposto pela API)
+-- Configuração global (schema privado — não exposto pela API)
 create table if not exists private.app_settings (
   id boolean primary key default true check (id),
   signup_mode text not null default 'invite_only'
@@ -815,7 +815,7 @@ create table if not exists private.app_settings (
 
 insert into private.app_settings (id) values (true) on conflict (id) do nothing;
 
--- Garante o modo fechado ao aplicar esta migraÃ§Ã£o
+-- Garante o modo fechado ao aplicar esta migração
 update private.app_settings set signup_mode = 'invite_only', updated_at = now();
 
 create or replace function private.handle_new_user()
@@ -836,13 +836,13 @@ begin
   order by created_at
   limit 1;
 
-  -- Sem convite: sÃ³ continua se o cadastro pÃºblico estiver liberado
+  -- Sem convite: só continua se o cadastro público estiver liberado
   if not found then
     select signup_mode into mode from private.app_settings where id;
     if coalesce(mode, 'invite_only') = 'invite_only' then
       raise exception 'Cadastro apenas por convite'
         using errcode = '42501',
-              hint = 'PeÃ§a um convite ao administrador da empresa.';
+              hint = 'Peça um convite ao administrador da empresa.';
     end if;
   end if;
 
@@ -866,7 +866,7 @@ begin
     return new;
   end if;
 
-  -- Cadastro pÃºblico (quando liberado): cria a prÃ³pria empresa
+  -- Cadastro público (quando liberado): cria a própria empresa
   insert into public.locations (name)
   values (coalesce(nullif(new.raw_user_meta_data ->> 'company', ''), 'Minha empresa'))
   returning id into loc;
@@ -875,15 +875,15 @@ begin
   values (loc, new.id, 'admin');
 
   insert into public.pipelines (location_id, name, position)
-  values (loc, 'âœ… Controle de Leads', 0)
+  values (loc, '✅ Controle de Leads', 0)
   returning id into pipe;
 
   insert into public.stages (location_id, pipeline_id, name, color, position)
   values
     (loc, pipe, 'NOVO LEAD', '#94a3b8', 0),
     (loc, pipe, 'NEGOCIANDO', '#3b82f6', 1),
-    (loc, pipe, 'QUENTE ðŸ”¥', '#f43f5e', 2),
-    (loc, pipe, 'TESTE GRÃTIS', '#f59e0b', 3),
+    (loc, pipe, 'QUENTE 🔥', '#f43f5e', 2),
+    (loc, pipe, 'TESTE GRÁTIS', '#f59e0b', 3),
     (loc, pipe, 'FINALIZOU TESTE', '#ec4899', 4),
     (loc, pipe, 'ASSINOU', '#22c55e', 5),
     (loc, pipe, 'FILA DEMO', '#94a3b8', 6),
@@ -901,18 +901,18 @@ revoke all on function private.handle_new_user() from public, anon, authenticate
 -- 0007_automations.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Motor de automaÃ§Ãµes (schema + captura de eventos)
--- MigraÃ§Ã£o Ãºnica: rode este arquivo inteiro de uma vez no SQL Editor.
+-- CRM ON — Motor de automações (schema + captura de eventos)
+-- Migração única: rode este arquivo inteiro de uma vez no SQL Editor.
 -- ============================================================
 set check_function_bodies = off;
 
--- ---------- ConfiguraÃ§Ã£o dos workflows ----------
+-- ---------- Configuração dos workflows ----------
 alter table public.workflows
   add column if not exists trigger_key text,
   add column if not exists trigger_config jsonb not null default '{}',
   add column if not exists steps jsonb not null default '[]';
 
--- ---------- Fila de execuÃ§Ãµes ----------
+-- ---------- Fila de execuções ----------
 create table if not exists public.automation_runs (
   id uuid primary key default gen_random_uuid(),
   location_id uuid not null references public.locations (id) on delete cascade,
@@ -931,7 +931,7 @@ create table if not exists public.automation_runs (
   updated_at timestamptz not null default now()
 );
 
--- idempotÃªncia: o mesmo evento nÃ£o gera dois runs
+-- idempotência: o mesmo evento não gera dois runs
 create unique index if not exists automation_runs_event_key_uniq
   on public.automation_runs (event_key) where event_key is not null;
 create index if not exists automation_runs_due_idx
@@ -979,7 +979,7 @@ create policy "membros leem" on public.automation_logs
 
 -- ---------- Enfileiramento (usado por todos os triggers) ----------
 -- Cria um run por workflow publicado que escute o gatilho.
--- Protege contra loop: mesmo workflow + contato nos Ãºltimos 5 minutos Ã© ignorado.
+-- Protege contra loop: mesmo workflow + contato nos últimos 5 minutos é ignorado.
 create or replace function private.enqueue_automation(
   p_trigger_key text,
   p_location_id uuid,
@@ -1029,7 +1029,7 @@ revoke all on function private.enqueue_automation(text, uuid, uuid, uuid, jsonb,
 
 
 -- ============================================================
--- PARTE 2 â€” Triggers que alimentam a fila
+-- PARTE 2 — Triggers que alimentam a fila
 -- ============================================================
 
 
@@ -1052,7 +1052,7 @@ begin
     return new;
   end if;
 
-  -- tags que passaram a existir nesta atualizaÃ§Ã£o
+  -- tags que passaram a existir nesta atualização
   select array(
     select unnest(coalesce(new.tags, '{}'))
     except
@@ -1193,7 +1193,7 @@ create trigger appointments_automation
   after insert on public.appointments
   for each row execute function private.on_appointment_created();
 
--- ---------- AniversÃ¡rios (verificaÃ§Ã£o diÃ¡ria) ----------
+-- ---------- Aniversários (verificação diária) ----------
 create or replace function private.enqueue_birthdays()
 returns void
 language plpgsql
@@ -1205,15 +1205,15 @@ declare
   bday date;
 begin
   for c in
-    select id, location_id, custom_fields ->> 'Data de aniversÃ¡rio' as raw
+    select id, location_id, custom_fields ->> 'Data de aniversário' as raw
     from public.contacts
-    where custom_fields ? 'Data de aniversÃ¡rio'
-      and coalesce(custom_fields ->> 'Data de aniversÃ¡rio', '') <> ''
+    where custom_fields ? 'Data de aniversário'
+      and coalesce(custom_fields ->> 'Data de aniversário', '') <> ''
   loop
     begin
       bday := c.raw::date;
     exception when others then
-      continue; -- data invÃ¡lida no campo personalizado: ignora este contato
+      continue; -- data inválida no campo personalizado: ignora este contato
     end;
 
     if to_char(bday, 'MM-DD') = to_char(now(), 'MM-DD') then
@@ -1226,10 +1226,10 @@ begin
 end;
 $$;
 
--- 12:00 UTC = 09:00 no horÃ¡rio de BrasÃ­lia
-select cron.unschedule('lito-aniversarios')
-where exists (select 1 from cron.job where jobname = 'lito-aniversarios');
+-- 12:00 UTC = 09:00 no horário de Brasília
+select cron.unschedule('crm-aniversarios')
+where exists (select 1 from cron.job where jobname = 'crm-aniversarios');
 
-select cron.schedule('lito-aniversarios', '0 12 * * *', $$select private.enqueue_birthdays()$$);
+select cron.schedule('crm-aniversarios', '0 12 * * *', $$select private.enqueue_birthdays()$$);
 
 

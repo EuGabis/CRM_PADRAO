@@ -62,7 +62,7 @@ Create `supabase/migrations/0023_google_ads.sql`:
 
 ```sql
 -- ============================================================
--- Lito CRM — Google Ads (Visão geral, somente leitura)
+-- CRM ON — Google Ads (Visão geral, somente leitura)
 --
 -- Conexão OAuth por empresa: guarda refresh_token + customer_id para ler a conta
 -- via API. O refresh_token é SEGREDO: coluna com `revoke select` de anon/authenticated;
@@ -1065,7 +1065,7 @@ git commit -m "docs(google-ads): envs, seção do módulo e próxima migração 
 
 ## Handoff operacional (Gabriel — fora do código)
 
-1. **Google Cloud:** criar projeto → ativar **Google Ads API** → **tela de consentimento OAuth** (External; escopo `.../auth/adwords`; adicionar seu e-mail como test user enquanto não verificado) → **OAuth client (Web)** com redirects `http://localhost:3000/api/google-ads/oauth/callback` e `https://lito-crm.vercel.app/api/google-ads/oauth/callback` → copiar Client ID/Secret.
+1. **Google Cloud:** criar projeto → ativar **Google Ads API** → **tela de consentimento OAuth** (External; escopo `.../auth/adwords`; adicionar seu e-mail como test user enquanto não verificado) → **OAuth client (Web)** com redirects `http://localhost:3000/api/google-ads/oauth/callback` e `https://SEU-DOMINIO/api/google-ads/oauth/callback` → copiar Client ID/Secret.
 2. **Developer token:** conta administradora (MCC) → API Center → gerar token (acesso a **conta de teste** imediato; solicitar **Basic access** p/ produção).
 3. **Conta de teste** (para validar agora): test manager + test client account.
 4. **Envs** nas 3 (`.env.local` + Vercel) e **deploy**.

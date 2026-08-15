@@ -52,7 +52,7 @@ Create `supabase/migrations/0033_company_logo.sql`:
 
 ```sql
 -- ============================================================
--- Lito CRM — Logo da empresa (whitelabel)
+-- CRM ON — Logo da empresa (whitelabel)
 --
 -- locations.logo_url guarda a URL pública do logo; o binário vai para o bucket
 -- PÚBLICO `branding` no caminho {location_id}/logo-{ts}.{ext}. Leitura liberada
@@ -270,13 +270,13 @@ Em `src/app/(app)/configuracoes/perfil/page.tsx`:
 
 Em `src/components/layout/sidebar.tsx`, a caixinha do topo hoje é:
 ```tsx
-<div className="flex size-8 items-center justify-center rounded-lg bg-[var(--lito-sidebar-accent)] text-sm font-black text-white">
+<div className="flex size-8 items-center justify-center rounded-lg bg-[var(--crm-sidebar-accent)] text-sm font-black text-white">
   {brand.shortName[0]}
 </div>
 ```
 Trocar para mostrar o logo quando houver (mantendo `{brand.name}` no texto ao lado, inalterado):
 ```tsx
-<div className="flex size-8 items-center justify-center overflow-hidden rounded-lg bg-[var(--lito-sidebar-accent)] text-sm font-black text-white">
+<div className="flex size-8 items-center justify-center overflow-hidden rounded-lg bg-[var(--crm-sidebar-accent)] text-sm font-black text-white">
   {company?.logoUrl ? (
     // eslint-disable-next-line @next/next/no-img-element
     <img src={company.logoUrl} alt="Logo" className="size-full object-cover" />

@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Leads: segmentação dos PIPELINES
+-- CRM ON — Leads: segmentação dos PIPELINES
 --
 -- O pipeline já é a forma de visualizar os leads; o que faltava era dizer de
 -- QUEM ele é. Até aqui todo pipeline era da empresa inteira: qualquer usuário

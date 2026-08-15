@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Workflows do Lito CRM que reagem a eventos do banco e executam ações reais (tags, oportunidades, tarefas, e-mail, espera, condições, webhook) sem ninguém com o navegador aberto.
+**Goal:** Workflows do CRM ON que reagem a eventos do banco e executam ações reais (tags, oportunidades, tarefas, e-mail, espera, condições, webhook) sem ninguém com o navegador aberto.
 
 **Architecture:** Triggers no Postgres capturam eventos e enfileiram em `automation_runs`; `pg_cron` chama a cada minuto (via `pg_net`) a rota protegida `/api/automations/tick` do Next na Vercel, que executa os passos em TypeScript com a service role e grava `automation_logs`.
 
@@ -308,7 +308,7 @@ exception when others then
 end;
 $$;
 
-select cron.schedule('lito-aniversarios', '0 12 * * *', $$select private.enqueue_birthdays()$$);
+select cron.schedule('crm-aniversarios', '0 12 * * *', $$select private.enqueue_birthdays()$$);
 ```
 
 - [ ] **Step 5: Aplicar e verificar**
@@ -460,7 +460,7 @@ create table if not exists private.automation_config (
 );
 -- valores reais preenchidos pelo usuário no SQL Editor:
 insert into private.automation_config (id, tick_url, secret)
-values (true, 'https://lito-crm.vercel.app/api/automations/tick', 'SEGREDO_AQUI')
+values (true, 'https://SEU-DOMINIO/api/automations/tick', 'SEGREDO_AQUI')
 on conflict (id) do update set tick_url = excluded.tick_url, secret = excluded.secret;
 ```
 
@@ -487,7 +487,7 @@ $$;
 - [ ] **Step 3: Agendar a cada minuto**
 
 ```sql
-select cron.schedule('lito-automation-tick', '* * * * *', $$select private.automation_tick()$$);
+select cron.schedule('crm-automation-tick', '* * * * *', $$select private.automation_tick()$$);
 ```
 
 - [ ] **Step 4: Verificar**
@@ -497,7 +497,7 @@ select jobname, schedule, active from cron.job;
 select status, count(*) from net._http_response
 where created > now() - interval '5 minutes' group by status;
 ```
-Esperado: job `lito-automation-tick` ativo e respostas `200`.
+Esperado: job `crm-automation-tick` ativo e respostas `200`.
 
 - [ ] **Step 5: Commit**
 
@@ -644,7 +644,7 @@ Depois: adicionar tag em um contato pelo app em produção e conferir `automatio
 
 - [ ] **Step 4: Documentar no AGENTS.md**
 
-Nova seção "Automações (motor)": arquitetura, tabelas, como adicionar gatilho/ação novos, variáveis de ambiente e como pausar o cron (`select cron.unschedule('lito-automation-tick')`).
+Nova seção "Automações (motor)": arquitetura, tabelas, como adicionar gatilho/ação novos, variáveis de ambiente e como pausar o cron (`select cron.unschedule('crm-automation-tick')`).
 
 - [ ] **Step 5: Commit**
 

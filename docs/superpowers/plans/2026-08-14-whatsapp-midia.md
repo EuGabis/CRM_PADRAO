@@ -481,7 +481,7 @@ git commit -m "feat(whatsapp): player de vídeo no thread + doc da mídia"
 
 ## Handoff (Gabriel — fora do código)
 
-1. Nada de migração (0019 já aplicada). `WHATSAPP_TOKEN` válido na Vercel (o token permanente que você regenerar) + forma de pagamento na WABA Lito CRM — pré-requisitos para o ENVIO funcionar.
+1. Nada de migração (0019 já aplicada). `WHATSAPP_TOKEN` válido na Vercel (o token permanente que você regenerar) + forma de pagamento na WABA CRM ON — pré-requisitos para o ENVIO funcionar.
 2. Merge → deploy. Receber uma foto/áudio/vídeo no número → aparece no inbox; enviar anexo/áudio → chega no WhatsApp do cliente.
 
 ## Self-Review (autor do plano)

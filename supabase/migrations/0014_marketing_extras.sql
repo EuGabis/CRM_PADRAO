@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Marketing: Brand Boards e Contadores regressivos
+-- CRM ON — Marketing: Brand Boards e Contadores regressivos
 -- Migração única: rode este arquivo inteiro de uma vez no SQL Editor.
 -- (Trechos já usam a tabela public.snippets da migração 0003.)
 -- ============================================================

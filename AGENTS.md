@@ -115,7 +115,7 @@ deny-by-default, políticas `TO authenticated` checando membership. `admin.ts`
 
 - Migrações em `supabase/migrations/000N_nome.sql`, aplicadas **à mão no SQL Editor**.
 - Sempre **idempotentes** (`create ... if not exists`, `drop policy if exists`).
-- **Próximo número livre: `0045`.**
+- **Próximo número livre: `0046`.**
 - ⚠️ **Há números duplicados no histórico** — `0014`, `0015`, `0016` e `0019`
   aparecem duas vezes cada (colisão de trabalho paralelo no projeto anterior).
   Não dá pra confiar no número como ordem real; confira o conteúdo. **Não repita
@@ -136,9 +136,10 @@ cronológica real (a numérica está errada). Procedimento completo em
    quem te convide. Abra com `update private.app_settings set signup_mode = 'open';`,
    crie sua conta, feche de novo.
 3. **Três migrações de cron ficaram de fora** (`0009`, `0011`, `0014_guru_sync_config`,
-   mais o fim do `0013`): elas agendam `pg_cron` batendo em `lito-crm.vercel.app`,
-   a produção do projeto antigo. Consequência: automações, campanhas e mensagens
-   agendadas não disparam sozinhas até termos URL pública própria.
+   mais o fim do `0013`): elas agendam `pg_cron` chamando uma URL pública que ainda
+   não temos — o placeholder `https://SEU-DOMINIO` precisa ser trocado pelo domínio
+   real antes de aplicá-las. Consequência: automações, campanhas e mensagens
+   agendadas não disparam sozinhas até lá.
 
 Ao criar migração nova, registre-a em `scripts/gerar-setup.ps1` e rode o script —
 ele falha de propósito se alguma migração ficar sem classificar.
@@ -177,5 +178,5 @@ ele falha de propósito se alguma migração ficar sem classificar.
 - Ação que ainda não tem backend: `toast.info("<ação> chega com o backend")`.
 - Estilo: h1 `text-lg font-bold text-slate-900`; cards `rounded-xl border bg-white`;
   tabelas `text-xs`; botões `h-8 text-xs`; primário indigo (#6366f1); sidebar
-  grafite (tokens `--lito-*` em `globals.css`).
+  grafite (tokens `--crm-*` em `globals.css`).
 - Commits em português: `feat(modulo): descrição`.

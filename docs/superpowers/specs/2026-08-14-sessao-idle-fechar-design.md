@@ -26,7 +26,7 @@ inatividade; e ninguém continua logado depois de fechar o navegador.
 ## Arquitetura
 
 **Marcador de sessão do navegador** (Parte 2): um cookie **de sessão** que a gente controla,
-`lito_active=1` (sem `max-age`/`expires` → some ao fechar o navegador; compartilhado entre abas
+`crm_active=1` (sem `max-age`/`expires` → some ao fechar o navegador; compartilhado entre abas
 enquanto aberto). NÃO mexemos nos cookies de auth do Supabase (arriscado) — o marcador é separado.
 
 - **Setado no login** (`src/app/login/page.tsx`): após `signInWithPassword`/`signUp` com sucesso,

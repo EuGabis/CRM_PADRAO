@@ -110,13 +110,25 @@ export async function POST(request: Request) {
     logoUrl: location?.logo_url ?? undefined,
   });
 
+  // Sem remetente utilizável não dá para enviar. Mesmo tratamento de quando falta
+  // a chave da API: o convite existe e o admin copia o link manualmente.
+  const from = senderAddress();
+  if (!from) {
+    return Response.json({
+      invite,
+      emailSent: false,
+      warning:
+        "Convite criado, mas EMAIL_FROM não está configurado — o e-mail não foi enviado. Envie o link manualmente.",
+    });
+  }
+
   try {
     const resend = new Resend(apiKey);
     // Reply-To = e-mail de quem convidou (respostas vão para o admin) — melhora a
     // reputação (não é "no-reply puro"). List-Unsubscribe via mailto agrada o Outlook.
     const inviter = user.email ?? undefined;
     const { error: sendError } = await resend.emails.send({
-      from: senderAddress(),
+      from,
       to: email,
       subject,
       html,

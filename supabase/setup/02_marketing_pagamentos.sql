@@ -9,16 +9,16 @@
 -- 0010_email_marketing.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Email Marketing (schema, RLS e funÃ§Ãµes)
--- MigraÃ§Ã£o Ãºnica: rode este arquivo inteiro de uma vez no SQL Editor.
+-- CRM ON — Email Marketing (schema, RLS e funções)
+-- Migração única: rode este arquivo inteiro de uma vez no SQL Editor.
 --
--- PadrÃ£o de RLS/tenant idÃªntico Ã  0001: location_id em tudo, RLS habilitada,
--- revoke de anon, polÃ­ticas TO authenticated via private.user_locations().
+-- Padrão de RLS/tenant idêntico à 0001: location_id em tudo, RLS habilitada,
+-- revoke de anon, políticas TO authenticated via private.user_locations().
 -- Escrita de status/contadores fica com a service role (tick + webhook).
 -- ============================================================
 set check_function_bodies = off;
 
--- ---------- Opt-out de marketing (dedicado; nÃ£o afeta transacionais) ----------
+-- ---------- Opt-out de marketing (dedicado; não afeta transacionais) ----------
 alter table public.contacts
   add column if not exists marketing_opt_out boolean not null default false;
 
@@ -28,7 +28,10 @@ create table if not exists public.email_campaigns (
   location_id uuid not null references public.locations (id) on delete cascade,
   name text not null,
   subject text not null default '',
-  from_email text not null default 'Lito CRM <nao-responder@news.litoaviation.com>',
+  -- Sem remetente embutido: quem manda é EMAIL_FROM, do domínio verificado na
+  -- conta do Resend de quem instalou. Default fixo aqui faria a campanha nascer
+  -- assinando um domínio de terceiro.
+  from_email text not null default '',
   reply_to text,
   body_html text not null default '',
   body_text text not null default '',
@@ -52,7 +55,7 @@ create index if not exists email_campaigns_location_idx
 create index if not exists email_campaigns_due_idx
   on public.email_campaigns (status, scheduled_at);
 
--- ---------- DestinatÃ¡rios (fila materializada) ----------
+-- ---------- Destinatários (fila materializada) ----------
 create table if not exists public.email_campaign_recipients (
   id uuid primary key default gen_random_uuid(),
   campaign_id uuid not null references public.email_campaigns (id) on delete cascade,
@@ -92,9 +95,9 @@ create policy "membros leem destinatarios" on public.email_campaign_recipients
   for select to authenticated
   using (location_id in (select private.user_locations()));
 
--- ---------- MaterializaÃ§Ã£o (todos / tag) ----------
--- Lista inteligente Ã© avaliada em TypeScript (mesmo matchesConditions da tela de
--- Contatos) e inserida via public.add_campaign_recipients â€” aqui Ã© no-op.
+-- ---------- Materialização (todos / tag) ----------
+-- Lista inteligente é avaliada em TypeScript (mesmo matchesConditions da tela de
+-- Contatos) e inserida via public.add_campaign_recipients — aqui é no-op.
 create or replace function private.materialize_recipients(p_campaign_id uuid)
 returns int language plpgsql security definer set search_path = '' as $$
 declare
@@ -127,7 +130,7 @@ end;
 $$;
 revoke all on function private.materialize_recipients(uuid) from public, anon, authenticated;
 
--- ---------- Inserir destinatÃ¡rios prÃ©-filtrados (lista inteligente) ----------
+-- ---------- Inserir destinatários pré-filtrados (lista inteligente) ----------
 create or replace function public.add_campaign_recipients(p_campaign_id uuid, p_ids uuid[])
 returns int language plpgsql security definer set search_path = '' as $$
 declare
@@ -137,7 +140,7 @@ begin
   select * into camp from public.email_campaigns where id = p_campaign_id;
   if not found then raise exception 'campanha inexistente'; end if;
   if camp.location_id not in (select private.user_locations()) then
-    raise exception 'sem permissÃ£o';
+    raise exception 'sem permissão';
   end if;
 
   insert into public.email_campaign_recipients (campaign_id, location_id, contact_id, email)
@@ -167,7 +170,7 @@ begin
   select * into camp from public.email_campaigns where id = p_id;
   if not found then raise exception 'campanha inexistente'; end if;
   if camp.location_id not in (select private.user_locations()) then
-    raise exception 'sem permissÃ£o';
+    raise exception 'sem permissão';
   end if;
 
   perform private.materialize_recipients(p_id);  -- no-op para smart_list
@@ -225,7 +228,7 @@ end;
 $$;
 revoke all on function private.apply_email_event(text, text, timestamptz) from public, anon, authenticated;
 
--- Wrapper pÃºblico chamado sÃ³ pela service role (webhook).
+-- Wrapper público chamado só pela service role (webhook).
 create or replace function public.ingest_email_event(
   p_resend_id text, p_type text, p_at timestamptz
 ) returns void language plpgsql security definer set search_path = '' as $$
@@ -235,7 +238,7 @@ end;
 $$;
 revoke all on function public.ingest_email_event(text, text, timestamptz) from public, anon, authenticated;
 
--- ---------- VerificaÃ§Ã£o ----------
+-- ---------- Verificação ----------
 -- select table_name from information_schema.tables
 --   where table_schema='public' and table_name like 'email_campaign%';
 -- select column_name from information_schema.columns
@@ -246,14 +249,14 @@ revoke all on function public.ingest_email_event(text, text, timestamptz) from p
 -- 0008_pagamentos_guru.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” IntegraÃ§Ã£o de pagamentos: Digital Manager Guru
+-- CRM ON — Integração de pagamentos: Digital Manager Guru
 --
 -- Guru avisa vendas/assinaturas via webhook (POST com JSON), autenticado
--- pelo campo `api_token` do corpo â€” o mesmo valor mostrado no painel da
--- Guru em ConfiguraÃ§Ãµes > Webhook. Guardamos esse token por empresa em
--- `payment_credentials` e usamos pra reconhecer de qual empresa Ã© cada
--- evento recebido em `/api/webhooks/guru` (rota pÃºblica, sem sessÃ£o â€”
--- roda com a service role, como o motor de automaÃ§Ãµes).
+-- pelo campo `api_token` do corpo — o mesmo valor mostrado no painel da
+-- Guru em Configurações > Webhook. Guardamos esse token por empresa em
+-- `payment_credentials` e usamos pra reconhecer de qual empresa é cada
+-- evento recebido em `/api/webhooks/guru` (rota pública, sem sessão —
+-- roda com a service role, como o motor de automações).
 -- ============================================================
 set check_function_bodies = off;
 
@@ -304,10 +307,10 @@ create trigger payment_credentials_updated_at
   for each row execute function private.set_updated_at();
 
 -- ---------- Eventos recebidos (vendas, assinaturas etc.) ----------
--- `raw` guarda o payload inteiro: o schema pÃºblico da Guru nÃ£o estÃ¡
--- totalmente documentado, entÃ£o os campos abaixo sÃ£o melhor-esforÃ§o
+-- `raw` guarda o payload inteiro: o schema público da Guru não está
+-- totalmente documentado, então os campos abaixo são melhor-esforço
 -- (ver parseGuruPayload em src/lib/data/repos/db/payments.ts) e `raw`
--- Ã© a fonte de verdade caso algum campo mude de nome.
+-- é a fonte de verdade caso algum campo mude de nome.
 create table if not exists public.payment_events (
   id uuid primary key default gen_random_uuid(),
   location_id uuid not null references public.locations (id) on delete cascade,
@@ -339,8 +342,8 @@ create policy "membros leem eventos" on public.payment_events
   for select to authenticated
   using (location_id in (select private.user_locations()));
 
--- Escrita sÃ³ pela rota de webhook (service role, ignora RLS) â€” sem
--- polÃ­tica de insert/update/delete para authenticated de propÃ³sito.
+-- Escrita só pela rota de webhook (service role, ignora RLS) — sem
+-- política de insert/update/delete para authenticated de propósito.
 
 alter publication supabase_realtime add table public.payment_events;
 
@@ -349,13 +352,13 @@ alter publication supabase_realtime add table public.payment_events;
 -- 0012_pagamentos_guru_assinaturas.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Assinaturas da Guru (estado atual por assinante)
+-- CRM ON — Assinaturas da Guru (estado atual por assinante)
 --
--- `payment_events` (migraÃ§Ã£o 0008) jÃ¡ guarda o log bruto de tudo que a
--- Guru envia. Esta tabela guarda o estado ATUAL de cada assinatura â€”
+-- `payment_events` (migração 0008) já guarda o log bruto de tudo que a
+-- Guru envia. Esta tabela guarda o estado ATUAL de cada assinatura —
 -- a rota /api/webhooks/guru faz upsert aqui sempre que o evento traz um
--- id de assinatura reconhecÃ­vel, entÃ£o a aba Assinaturas mostra quem
--- estÃ¡ ativo/atrasado/cancelado sem precisar reprocessar o log inteiro.
+-- id de assinatura reconhecível, então a aba Assinaturas mostra quem
+-- está ativo/atrasado/cancelado sem precisar reprocessar o log inteiro.
 -- ============================================================
 set check_function_bodies = off;
 
@@ -387,7 +390,7 @@ create policy "membros leem assinaturas" on public.payment_subscriptions
   for select to authenticated
   using (location_id in (select private.user_locations()));
 
--- Escrita sÃ³ pela rota de webhook (service role, ignora RLS).
+-- Escrita só pela rota de webhook (service role, ignora RLS).
 
 drop trigger if exists payment_subscriptions_updated_at on public.payment_subscriptions;
 create trigger payment_subscriptions_updated_at
@@ -401,33 +404,33 @@ alter publication supabase_realtime add table public.payment_subscriptions;
 -- 0013_pagamentos_guru_sync.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” SincronizaÃ§Ã£o ativa com a Guru (pg_cron a cada minuto)
+-- CRM ON — Sincronização ativa com a Guru (pg_cron a cada minuto)
 --
--- AlÃ©m do webhook (migraÃ§Ã£o 0008), a Guru tambÃ©m expÃµe uma API REST
+-- Além do webhook (migração 0008), a Guru também expõe uma API REST
 -- (digitalmanager.guru/api/v2/transactions|subscriptions, autenticada com
--- o User Token) que devolve o estado atual de vendas e assinaturas â€” Ã© o
--- que alimenta as telas "Vendas" e "Assinaturas" do prÃ³prio painel da Guru.
+-- o User Token) que devolve o estado atual de vendas e assinaturas — é o
+-- que alimenta as telas "Vendas" e "Assinaturas" do próprio painel da Guru.
 -- Este job chama /api/integrations/guru/sync todo minuto (pg_net), que por
 -- sua vez consulta essa API para cada empresa conectada e faz upsert em
--- payment_events/payment_subscriptions. Mesmo padrÃ£o do motor de
--- automaÃ§Ãµes (pg_cron + pg_net chamando uma rota do Next protegida por
--- segredo), sÃ³ que aqui a rota puxa dados em vez de sÃ³ processar fila.
+-- payment_events/payment_subscriptions. Mesmo padrão do motor de
+-- automações (pg_cron + pg_net chamando uma rota do Next protegida por
+-- segredo), só que aqui a rota puxa dados em vez de só processar fila.
 -- ============================================================
 set check_function_bodies = off;
 
--- ---------- Estado de sincronizaÃ§Ã£o por credencial ----------
--- last_synced_at = cursor (atÃ© onde jÃ¡ sincronizamos). sync_started_at Ã© sÃ³
+-- ---------- Estado de sincronização por credencial ----------
+-- last_synced_at = cursor (até onde já sincronizamos). sync_started_at é só
 -- uma trava: o job tenta "reivindicar" a credencial fazendo update condicional
--- (sÃ³ some sync_started_at for nulo ou tiver mais de 55s) antes de sincronizar,
--- pra dois ticks do cron nÃ£o processarem a mesma empresa em paralelo.
+-- (só some sync_started_at for nulo ou tiver mais de 55s) antes de sincronizar,
+-- pra dois ticks do cron não processarem a mesma empresa em paralelo.
 alter table public.payment_credentials
   add column if not exists last_synced_at timestamptz,
   add column if not exists sync_started_at timestamptz;
 
--- ---------- payment_events passa a ser upsert (estado atual), nÃ£o log ----------
--- Antes sÃ³ media duplicidade de reenvio de webhook (Ã­ndice parcial). Agora o
--- job de sync tambÃ©m escreve aqui, e uma transaÃ§Ã£o pode ser vista vÃ¡rias
--- vezes com status diferentes (pendente -> aprovada -> reembolsada) â€” cada
+-- ---------- payment_events passa a ser upsert (estado atual), não log ----------
+-- Antes só media duplicidade de reenvio de webhook (índice parcial). Agora o
+-- job de sync também escreve aqui, e uma transação pode ser vista várias
+-- vezes com status diferentes (pendente -> aprovada -> reembolsada) — cada
 -- chamada faz upsert pela chave (location_id, provider, external_id) para
 -- refletir sempre o status mais recente.
 drop index if exists public.payment_events_dedup_idx;
@@ -447,7 +450,7 @@ alter table public.payment_events
   unique (location_id, provider, external_id);
 
 -- ---------- payment_subscriptions: campos que batem com o painel da Guru ----------
--- CÃ³digo (sub_...), Iniciada Em, Atualizada Em, Qtd CobranÃ§as, Cobrada a cada â€”
+-- Código (sub_...), Iniciada Em, Atualizada Em, Qtd Cobranças, Cobrada a cada —
 -- mesmas colunas que aparecem na tela "Assinaturas" do painel da Guru.
 alter table public.payment_subscriptions
   add column if not exists code text,
@@ -463,15 +466,15 @@ alter table public.payment_subscriptions
 -- 0015_payment_files.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Pagamentos: Arquivos e contratos (upload PDF/DOCX)
+-- CRM ON — Pagamentos: Arquivos e contratos (upload PDF/DOCX)
 --
 -- A aba "Arquivos e contratos" guarda documentos (contratos, propostas)
--- por empresa. Os binÃ¡rios vÃ£o para um bucket privado do Supabase Storage
+-- por empresa. Os binários vão para um bucket privado do Supabase Storage
 -- (`payment-files`), com um caminho `{location_id}/{uuid}.{ext}`; os metadados
 -- (nome original, tamanho, tipo, quem subiu) ficam em `public.payment_files`.
 --
--- Segue o MESMO padrÃ£o multi-tenant das outras tabelas: RLS deny-by-default,
--- REVOKE do anon, polÃ­ticas TO authenticated com checagem de membership via
+-- Segue o MESMO padrão multi-tenant das outras tabelas: RLS deny-by-default,
+-- REVOKE do anon, políticas TO authenticated com checagem de membership via
 -- private.user_locations(). As policies de storage.objects espelham isso pelo
 -- primeiro segmento do caminho (a pasta = o location_id).
 --
@@ -524,9 +527,9 @@ create trigger payment_files_updated_at
   before update on public.payment_files
   for each row execute function private.set_updated_at();
 
--- ---------- PolÃ­ticas do Storage (bucket payment-files) ----------
--- A pasta raiz do objeto Ã© o location_id; membros da empresa leem/gravam/apagam
--- sÃ³ o que estÃ¡ sob a pasta da prÃ³pria empresa.
+-- ---------- Políticas do Storage (bucket payment-files) ----------
+-- A pasta raiz do objeto é o location_id; membros da empresa leem/gravam/apagam
+-- só o que está sob a pasta da própria empresa.
 drop policy if exists "membros leem storage de pagamentos" on storage.objects;
 create policy "membros leem storage de pagamentos" on storage.objects
   for select to authenticated
@@ -556,21 +559,21 @@ create policy "membros apagam storage de pagamentos" on storage.objects
 -- 0016_payment_contacts_view.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Pagamentos: agregaÃ§Ã£o de contatos (histÃ³rico completo)
+-- CRM ON — Pagamentos: agregação de contatos (histórico completo)
 --
--- A aba Contatos precisa mostrar TODOS os compradores, nÃ£o sÃ³ os que
--- couberam nas Ãºltimas 100 vendas carregadas no client. Em vez de puxar
+-- A aba Contatos precisa mostrar TODOS os compradores, não só os que
+-- couberam nas últimas 100 vendas carregadas no client. Em vez de puxar
 -- tudo pro navegador, agregamos no banco por contato (chave = e-mail, ou
--- nome quando nÃ£o hÃ¡ e-mail) e a UI pagina como o painel da Guru.
+-- nome quando não há e-mail) e a UI pagina como o painel da Guru.
 --
--- Duas views SECURITY INVOKER (a RLS das tabelas base â€” payment_events e
--- payment_subscriptions, ambas com policy de leitura por membership â€”
+-- Duas views SECURITY INVOKER (a RLS das tabelas base — payment_events e
+-- payment_subscriptions, ambas com policy de leitura por membership —
 -- continua valendo, sem vazar dados de outra empresa):
---   * payment_contacts          â€” uma linha por contato
---   * payment_contacts_summary  â€” totais por empresa (pros KPIs)
+--   * payment_contacts          — uma linha por contato
+--   * payment_contacts_summary  — totais por empresa (pros KPIs)
 --
 -- O conjunto de status "aprovado" espelha classifyGuruStatus() em
--- src/lib/data/guru.ts (categoria "aprovado"). Se aquele vocabulÃ¡rio mudar,
+-- src/lib/data/guru.ts (categoria "aprovado"). Se aquele vocabulário mudar,
 -- atualizar os arrays abaixo junto.
 --
 -- Idempotente (create or replace).
@@ -649,9 +652,9 @@ revoke all on public.payment_contacts_summary from anon;
 -- 0014_marketing_extras.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Marketing: Brand Boards e Contadores regressivos
--- MigraÃ§Ã£o Ãºnica: rode este arquivo inteiro de uma vez no SQL Editor.
--- (Trechos jÃ¡ usam a tabela public.snippets da migraÃ§Ã£o 0003.)
+-- CRM ON — Marketing: Brand Boards e Contadores regressivos
+-- Migração única: rode este arquivo inteiro de uma vez no SQL Editor.
+-- (Trechos já usam a tabela public.snippets da migração 0003.)
 -- ============================================================
 set check_function_bodies = off;
 
@@ -678,7 +681,7 @@ create table if not exists public.countdowns (
 create index if not exists countdowns_location_idx
   on public.countdowns (location_id, created_at desc);
 
--- ---------- RLS (mesmo padrÃ£o de membership das outras tabelas) ----------
+-- ---------- RLS (mesmo padrão de membership das outras tabelas) ----------
 alter table public.brand_boards enable row level security;
 alter table public.countdowns enable row level security;
 revoke all on public.brand_boards, public.countdowns from anon;
@@ -695,7 +698,7 @@ create policy "membros gerenciam countdowns" on public.countdowns
   using (location_id in (select private.user_locations()))
   with check (location_id in (select private.user_locations()));
 
--- ---------- VerificaÃ§Ã£o ----------
+-- ---------- Verificação ----------
 -- select table_name from information_schema.tables
 --   where table_schema='public' and table_name in ('brand_boards','countdowns');
 
@@ -704,7 +707,7 @@ create policy "membros gerenciam countdowns" on public.countdowns
 -- 0015_campaign_accent.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Email Marketing: cor de destaque da campanha (Brand Board)
+-- CRM ON — Email Marketing: cor de destaque da campanha (Brand Board)
 -- Rode este arquivo inteiro de uma vez no SQL Editor.
 -- ============================================================
 alter table public.email_campaigns
@@ -715,8 +718,8 @@ alter table public.email_campaigns
 -- 0016_campaign_claim.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Email Marketing: claim atÃ´mico de destinatÃ¡rios
--- Evita envio duplicado quando dois ticks do cron se sobrepÃµem.
+-- CRM ON — Email Marketing: claim atômico de destinatários
+-- Evita envio duplicado quando dois ticks do cron se sobrepõem.
 -- Rode este arquivo inteiro de uma vez no SQL Editor.
 -- ============================================================
 set check_function_bodies = off;
@@ -727,10 +730,10 @@ alter table public.email_campaign_recipients
 create index if not exists ecr_claim_idx
   on public.email_campaign_recipients (campaign_id, status, claimed_at);
 
--- Reivindica atomicamente um lote de destinatÃ¡rios pendentes e o retorna jÃ¡ com os
--- dados do contato. FOR UPDATE SKIP LOCKED garante que dois ticks simultÃ¢neos peguem
--- lotes diferentes (nunca o mesmo destinatÃ¡rio duas vezes). Um claim "preso" (tick que
--- caiu antes de marcar 'sent') Ã© reaproveitado apÃ³s 5 minutos.
+-- Reivindica atomicamente um lote de destinatários pendentes e o retorna já com os
+-- dados do contato. FOR UPDATE SKIP LOCKED garante que dois ticks simultâneos peguem
+-- lotes diferentes (nunca o mesmo destinatário duas vezes). Um claim "preso" (tick que
+-- caiu antes de marcar 'sent') é reaproveitado após 5 minutos.
 create or replace function public.claim_recipients(p_campaign_id uuid, p_limit int)
 returns table (
   id uuid,
@@ -741,7 +744,7 @@ returns table (
   custom_fields jsonb
 ) language plpgsql security definer set search_path = '' as $$
 begin
-  -- sÃ³ envia se a campanha ainda estiver 'sending' (respeita pausa/cancelamento)
+  -- só envia se a campanha ainda estiver 'sending' (respeita pausa/cancelamento)
   if not exists (
     select 1 from public.email_campaigns c
     where c.id = p_campaign_id and c.status = 'sending'
@@ -781,21 +784,21 @@ grant execute on function public.claim_recipients(uuid, int) to service_role;
 -- 0017_guru_history_backfill.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Backfill histÃ³rico de vendas da Guru (retroativo)
+-- CRM ON — Backfill histórico de vendas da Guru (retroativo)
 --
--- O sync incremental (migraÃ§Ã£o 0013) sÃ³ cobre pra frente a partir de
--- quando a empresa conectou. Esta migraÃ§Ã£o acrescenta o estado pra andar
--- PARA TRÃS tambÃ©m, em pedaÃ§os pequenos por tick (a API da Guru limita
--- filtro de data a 180 dias por chamada â€” ver referencia-api/transactions.yaml
--- â€” e uma conta com muitas vendas nÃ£o cabe num intervalo grande dentro dos
--- 60s do Vercel, como jÃ¡ aconteceu com o backfill inicial pra frente).
+-- O sync incremental (migração 0013) só cobre pra frente a partir de
+-- quando a empresa conectou. Esta migração acrescenta o estado pra andar
+-- PARA TRÁS também, em pedaços pequenos por tick (a API da Guru limita
+-- filtro de data a 180 dias por chamada — ver referencia-api/transactions.yaml
+-- — e uma conta com muitas vendas não cabe num intervalo grande dentro dos
+-- 60s do Vercel, como já aconteceu com o backfill inicial pra frente).
 --
--- history_backfill_cursor: atÃ© onde jÃ¡ cobrimos voltando no tempo (anda
--- pra trÃ¡s a cada tick). ComeÃ§a nulo; o primeiro tick que rodar depois
--- desta migraÃ§Ã£o inicializa com o inÃ­cio da cobertura incremental atual
+-- history_backfill_cursor: até onde já cobrimos voltando no tempo (anda
+-- pra trás a cada tick). Começa nulo; o primeiro tick que rodar depois
+-- desta migração inicializa com o início da cobertura incremental atual
 -- (sem sobrepor nem deixar buraco).
 -- history_backfill_done: true quando o cursor chega em HISTORY_START
--- (01/06/2024, definido em cÃ³digo â€” src/app/api/integrations/guru/sync).
+-- (01/06/2024, definido em código — src/app/api/integrations/guru/sync).
 -- ============================================================
 set check_function_bodies = off;
 
@@ -808,19 +811,19 @@ alter table public.payment_credentials
 -- 0018_guru_contacts_sync.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Contatos reais da Guru (GET /api/v2/contacts)
+-- CRM ON — Contatos reais da Guru (GET /api/v2/contacts)
 --
--- A aba Contatos atÃ© aqui (migraÃ§Ã£o 0016) agregava contatos a partir de
--- payment_events/payment_subscriptions â€” sÃ³ cobre quem jÃ¡ apareceu numa
+-- A aba Contatos até aqui (migração 0016) agregava contatos a partir de
+-- payment_events/payment_subscriptions — só cobre quem já apareceu numa
 -- venda/assinatura sincronizada, e nunca captura telefone/documento (esses
--- campos nÃ£o existem nas tabelas base). A Guru tem um endpoint de contatos
+-- campos não existem nas tabelas base). A Guru tem um endpoint de contatos
 -- dedicado (referencia-api/contacts.yaml) com nome/email/doc/telefone e uma
--- contagem prÃ³pria (total_rows) â€” Ã© o nÃºmero que aparece no painel da Guru
--- (ex.: 7423) e nÃ£o necessariamente Ã© igual ao de compradores Ãºnicos.
+-- contagem própria (total_rows) — é o número que aparece no painel da Guru
+-- (ex.: 7423) e não necessariamente é igual ao de compradores únicos.
 --
 -- payment_guru_contacts: uma linha por contato da Guru, sincronizada em
--- pedaÃ§os (contacts_sync_cursor/contacts_sync_done/contacts_total_rows em
--- payment_credentials) pelo mesmo /api/integrations/guru/sync â€” ver
+-- pedaços (contacts_sync_cursor/contacts_sync_done/contacts_total_rows em
+-- payment_credentials) pelo mesmo /api/integrations/guru/sync — ver
 -- contactsSyncChunk().
 -- ============================================================
 set check_function_bodies = off;
@@ -857,7 +860,7 @@ create policy "membros leem contatos guru" on public.payment_guru_contacts
   for select to authenticated
   using (location_id in (select private.user_locations()));
 
--- Escrita sÃ³ pela rota de sync (service role, ignora RLS).
+-- Escrita só pela rota de sync (service role, ignora RLS).
 
 drop trigger if exists payment_guru_contacts_updated_at on public.payment_guru_contacts;
 create trigger payment_guru_contacts_updated_at
@@ -874,20 +877,20 @@ alter table public.payment_credentials
 -- 0019_payment_contacts_valores.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Contatos: telefone/documento na visÃ£o de valores
+-- CRM ON — Contatos: telefone/documento na visão de valores
 --
--- migraÃ§Ã£o 0016 criou payment_contacts/payment_contacts_summary (compras,
+-- migração 0016 criou payment_contacts/payment_contacts_summary (compras,
 -- total gasto, assinaturas ativas) agregando payment_events + payment_
--- subscriptions. migraÃ§Ã£o 0018 trouxe o cadastro real da Guru (telefone,
--- CPF) em payment_guru_contacts, mas numa aba separada â€” perdendo os
+-- subscriptions. migração 0018 trouxe o cadastro real da Guru (telefone,
+-- CPF) em payment_guru_contacts, mas numa aba separada — perdendo os
 -- valores. Aqui as duas se juntam: payment_contacts passa a expor
--- phone/doc tambÃ©m, casando por e-mail com payment_guru_contacts, para a
+-- phone/doc também, casando por e-mail com payment_guru_contacts, para a
 -- aba Contatos voltar a mostrar compras/total gasto/assinaturas E permitir
 -- busca por telefone/CPF na mesma tabela.
 --
--- Ãndices por lower(contact_email)/lower(email) â€” o join e o filtro de
--- busca (.or() ilike) rodam a cada tecla digitada; sem eles a agregaÃ§Ã£o
--- fica lenta conforme o histÃ³rico cresce.
+-- Índices por lower(contact_email)/lower(email) — o join e o filtro de
+-- busca (.or() ilike) rodam a cada tecla digitada; sem eles a agregação
+-- fica lenta conforme o histórico cresce.
 --
 -- Idempotente (create or replace / create index if not exists).
 -- ============================================================
@@ -981,22 +984,22 @@ revoke all on public.payment_contacts_summary from anon;
 -- 0020_payment_sales_reports.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Pagamentos: relatÃ³rios com o histÃ³rico completo
+-- CRM ON — Pagamentos: relatórios com o histórico completo
 --
--- Vendas e RelatÃ³rios calculavam receita/grÃ¡ficos a partir do array em
--- memÃ³ria do store (`usePaymentEvents`), que sÃ³ carrega as 100 vendas mais
--- recentes (limite pensado pra a tabela da aba Vendas, nÃ£o pra agregaÃ§Ãµes).
--- Com o histÃ³rico completo sincronizado (milhares de vendas desde 2024), os
--- Ãºltimos 6 meses sozinhos jÃ¡ passam de 100 vendas â€” receita, ticket mÃ©dio
--- e produtos que mais faturam ficavam bem abaixo do que a prÃ³pria Guru
--- mostra no Resumo DiÃ¡rio.
+-- Vendas e Relatórios calculavam receita/gráficos a partir do array em
+-- memória do store (`usePaymentEvents`), que só carrega as 100 vendas mais
+-- recentes (limite pensado pra a tabela da aba Vendas, não pra agregações).
+-- Com o histórico completo sincronizado (milhares de vendas desde 2024), os
+-- últimos 6 meses sozinhos já passam de 100 vendas — receita, ticket médio
+-- e produtos que mais faturam ficavam bem abaixo do que a própria Guru
+-- mostra no Resumo Diário.
 --
--- payment_sales_monthly agrega no Postgres (mÃªs x produto), entÃ£o mesmo com
--- milhares de vendas o resultado que volta pro client Ã© sÃ³ "meses x
--- produtos distintos" â€” pequeno, rÃ¡pido de somar em memÃ³ria, sempre exato.
+-- payment_sales_monthly agrega no Postgres (mês x produto), então mesmo com
+-- milhares de vendas o resultado que volta pro client é só "meses x
+-- produtos distintos" — pequeno, rápido de somar em memória, sempre exato.
 --
--- Mesmo vocabulÃ¡rio de status "aprovado" das views de contatos (migraÃ§Ã£o
--- 0016) â€” se classifyGuruStatus() mudar essa categoria, atualizar aqui.
+-- Mesmo vocabulário de status "aprovado" das views de contatos (migração
+-- 0016) — se classifyGuruStatus() mudar essa categoria, atualizar aqui.
 --
 -- Idempotente (create or replace / create index if not exists).
 -- ============================================================
@@ -1004,9 +1007,9 @@ revoke all on public.payment_contacts_summary from anon;
 create index if not exists payment_events_location_created_idx
   on public.payment_events (location_id, guru_created_at);
 
--- Agrega por status (nÃ£o sÃ³ "aprovado") pra cobrir tambÃ©m reembolsos e
--- chargebacks nos KPIs â€” o client classifica com classifyGuruStatus(),
--- igual jÃ¡ fazia com o array em memÃ³ria.
+-- Agrega por status (não só "aprovado") pra cobrir também reembolsos e
+-- chargebacks nos KPIs — o client classifica com classifyGuruStatus(),
+-- igual já fazia com o array em memória.
 create or replace view public.payment_sales_monthly
 with (security_invoker = on) as
 select
@@ -1028,23 +1031,23 @@ revoke all on public.payment_sales_monthly from anon;
 -- 0021_payment_contacts_perf.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Contatos: Ã­ndices para a busca por valor ficar rÃ¡pida
+-- CRM ON — Contatos: índices para a busca por valor ficar rápida
 --
--- payment_contacts (migraÃ§Ã£o 0016/0019) agrega payment_events +
+-- payment_contacts (migração 0016/0019) agrega payment_events +
 -- payment_subscriptions por contact_key com array_agg/group by. Buscar por
--- nome/e-mail/telefone/documento nessa view filtra DEPOIS da agregaÃ§Ã£o â€”
+-- nome/e-mail/telefone/documento nessa view filtra DEPOIS da agregação —
 -- Postgres precisa computar o group by inteiro (23k+ vendas, 2.4k
 -- assinaturas) antes de aplicar o ILIKE. Medido: ~680ms por tecla digitada.
 --
--- payment_guru_contacts (migraÃ§Ã£o 0018) jÃ¡ tem Ã­ndices simples em
--- name/phone/doc e Ã© 90x mais rÃ¡pido pra busca (~7ms) â€” vira a fonte
+-- payment_guru_contacts (migração 0018) já tem índices simples em
+-- name/phone/doc e é 90x mais rápido pra busca (~7ms) — vira a fonte
 -- principal de listagem/busca. payment_contacts (compras/total gasto/
--- assinaturas/Ãºltima atividade) passa a ser sÃ³ um enriquecimento pontual
--- da pÃ¡gina visÃ­vel (â‰¤20 contatos), filtrando por contact_key = ANY(...).
--- Esse filtro Ã© por igualdade numa coluna de agrupamento â€” o planner
--- consegue empurrar pra dentro do scan das tabelas base, mas sem um Ã­ndice
--- que bata exatamente com a expressÃ£o do contact_key ainda cai em Seq Scan
--- (medido ~106ms pra 5 chaves). Os Ã­ndices funcionais abaixo resolvem isso.
+-- assinaturas/última atividade) passa a ser só um enriquecimento pontual
+-- da página visível (≤20 contatos), filtrando por contact_key = ANY(...).
+-- Esse filtro é por igualdade numa coluna de agrupamento — o planner
+-- consegue empurrar pra dentro do scan das tabelas base, mas sem um índice
+-- que bata exatamente com a expressão do contact_key ainda cai em Seq Scan
+-- (medido ~106ms pra 5 chaves). Os índices funcionais abaixo resolvem isso.
 --
 -- Idempotente (create index if not exists).
 -- ============================================================

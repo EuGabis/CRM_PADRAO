@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Conversas: responsável pelo atendimento
+-- CRM ON — Conversas: responsável pelo atendimento
 --
 -- O rail da caixa de entrada tinha "Atribuídas a mim", mas `conversations`
 -- não guardava responsável nenhum — o botão só emitia um toast porque não

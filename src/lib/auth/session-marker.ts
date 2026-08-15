@@ -4,7 +4,7 @@
 // Setado apenas no login; sobrevive a refresh, navegação e nova aba enquanto o navegador
 // estiver aberto (é compartilhado entre abas por ser cookie).
 
-const MARKER = "lito_active";
+const MARKER = "crm_active";
 
 export function markBrowserSession(): void {
   if (typeof document === "undefined") return;

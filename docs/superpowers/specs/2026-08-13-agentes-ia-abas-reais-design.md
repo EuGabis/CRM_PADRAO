@@ -64,7 +64,7 @@ Interfaces existentes reusadas (não mudam):
 - Mantém os campos (pedido + seletor de Formato). Remove a constante `CONTENT_SAMPLES`.
 - Formatos: **Post Instagram**, **E-mail**, **Anúncio**.
 - Ao "Gerar": valida pedido não-vazio → `aiActions.generate({ feature: "content", system, prompt })`.
-  - `system` guia o formato em pt-BR, ex.: "Você é redator de marketing/vendas do Lito CRM.
+  - `system` guia o formato em pt-BR, ex.: "Você é redator de marketing/vendas do CRM ON.
     Escreva em português do Brasil. Formato: <formato> (Post Instagram = curto, com emojis e
     hashtags; E-mail = com linha de Assunto; Anúncio = curto, com CTA). Devolva só o texto final."
   - `prompt` = o pedido do usuário.

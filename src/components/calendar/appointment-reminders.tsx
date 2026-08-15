@@ -33,7 +33,7 @@ import type { Appointment } from "@/lib/data/types";
 const CHECK_MS = 30_000; // varredura
 const RELOAD_MS = 5 * 60_000; // relê a agenda do banco
 const LATE_TOLERANCE_MIN = 15; // atraso máximo para ainda valer o aviso
-const STORAGE_KEY = "lito.appointment-reminders.shown";
+const STORAGE_KEY = "crm.appointment-reminders.shown";
 
 /** Ids já avisados NESTE navegador (sobrevive ao F5). */
 function loadShown(): Set<string> {

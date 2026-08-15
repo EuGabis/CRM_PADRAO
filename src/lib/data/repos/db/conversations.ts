@@ -123,7 +123,7 @@ export const useConvStore = create<ConvState>((set, get) => ({
 
     // Realtime: mensagens e conversas chegam ao vivo (RLS filtra por tenant)
     supabase
-      .channel("lito-inbox")
+      .channel("crm-inbox")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },

@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Painel de controle: visualizações por usuário e por departamento
+-- CRM ON — Painel de controle: visualizações por usuário e por departamento
 --
 -- O seletor de painéis do topo era decorativo: três nomes fixos no código
 -- ("(Padrão) Visão Geral", "SDR Acompanhamento", "Funil Comercial") e um

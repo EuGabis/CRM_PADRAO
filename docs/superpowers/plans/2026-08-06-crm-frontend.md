@@ -1,8 +1,8 @@
-# Lito CRM Front-end Implementation Plan
+# CRM ON Front-end Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Construir o front-end completo do Lito CRM — 19 módulos navegáveis, 5 core profundos e interativos com dados mock tipados — conforme `docs/superpowers/specs/2026-08-06-crm-frontend-design.md`.
+**Goal:** Construir o front-end completo do CRM ON — 19 módulos navegáveis, 5 core profundos e interativos com dados mock tipados — conforme `docs/superpowers/specs/2026-08-06-crm-frontend-design.md`.
 
 **Architecture:** Next.js App Router com layout compartilhado (sidebar + topbar), camada de dados mock atrás de repositórios sobre store Zustand, componentes shadcn/ui + componentes transversais próprios. UI nunca importa fixtures diretamente.
 
@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Todo texto de UI em **pt-BR**.
-- Nome/marca **somente** via `src/lib/config/brand.ts` (`brand.name = "Lito CRM"`); nunca hardcoded em telas.
+- Nome/marca **somente** via `src/lib/config/brand.ts` (`brand.name = "CRM ON"`); nunca hardcoded em telas.
 - Referência funcional canônica: `MAPA_FUNCIONALIDADES.md` (seções citadas por tarefa). Spec: `docs/superpowers/specs/2026-08-06-crm-frontend-design.md`.
 - Sem chamadas de rede; sem persistência entre reloads; UI consome apenas hooks/ações dos repositórios (`src/lib/data/repos/*`).
 - Paleta: sidebar grafite/azul-noite (`#111827`–`#1e2436`), primário indigo `#6366f1`, verde WhatsApp `#22c55e`, vermelho SLA `#ef4444`. NÃO usar o roxo GoHighLevel.
@@ -36,9 +36,9 @@
 
 ```bash
 cd "/c/Users/Gabriel/Documents/crm 2.0"
-npx create-next-app@latest lito-tmp --ts --tailwind --eslint --app --src-dir --import-alias "@/*" --use-npm --no-turbopack
+npx create-next-app@latest crm-on --ts --tailwind --eslint --app --src-dir --import-alias "@/*" --use-npm --no-turbopack
 # mover conteúdo para a raiz (a pasta já tem docs/, mp4, frames)
-mv lito-tmp/* lito-tmp/.* . 2>/dev/null; rmdir lito-tmp
+mv crm-on/* crm-on/.* . 2>/dev/null; rmdir crm-on
 ```
 
 - [ ] **Step 2: Ignorar mídia de referência no git**
@@ -65,8 +65,8 @@ npx shadcn@latest add button input table dialog dropdown-menu tabs badge avatar 
 
 ```ts
 export const brand = {
-  name: "Lito CRM",
-  shortName: "Lito",
+  name: "CRM ON",
+  shortName: "ON",
   tagline: "Seu negócio inteiro em um lugar",
 } as const;
 ```
@@ -88,7 +88,7 @@ export const brand = {
 
 ```bash
 npm run build
-git add -A && git commit -m "chore: scaffold Next.js + shadcn + marca Lito CRM"
+git add -A && git commit -m "chore: scaffold Next.js + shadcn + marca CRM ON"
 ```
 
 ---
@@ -186,7 +186,7 @@ git add -A && git commit -m "feat(data): tipos, fixtures pt-BR, store Zustand e 
 - Produces: `NAV_ITEMS: { href: string; label: string; icon: LucideIcon; badge?: "Beta" }[]` (ordem exata da seção 2.1 do mapa, com Ativação no topo e Configurações no rodapé); `<SubNav tabs={{label, href?}[]} active={string} />`; `<EmptyState icon title description cta?>`.
 
 - [ ] **Step 1: `nav.ts`** com os 19 itens na ordem do mapa (labels pt-BR: "Checklist de Ativação", "Painel de controle", "Conversas", "Calendários", "Contatos", "Leads", "Pagamentos", "AI Studio" [badge Beta], "Agentes de IA", "Marketing", "Automações", "Sites", "Assinaturas", "Mídia Drive", "Reputação", "Relatórios", "Marketplace", "WhatsApp", "Configurações").
-- [ ] **Step 2: `sidebar.tsx`** — fundo `var(--sidebar)`, logo `brand.name`, seletor de subconta estático ("Lito Comercial — São Gonçalo, RJ" com chevron), busca com kbd "Ctrl K", lista de nav com item ativo (`usePathname`) em `var(--sidebar-accent)`, Configurações fixa no rodapé.
+- [ ] **Step 2: `sidebar.tsx`** — fundo `var(--sidebar)`, logo `brand.name`, seletor de subconta estático ("Empresa Exemplo — São Gonçalo, RJ" com chevron), busca com kbd "Ctrl K", lista de nav com item ativo (`usePathname`) em `var(--sidebar-accent)`, Configurações fixa no rodapé.
 - [ ] **Step 3: `topbar.tsx`** — botões "Suporte" (verde), "Webphone", sino, avatar (placeholders clicáveis; painéis reais na Task 12).
 - [ ] **Step 4: `layout.tsx` do grupo `(app)`** — grid `[240px_1fr]`, coluna direita com Topbar + `<main className="bg-slate-50">`.
 - [ ] **Step 5: Páginas stub** — cada módulo com `<SubNav>` das sub-abas exatas do mapa (ex.: conversas: Conversas | Ações manuais | Trechos | Links de acionamento | Estatísticas | Configurações) + `<EmptyState>` central "Em construção" com ícone do módulo. `page.tsx` raiz: `redirect("/dashboard")`. `not-found.tsx`: 404 amigável com botão "Voltar ao painel".
@@ -401,4 +401,4 @@ export function ChannelIcon(props: { channel: Channel; size?: number }): JSX.Ele
 - [ ] **Step 1:** `npm run build` — zero erros TS/ESLint.
 - [ ] **Step 2:** Navegar pelas 19 rotas comparando com `MAPA_FUNCIONALIDADES.md`; checklist de interações: mover card no kanban, enviar mensagem (3 canais + nota interna), agendar mensagem, seleção em massa + tag em contatos, criar contato, criar workflow com trigger + 3 ações + publicar, marcar passos da ativação.
 - [ ] **Step 3:** Ajustes de consistência visual (espaçamentos, cores fora da paleta, textos em inglês esquecidos).
-- [ ] **Step 4:** Commit final `chore: verificação final do front-end Lito CRM` e resumo para o usuário.
+- [ ] **Step 4:** Commit final `chore: verificação final do front-end CRM ON` e resumo para o usuário.

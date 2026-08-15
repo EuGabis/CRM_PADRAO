@@ -51,7 +51,7 @@ Create `supabase/migrations/0028_ai_agents.sql`:
 
 ```sql
 -- ============================================================
--- Lito CRM — Conversation AI: agentes (ai_agents)
+-- CRM ON — Conversation AI: agentes (ai_agents)
 --
 -- Config de cada agente de IA por empresa: personalidade (system prompt), meta,
 -- informações, modelo, status, principal, canais e flags de ações. O "Testar seu bot"

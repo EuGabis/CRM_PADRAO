@@ -82,35 +82,35 @@
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 
-  /* Lito CRM — tokens da marca */
-  --lito-sidebar: #131826;
-  --lito-sidebar-hover: #1d2436;
-  --lito-sidebar-accent: #6366f1;
-  --lito-wa-green: #22c55e;
-  --lito-sla-red: #ef4444;
+  /* CRM ON — tokens da marca */
+  --crm-sidebar: #131826;
+  --crm-sidebar-hover: #1d2436;
+  --crm-sidebar-accent: #6366f1;
+  --crm-wa-green: #22c55e;
+  --crm-sla-red: #ef4444;
 }
 
 /* Vinheta animada do login: lead atravessando o funil */
-@keyframes lito-lead-journey {
+@keyframes crm-lead-journey {
   0%, 16%   { left: 2%; }
   28%, 52%  { left: 35.5%; }
   64%, 92%  { left: 69%; }
   100%      { left: 2%; }
 }
-@keyframes lito-bubble-in {
+@keyframes crm-bubble-in {
   0%   { opacity: 0; transform: translateY(8px) scale(0.92); }
   100% { opacity: 1; transform: none; }
 }
-.lito-lead-card {
-  animation: lito-lead-journey 12s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+.crm-lead-card {
+  animation: crm-lead-journey 12s cubic-bezier(0.65, 0, 0.35, 1) infinite;
 }
-.lito-bubble {
+.crm-bubble {
   opacity: 0;
-  animation: lito-bubble-in 0.5s ease-out forwards;
+  animation: crm-bubble-in 0.5s ease-out forwards;
 }
 @media (prefers-reduced-motion: reduce) {
-  .lito-lead-card { animation: none; left: 69%; }
-  .lito-bubble { animation: none; opacity: 1; }
+  .crm-lead-card { animation: none; left: 69%; }
+  .crm-bubble { animation: none; opacity: 1; }
 }
 
 /* "Marcação quadrada" ao clicar num donut: o <Pie> do Recharts 3 nasce com

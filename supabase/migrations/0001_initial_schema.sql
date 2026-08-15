@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Schema inicial (multi-tenant, segurança máxima)
+-- CRM ON — Schema inicial (multi-tenant, segurança máxima)
 -- Espelha src/lib/data/types.ts
 --
 -- Princípios:

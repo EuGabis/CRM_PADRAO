@@ -9,17 +9,17 @@
 -- 0019_conversation_media.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Conversas: anexos e Ã¡udio (Supabase Storage)
+-- CRM ON — Conversas: anexos e áudio (Supabase Storage)
 --
 -- O composer da caixa de entrada passa a enviar imagens, documentos
--- (PDF/DOCX) e Ã¡udios gravados pelo microfone. Os binÃ¡rios vÃ£o para um
+-- (PDF/DOCX) e áudios gravados pelo microfone. Os binários vão para um
 -- bucket PRIVADO (`conversation-media`) com caminho
 -- `{location_id}/{conversation_id}/{uuid}.{ext}`; os metadados ficam na
--- prÃ³pria linha de `public.messages` (media_path/name/mime/size), e a
--- exibiÃ§Ã£o usa URL assinada temporÃ¡ria.
+-- própria linha de `public.messages` (media_path/name/mime/size), e a
+-- exibição usa URL assinada temporária.
 --
--- Segue o MESMO padrÃ£o multi-tenant das demais migraÃ§Ãµes: bucket privado,
--- polÃ­ticas de storage.objects pelo primeiro segmento do caminho (= o
+-- Segue o MESMO padrão multi-tenant das demais migrações: bucket privado,
+-- políticas de storage.objects pelo primeiro segmento do caminho (= o
 -- location_id), checagem de membership via private.user_locations().
 --
 -- Idempotente: pode rodar de novo sem erro.
@@ -31,7 +31,7 @@ insert into storage.buckets (id, name, public)
 values ('conversation-media', 'conversation-media', false)
 on conflict (id) do nothing;
 
--- ---------- Novos tipos de mensagem + colunas de mÃ­dia ----------
+-- ---------- Novos tipos de mensagem + colunas de mídia ----------
 -- 'image' e 'file' juntam-se a text/audio/event.
 alter table public.messages drop constraint if exists messages_type_check;
 alter table public.messages add constraint messages_type_check
@@ -42,9 +42,9 @@ alter table public.messages add column if not exists media_name text;  -- nome o
 alter table public.messages add column if not exists media_mime text;  -- image/png | application/pdf | audio/webm | ...
 alter table public.messages add column if not exists media_size bigint; -- bytes
 
--- ---------- PolÃ­ticas do Storage (bucket conversation-media) ----------
--- A pasta raiz do objeto Ã© o location_id; membros da empresa leem/gravam/apagam
--- sÃ³ o que estÃ¡ sob a pasta da prÃ³pria empresa.
+-- ---------- Políticas do Storage (bucket conversation-media) ----------
+-- A pasta raiz do objeto é o location_id; membros da empresa leem/gravam/apagam
+-- só o que está sob a pasta da própria empresa.
 drop policy if exists "membros leem midia de conversas" on storage.objects;
 create policy "membros leem midia de conversas" on storage.objects
   for select to authenticated
@@ -74,11 +74,11 @@ create policy "membros apagam midia de conversas" on storage.objects
 -- 0022_whatsapp.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” WhatsApp (Meta Cloud API): canais + status/ids nas mensagens
+-- CRM ON — WhatsApp (Meta Cloud API): canais + status/ids nas mensagens
 --
--- Canais de atendimento (nÃºmeros) em whatsapp_channels; as mensagens de
+-- Canais de atendimento (números) em whatsapp_channels; as mensagens de
 -- WhatsApp ganham wa_message_id (casa os status do webhook), status
--- (sent/delivered/read/failed) e channel_id (qual nÃºmero). Segue o padrÃ£o
+-- (sent/delivered/read/failed) e channel_id (qual número). Segue o padrão
 -- multi-tenant: RLS deny-by-default, revoke do anon, policies TO authenticated
 -- por membership. Idempotente.
 -- ============================================================
@@ -87,10 +87,10 @@ set check_function_bodies = off;
 create table if not exists public.whatsapp_channels (
   id uuid primary key default gen_random_uuid(),
   location_id uuid not null references public.locations (id) on delete cascade,
-  name text not null,                       -- nome interno (ex.: "Lito Academy Vendas")
+  name text not null,                       -- nome interno (ex.: "Comercial Vendas")
   meta_name text not null default '',       -- nome verificado na Meta
-  phone_e164 text not null default '',      -- nÃºmero exibido (ex.: +55 11 9...)
-  phone_number_id text not null,            -- id do nÃºmero na Meta (resolve o webhook)
+  phone_e164 text not null default '',      -- número exibido (ex.: +55 11 9...)
+  phone_number_id text not null,            -- id do número na Meta (resolve o webhook)
   waba_id text not null default '',         -- id da WABA (lista templates)
   sector text not null default '',          -- setor (ex.: "Comercial Principal")
   daily_limit int not null default 1000,
@@ -149,20 +149,20 @@ alter table public.messages replica identity full;
 -- 0023_google_ads.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Google Ads (VisÃ£o geral, somente leitura)
+-- CRM ON — Google Ads (Visão geral, somente leitura)
 --
--- ConexÃ£o OAuth por empresa: guarda refresh_token + customer_id para ler a conta
--- via API. O refresh_token Ã© SEGREDO: coluna com `revoke select` de anon/authenticated;
--- sÃ³ as rotas server (service-role) leem. Demais colunas (status) os membros leem.
--- PadrÃ£o multi-tenant: RLS membership, revoke do anon. Idempotente.
+-- Conexão OAuth por empresa: guarda refresh_token + customer_id para ler a conta
+-- via API. O refresh_token é SEGREDO: coluna com `revoke select` de anon/authenticated;
+-- só as rotas server (service-role) leem. Demais colunas (status) os membros leem.
+-- Padrão multi-tenant: RLS membership, revoke do anon. Idempotente.
 -- ============================================================
 set check_function_bodies = off;
 
 create table if not exists public.google_ads_connections (
   id uuid primary key default gen_random_uuid(),
   location_id uuid not null references public.locations (id) on delete cascade,
-  customer_id text not null,               -- id da conta Google Ads (sem hÃ­fens)
-  login_customer_id text,                  -- id da MCC quando aplicÃ¡vel (nulo p/ conta direta)
+  customer_id text not null,               -- id da conta Google Ads (sem hífens)
+  login_customer_id text,                  -- id da MCC quando aplicável (nulo p/ conta direta)
   refresh_token text not null,             -- SEGREDO (coluna revogada abaixo)
   connected_email text not null default '',
   currency_code text not null default 'BRL',
@@ -197,7 +197,7 @@ create policy "membros excluem conexao google ads" on public.google_ads_connecti
   for delete to authenticated
   using (location_id in (select private.user_locations()));
 
--- Segredo: membros NÃƒO podem ler o refresh_token (sÃ³ as rotas server com service-role).
+-- Segredo: membros NÃO podem ler o refresh_token (só as rotas server com service-role).
 revoke select (refresh_token) on public.google_ads_connections from anon, authenticated;
 
 drop trigger if exists google_ads_connections_updated_at on public.google_ads_connections;
@@ -210,18 +210,18 @@ create trigger google_ads_connections_updated_at
 -- 0024_forms.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” FormulÃ¡rios de captaÃ§Ã£o (Sites â†’ FormulÃ¡rios)
+-- CRM ON — Formulários de captação (Sites → Formulários)
 --
--- `forms`: config do formulÃ¡rio (campos, aÃ§Ã£o de sucesso, tag, lista inteligente).
--- `form_submissions`: histÃ³rico de cada envio. O envio pÃºblico (rota /api/forms/*)
--- grava com a service role; membros LEEM via RLS. PadrÃ£o multi-tenant. Idempotente.
+-- `forms`: config do formulário (campos, ação de sucesso, tag, lista inteligente).
+-- `form_submissions`: histórico de cada envio. O envio público (rota /api/forms/*)
+-- grava com a service role; membros LEEM via RLS. Padrão multi-tenant. Idempotente.
 -- ============================================================
 set check_function_bodies = off;
 
 create table if not exists public.forms (
   id uuid primary key default gen_random_uuid(),
   location_id uuid not null references public.locations (id) on delete cascade,
-  slug text not null unique,                 -- id pÃºblico usado no embed
+  slug text not null unique,                 -- id público usado no embed
   name text not null,
   description text not null default '',
   fields jsonb not null default '[]',        -- FormField[]
@@ -270,7 +270,7 @@ create index if not exists form_submissions_form_idx on public.form_submissions 
 alter table public.form_submissions enable row level security;
 revoke all on public.form_submissions from anon;
 
--- Membros LEEM/EXCLUEM; a inserÃ§Ã£o Ã© feita pela rota pÃºblica com service role (bypassa RLS).
+-- Membros LEEM/EXCLUEM; a inserção é feita pela rota pública com service role (bypassa RLS).
 drop policy if exists "membros leem envios" on public.form_submissions;
 create policy "membros leem envios" on public.form_submissions
   for select to authenticated using (location_id in (select private.user_locations()));
@@ -283,12 +283,12 @@ create policy "membros excluem envios" on public.form_submissions
 -- 0025_conversas_atribuicao.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Conversas: responsÃ¡vel pelo atendimento
+-- CRM ON — Conversas: responsável pelo atendimento
 --
--- O rail da caixa de entrada tinha "AtribuÃ­das a mim", mas `conversations`
--- nÃ£o guardava responsÃ¡vel nenhum â€” o botÃ£o sÃ³ emitia um toast porque nÃ£o
--- havia o que filtrar. Esta coluna dÃ¡ lastro ao filtro e ao seletor de
--- responsÃ¡vel no cabeÃ§alho da conversa.
+-- O rail da caixa de entrada tinha "Atribuídas a mim", mas `conversations`
+-- não guardava responsável nenhum — o botão só emitia um toast porque não
+-- havia o que filtrar. Esta coluna dá lastro ao filtro e ao seletor de
+-- responsável no cabeçalho da conversa.
 --
 -- `on delete set null`: se o membro sair da equipe, a conversa volta para a
 -- caixa do grupo em vez de sumir do filtro de todo mundo.
@@ -299,7 +299,7 @@ create policy "membros excluem envios" on public.form_submissions
 alter table public.conversations
   add column if not exists assigned_to uuid references public.profiles (id) on delete set null;
 
--- O filtro "atribuÃ­das a mim" Ã© sempre location + responsÃ¡vel.
+-- O filtro "atribuídas a mim" é sempre location + responsável.
 create index if not exists conversations_assigned_idx
   on public.conversations (location_id, assigned_to);
 
@@ -308,11 +308,11 @@ create index if not exists conversations_assigned_idx
 -- 0026_ai_logs.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” FundaÃ§Ã£o de IA: logs de geraÃ§Ã£o (ai_logs)
+-- CRM ON — Fundação de IA: logs de geração (ai_logs)
 --
 -- Uma linha por chamada ao /api/ai/generate: modelo, prompt, resposta, tokens,
--- quem chamou. PadrÃ£o multi-tenant: RLS membership, revoke do anon. Membros leem
--- e inserem (a rota roda com a sessÃ£o do usuÃ¡rio). Idempotente.
+-- quem chamou. Padrão multi-tenant: RLS membership, revoke do anon. Membros leem
+-- e inserem (a rota roda com a sessão do usuário). Idempotente.
 -- ============================================================
 set check_function_bodies = off;
 
@@ -346,36 +346,36 @@ create policy "membros criam ai_logs" on public.ai_logs
 -- 0027_conversas_rail.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Conversas: rail funcional (bot/automaÃ§Ã£o + visualizaÃ§Ãµes salvas)
+-- CRM ON — Conversas: rail funcional (bot/automação + visualizações salvas)
 --
--- 1) messages.automated â€” marca a mensagem que NÃƒO foi escrita por uma pessoa
---    (motor de automaÃ§Ãµes hoje; agente de IA amanhÃ£). Ã‰ o que dÃ¡ lastro ao
---    filtro "Conversas com automaÃ§Ã£o" do rail â€” antes ele era sÃ³ um Ã­cone.
--- 2) inbox_views â€” visualizaÃ§Ãµes salvas de verdade. Antes eram quatro nomes
---    fixos no cÃ³digo (ORGANIZAR, LEADS LUCAS, ...) que sÃ³ emitiam um toast.
+-- 1) messages.automated — marca a mensagem que NÃO foi escrita por uma pessoa
+--    (motor de automações hoje; agente de IA amanhã). É o que dá lastro ao
+--    filtro "Conversas com automação" do rail — antes ele era só um ícone.
+-- 2) inbox_views — visualizações salvas de verdade. Antes eram quatro nomes
+--    fixos no código (ORGANIZAR, LEADS LUCAS, ...) que só emitiam um toast.
 --
--- PadrÃ£o multi-tenant de sempre: RLS membership, revoke do anon, UPDATE com
+-- Padrão multi-tenant de sempre: RLS membership, revoke do anon, UPDATE com
 -- USING + WITH CHECK. Idempotente.
 -- ============================================================
 
--- 1) Marcador de mensagem automÃ¡tica ------------------------------------------
+-- 1) Marcador de mensagem automática ------------------------------------------
 
 alter table public.messages
   add column if not exists automated boolean not null default false;
 
--- Ãndice parcial: a lista pergunta "quais conversas tÃªm mensagem automÃ¡tica?",
--- entÃ£o sÃ³ as linhas automÃ¡ticas interessam (hoje, a minoria).
+-- Índice parcial: a lista pergunta "quais conversas têm mensagem automática?",
+-- então só as linhas automáticas interessam (hoje, a minoria).
 create index if not exists messages_automated_idx
   on public.messages (location_id, conversation_id)
   where automated;
 
--- 2) VisualizaÃ§Ãµes salvas da caixa de entrada ---------------------------------
+-- 2) Visualizações salvas da caixa de entrada ---------------------------------
 
 create table if not exists public.inbox_views (
   id uuid primary key default gen_random_uuid(),
   location_id uuid not null references public.locations (id) on delete cascade,
   name text not null,
-  -- { scope, filter, sort, query } â€” o estado da caixa no momento em que salvou
+  -- { scope, filter, sort, query } — o estado da caixa no momento em que salvou
   config jsonb not null default '{}'::jsonb,
   created_by uuid references auth.users (id) on delete set null,
   created_at timestamptz not null default now()
@@ -413,18 +413,18 @@ create policy "membros excluem inbox_views" on public.inbox_views
 -- 0028_mensagens_agendadas.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Mensagens agendadas: log e disparo de verdade
+-- CRM ON — Mensagens agendadas: log e disparo de verdade
 --
--- AtÃ© aqui "Programar" sÃ³ gravava `messages.scheduled_for` e pintava o selo
--- AGENDADA. Nada disparava a mensagem na hora marcada e nÃ£o havia registro de
--- quem agendou. Estas colunas sÃ£o o log:
---   scheduled_by    â€” quem agendou
---   schedule_status â€” pendente â†’ enviando â†’ enviada | falhou | cancelada
---   dispatched_at   â€” quando saiu de verdade
---   schedule_error  â€” motivo, quando falhou
+-- Até aqui "Programar" só gravava `messages.scheduled_for` e pintava o selo
+-- AGENDADA. Nada disparava a mensagem na hora marcada e não havia registro de
+-- quem agendou. Estas colunas são o log:
+--   scheduled_by    — quem agendou
+--   schedule_status — pendente → enviando → enviada | falhou | cancelada
+--   dispatched_at   — quando saiu de verdade
+--   schedule_error  — motivo, quando falhou
 --
--- Quem dispara Ã© o batimento de minuto que jÃ¡ existe (/api/automations/tick,
--- pg_cron), entÃ£o nÃ£o hÃ¡ job, segredo nem env novos.
+-- Quem dispara é o batimento de minuto que já existe (/api/automations/tick,
+-- pg_cron), então não há job, segredo nem env novos.
 --
 -- Idempotente.
 -- ============================================================
@@ -442,13 +442,13 @@ alter table public.messages add constraint messages_schedule_status_chk
     or schedule_status in ('pendente', 'enviando', 'enviada', 'falhou', 'cancelada')
   );
 
--- Agendamentos que jÃ¡ existiam entram no log como pendentes.
+-- Agendamentos que já existiam entram no log como pendentes.
 update public.messages
    set schedule_status = 'pendente'
  where scheduled_for is not null
    and schedule_status is null;
 
--- O disparador pergunta "o que venceu?" â€” sÃ³ as pendentes interessam.
+-- O disparador pergunta "o que venceu?" — só as pendentes interessam.
 create index if not exists messages_scheduled_pending_idx
   on public.messages (scheduled_for)
   where schedule_status = 'pendente';
@@ -463,15 +463,15 @@ create index if not exists messages_scheduled_log_idx
 -- 0029_conversas_finalizar_arquivar.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Conversas: finalizar e arquivar
+-- CRM ON — Conversas: finalizar e arquivar
 --
--- Dois eixos independentes de propÃ³sito, nÃ£o um status sÃ³:
---   finalizada = atendimento resolvido (some da caixa, mas Ã© histÃ³rico vivo)
---   arquivada  = tirada de vista (some da caixa, resolvida ou nÃ£o)
--- Guardar os dois separados permite responder "quantas finalizei este mÃªs?"
--- mesmo depois de arquivar, coisa que um enum Ãºnico apagaria.
+-- Dois eixos independentes de propósito, não um status só:
+--   finalizada = atendimento resolvido (some da caixa, mas é histórico vivo)
+--   arquivada  = tirada de vista (some da caixa, resolvida ou não)
+-- Guardar os dois separados permite responder "quantas finalizei este mês?"
+-- mesmo depois de arquivar, coisa que um enum único apagaria.
 --
--- Cada eixo guarda quem e quando, no mesmo espÃ­rito do log das agendadas (0028).
+-- Cada eixo guarda quem e quando, no mesmo espírito do log das agendadas (0028).
 -- Reabrir/desarquivar = voltar a coluna para NULL.
 --
 -- Idempotente.
@@ -483,7 +483,7 @@ alter table public.conversations
   add column if not exists archived_at timestamptz,
   add column if not exists archived_by uuid references auth.users (id) on delete set null;
 
--- A caixa padrÃ£o pergunta "o que estÃ¡ aberto?" â€” Ã­ndice parcial cobre o caso
+-- A caixa padrão pergunta "o que está aberto?" — índice parcial cobre o caso
 -- comum sem carregar o resto.
 create index if not exists conversations_abertas_idx
   on public.conversations (location_id, last_message_at desc)
@@ -503,12 +503,12 @@ create index if not exists conversations_arquivadas_idx
 -- 0030_ai_agents.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Conversation AI: agentes (ai_agents)
+-- CRM ON — Conversation AI: agentes (ai_agents)
 --
 -- Config de cada agente de IA por empresa: personalidade (system prompt), meta,
--- informaÃ§Ãµes, modelo, status, principal, canais e flags de aÃ§Ãµes. O "Testar seu bot"
--- monta o system prompt a partir daqui. PadrÃ£o multi-tenant: RLS membership, revoke
--- do anon. Idempotente. "Agente principal" Ã© garantido no app (setPrimary desmarca os outros).
+-- informações, modelo, status, principal, canais e flags de ações. O "Testar seu bot"
+-- monta o system prompt a partir daqui. Padrão multi-tenant: RLS membership, revoke
+-- do anon. Idempotente. "Agente principal" é garantido no app (setPrimary desmarca os outros).
 -- ============================================================
 set check_function_bodies = off;
 
@@ -556,13 +556,13 @@ create trigger ai_agents_updated_at before update on public.ai_agents
 -- 0031_whatsapp_template_tracking.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Rastreio de entrega dos TEMPLATES de WhatsApp
+-- CRM ON — Rastreio de entrega dos TEMPLATES de WhatsApp
 --
--- template_name marca a mensagem como rastreÃ¡vel (sÃ³ envios de template).
+-- template_name marca a mensagem como rastreável (só envios de template).
 -- delivered_at/read_at/failed_at guardam a linha do tempo carimbada pelo
--- webhook (status jÃ¡ existe desde a 0022); error_detail traz o motivo da
--- falha. Ãndice parcial para a aba de Logs. Idempotente. Sem novas policies:
--- a messages jÃ¡ tem RLS por membership.
+-- webhook (status já existe desde a 0022); error_detail traz o motivo da
+-- falha. Índice parcial para a aba de Logs. Idempotente. Sem novas policies:
+-- a messages já tem RLS por membership.
 -- ============================================================
 set check_function_bodies = off;
 
@@ -581,7 +581,7 @@ create index if not exists messages_template_name_idx
 -- 0032_whatsapp_autoreply.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” WhatsApp auto-responder: flag de handoff humano
+-- CRM ON — WhatsApp auto-responder: flag de handoff humano
 --
 -- Quando um humano responde uma conversa pelo inbox (/api/whatsapp/send),
 -- marcamos bot_paused=true e o auto-responder para de responder AQUELA conversa.

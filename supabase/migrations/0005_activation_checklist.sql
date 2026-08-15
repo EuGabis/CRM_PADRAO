@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Checklist de ativação persistente (por empresa)
+-- CRM ON — Checklist de ativação persistente (por empresa)
 -- Guarda quem concluiu cada passo e quando.
 -- ============================================================
 

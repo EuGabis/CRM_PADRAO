@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Mensagens agendadas: log e disparo de verdade
+-- CRM ON — Mensagens agendadas: log e disparo de verdade
 --
 -- Até aqui "Programar" só gravava `messages.scheduled_for` e pintava o selo
 -- AGENDADA. Nada disparava a mensagem na hora marcada e não havia registro de

@@ -40,7 +40,7 @@ import { cn } from "@/lib/utils";
  * carimbo mandaria tudo para "Lidas" de uma vez só por ter aberto o painel.
  */
 
-const READ_KEY = "lito.notifications.read-ids";
+const READ_KEY = "crm.notifications.read-ids";
 /** Teto do histórico local: a lista cresceria para sempre sem isso. */
 const READ_LIMIT = 300;
 const REFRESH_MS = 60_000;

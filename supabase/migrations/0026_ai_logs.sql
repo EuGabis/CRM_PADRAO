@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Fundação de IA: logs de geração (ai_logs)
+-- CRM ON — Fundação de IA: logs de geração (ai_logs)
 --
 -- Uma linha por chamada ao /api/ai/generate: modelo, prompt, resposta, tokens,
 -- quem chamou. Padrão multi-tenant: RLS membership, revoke do anon. Membros leem

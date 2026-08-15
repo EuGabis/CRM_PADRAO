@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Email Marketing: claim atômico de destinatários
+-- CRM ON — Email Marketing: claim atômico de destinatários
 -- Evita envio duplicado quando dois ticks do cron se sobrepõem.
 -- Rode este arquivo inteiro de uma vez no SQL Editor.
 -- ============================================================

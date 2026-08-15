@@ -17,8 +17,8 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
       className={cn(
         "flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] font-medium text-slate-300 transition-colors",
         active
-          ? "bg-[var(--lito-sidebar-accent)] text-white"
-          : "hover:bg-[var(--lito-sidebar-hover)] hover:text-white"
+          ? "bg-[var(--crm-sidebar-accent)] text-white"
+          : "hover:bg-[var(--crm-sidebar-hover)] hover:text-white"
       )}
     >
       <Icon className="size-4 shrink-0" />
@@ -37,10 +37,10 @@ export function Sidebar() {
   const { can } = useMyMembership();
   const { company } = useAccount();
   return (
-    <aside className="flex h-screen w-[240px] shrink-0 flex-col bg-[var(--lito-sidebar)]">
+    <aside className="flex h-screen w-[240px] shrink-0 flex-col bg-[var(--crm-sidebar)]">
       <div className="px-4 pt-4">
         <div className="flex items-center gap-2">
-          <div className="flex size-8 items-center justify-center overflow-hidden rounded-lg bg-[var(--lito-sidebar-accent)] text-sm font-black text-white">
+          <div className="flex size-8 items-center justify-center overflow-hidden rounded-lg bg-[var(--crm-sidebar-accent)] text-sm font-black text-white">
             {company?.logoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={company.logoUrl} alt="Logo" className="size-full object-cover" />
@@ -53,7 +53,7 @@ export function Sidebar() {
         <Link
           href="/configuracoes/perfil"
           title="Perfil da empresa"
-          className="mt-3 flex w-full items-center justify-between rounded-lg bg-[var(--lito-sidebar-hover)] px-3 py-2 text-left"
+          className="mt-3 flex w-full items-center justify-between rounded-lg bg-[var(--crm-sidebar-hover)] px-3 py-2 text-left"
         >
           <span className="min-w-0">
             <span className="block truncate text-xs font-semibold text-white">

@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — WhatsApp (Meta Cloud API): canais + status/ids nas mensagens
+-- CRM ON — WhatsApp (Meta Cloud API): canais + status/ids nas mensagens
 --
 -- Canais de atendimento (números) em whatsapp_channels; as mensagens de
 -- WhatsApp ganham wa_message_id (casa os status do webhook), status
@@ -12,7 +12,7 @@ set check_function_bodies = off;
 create table if not exists public.whatsapp_channels (
   id uuid primary key default gen_random_uuid(),
   location_id uuid not null references public.locations (id) on delete cascade,
-  name text not null,                       -- nome interno (ex.: "Lito Academy Vendas")
+  name text not null,                       -- nome interno (ex.: "Comercial Vendas")
   meta_name text not null default '',       -- nome verificado na Meta
   phone_e164 text not null default '',      -- número exibido (ex.: +55 11 9...)
   phone_number_id text not null,            -- id do número na Meta (resolve o webhook)

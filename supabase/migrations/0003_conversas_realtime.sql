@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Conversas: trechos (snippets) + Realtime
+-- CRM ON — Conversas: trechos (snippets) + Realtime
 -- ============================================================
 
 -- Trechos (respostas rápidas usadas no composer)

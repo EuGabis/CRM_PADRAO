@@ -1,4 +1,4 @@
-# Spec — Módulo de Automações real (Lito CRM)
+# Spec — Módulo de Automações real (CRM ON)
 
 **Data:** 2026-08-07
 **Status:** aprovada pelo usuário

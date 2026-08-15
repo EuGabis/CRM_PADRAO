@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Guru: segredo do cron fora do código (mesmo padrão de
+-- CRM ON — Guru: segredo do cron fora do código (mesmo padrão de
 -- private.automation_config)
 --
 -- A migração 0013 tinha o x-guru-sync-secret escrito direto na definição
@@ -15,7 +15,7 @@ set check_function_bodies = off;
 
 create table if not exists private.guru_sync_config (
   id boolean primary key default true check (id),
-  sync_url text not null default 'https://lito-crm.vercel.app/api/integrations/guru/sync',
+  sync_url text not null default 'https://SEU-DOMINIO/api/integrations/guru/sync',
   secret text not null default 'troque-este-segredo'
 );
 
@@ -52,11 +52,11 @@ $$;
 
 revoke all on function private.guru_sync_tick() from public, anon, authenticated;
 
-select cron.unschedule('lito-guru-sync')
-where exists (select 1 from cron.job where jobname = 'lito-guru-sync');
+select cron.unschedule('crm-guru-sync')
+where exists (select 1 from cron.job where jobname = 'crm-guru-sync');
 
 select cron.schedule(
-  'lito-guru-sync',
+  'crm-guru-sync',
   '* * * * *',
   $$select private.guru_sync_tick()$$
 );

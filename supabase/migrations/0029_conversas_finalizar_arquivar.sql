@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Conversas: finalizar e arquivar
+-- CRM ON — Conversas: finalizar e arquivar
 --
 -- Dois eixos independentes de propósito, não um status só:
 --   finalizada = atendimento resolvido (some da caixa, mas é histórico vivo)

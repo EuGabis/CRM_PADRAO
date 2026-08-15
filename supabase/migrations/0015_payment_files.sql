@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Pagamentos: Arquivos e contratos (upload PDF/DOCX)
+-- CRM ON — Pagamentos: Arquivos e contratos (upload PDF/DOCX)
 --
 -- A aba "Arquivos e contratos" guarda documentos (contratos, propostas)
 -- por empresa. Os binários vão para um bucket privado do Supabase Storage

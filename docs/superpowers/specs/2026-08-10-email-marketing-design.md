@@ -1,6 +1,6 @@
 # Email Marketing — Design Spec
 
-> Módulo **Marketing → E-mails** do Lito CRM, tornado real sobre Supabase + Resend.
+> Módulo **Marketing → E-mails** do CRM ON, tornado real sobre Supabase + Resend.
 > Data: 2026-08-10. Convenções do repo: `AGENTS.md`. Mapa funcional: `MAPA_FUNCIONALIDADES.md` (seção 10.1).
 
 ## Objetivo
@@ -50,7 +50,7 @@ Escrita de status/contadores fica com a **service role** (tick + webhook).
 
 ### `public.email_campaigns`
 - `id uuid pk`, `location_id uuid not null → locations`
-- `name text`, `subject text`, `from_email text` (default `nao-responder@news.litoaviation.com`), `reply_to text`
+- `name text`, `subject text`, `from_email text` (default `nao-responder@news.seudominio.com.br`), `reply_to text`
 - `body_html text`, `body_text text`
 - `audience jsonb` — `{ "type": "all" | "tag" | "smart_list", "value": <tag|smart_list_id|null> }`
 - `status text` check in (`draft`,`scheduled`,`sending`,`sent`,`paused`,`failed`) default `draft`
@@ -97,7 +97,7 @@ Escrita de status/contadores fica com a **service role** (tick + webhook).
    - Sem `pending` restante → `status='sent'` na campanha.
 3. **`0011_marketing_cron.sql`** — tabela `private.marketing_config` (tick_url + secret,
    espelhando `private.automation_config`), função `private.marketing_tick()` e job
-   `lito-marketing-tick` (`* * * * *`) chamando a rota via `net.http_post`, mesmo padrão
+   `crm-marketing-tick` (`* * * * *`) chamando a rota via `net.http_post`, mesmo padrão
    do `0009`. O secret é o mesmo `AUTOMATION_SECRET`.
 
 ## Métricas (webhook do Resend)
@@ -151,7 +151,7 @@ selecionar cru + derivar com `useMemo`.
 - **Env novas:** `RESEND_WEBHOOK_SECRET` (do painel do Resend). Reuso de `AUTOMATION_SECRET`
   para o tick de marketing e para assinar links de unsubscribe. Adicionar em `.env.local`,
   `.env.example` e Vercel (production+preview+development).
-- **Resend (passos manuais):** criar **webhook** → `https://lito-crm.vercel.app/api/marketing/resend-webhook`;
+- **Resend (passos manuais):** criar **webhook** → `https://SEU-DOMINIO/api/marketing/resend-webhook`;
   **ativar tracking** de abertura/clique no domínio. Dependem da rota publicada em produção.
 
 ## Segurança / conformidade

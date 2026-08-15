@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Pagamentos: agregação de contatos (histórico completo)
+-- CRM ON — Pagamentos: agregação de contatos (histórico completo)
 --
 -- A aba Contatos precisa mostrar TODOS os compradores, não só os que
 -- couberam nas últimas 100 vendas carregadas no client. Em vez de puxar

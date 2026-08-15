@@ -24,7 +24,7 @@ export default function EmailConfigPage() {
   const sender = senderAddress();
   const replyTo = replyToAddress();
   const resendConfigured = !!process.env.RESEND_API_KEY?.trim();
-  const domain = sender.match(/@([^\s>]+)/)?.[1] ?? null;
+  const domain = sender?.match(/@([^\s>]+)/)?.[1] ?? null;
 
   return (
     <div className="max-w-xl">
@@ -49,7 +49,15 @@ export default function EmailConfigPage() {
         </div>
         <div className="border-t pt-3">
           <p className="font-semibold text-slate-700">Remetente</p>
-          <p className="break-all font-mono text-[11px] text-slate-600">{sender}</p>
+          {sender ? (
+            <p className="break-all font-mono text-[11px] text-slate-600">{sender}</p>
+          ) : (
+            <p className="text-[11px] text-amber-700">
+              Não configurado — defina <span className="font-mono">EMAIL_FROM</span> com um
+              endereço do seu domínio verificado no Resend. Sem isso, convites de equipe e
+              campanhas não são enviados.
+            </p>
+          )}
         </div>
         {domain && (
           <div className="border-t pt-3">

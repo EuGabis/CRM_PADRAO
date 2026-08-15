@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Google Ads (Visão geral, somente leitura)
+-- CRM ON — Google Ads (Visão geral, somente leitura)
 --
 -- Conexão OAuth por empresa: guarda refresh_token + customer_id para ler a conta
 -- via API. O refresh_token é SEGREDO: coluna com `revoke select` de anon/authenticated;

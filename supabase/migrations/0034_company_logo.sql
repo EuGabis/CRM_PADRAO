@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Logo da empresa (whitelabel)
+-- CRM ON — Logo da empresa (whitelabel)
 --
 -- locations.logo_url guarda a URL pública do logo; o binário vai para o bucket
 -- PÚBLICO `branding` no caminho {location_id}/logo-{ts}.{ext}. Leitura liberada

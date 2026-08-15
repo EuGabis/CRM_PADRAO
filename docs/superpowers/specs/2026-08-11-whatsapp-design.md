@@ -1,6 +1,6 @@
 # WhatsApp (Meta Cloud API) — Design Spec
 
-> Módulo **WhatsApp** do Lito CRM: canais de atendimento (números) via **Meta Cloud API**,
+> Módulo **WhatsApp** do CRM ON: canais de atendimento (números) via **Meta Cloud API**,
 > com inbox 2 vias nas Conversas + envio por template. Data: 2026-08-11.
 > Convenções: `AGENTS.md`. Mapa: `MAPA_FUNCIONALIDADES.md` (seção 18).
 
@@ -27,7 +27,7 @@ painel estilo "Canais de atendimento".
 1. **Meta Cloud API (oficial)** — não a Evolution/QR não oficial.
 2. Usuário **já tem** número WhatsApp Business + token (Cloud API).
 3. v1 = **inbox 2 vias + envio por template**.
-4. **Migrar 1 número** do RVOPS para o Lito (o webhook do número passa a apontar pro Lito;
+4. **Migrar 1 número** do RVOPS para o CRM ON (o webhook do número passa a apontar pro CRM ON;
    ⚠️ o RVOPS deixa de receber nesse número).
 5. UI = painel **"Canais de atendimento"** (multi-canal, começa com 1 número).
 
@@ -57,7 +57,7 @@ Segredos **nunca** com prefixo `NEXT_PUBLIC_`; em `.env.local`, `.env.example` e
 ## Modelo de dados (migração `0017_whatsapp.sql`)
 
 **`public.whatsapp_channels`** — os canais/números
-- `id`, `location_id` (RLS), `name` (nome interno, ex.: "Lito Academy Vendas"),
+- `id`, `location_id` (RLS), `name` (nome interno, ex.: "Comercial Vendas"),
   `meta_name` (nome na Meta), `phone_e164` (número), `phone_number_id` (id na Meta, **único**),
   `waba_id`, `sector` (setor, ex.: "Comercial Principal"), `daily_limit int default 1000`,
   `active boolean default true`, `created_at`
@@ -124,9 +124,9 @@ Rota autenticada (`getUser()` + membership). Body `{ conversationId | contactId,
 1. Env vars (`WHATSAPP_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`) no `.env.local` + Vercel.
 2. **Deploy** (webhook precisa estar no ar).
 3. Meta App → WhatsApp → **Configuration → Webhook**: callback
-   `https://lito-crm.vercel.app/api/whatsapp/webhook`, verify token = `WHATSAPP_VERIFY_TOKEN`,
-   assinar o campo **`messages`**. ← **aqui o número sai do RVOPS e entra no Lito.**
-4. Criar o canal no painel do Lito (nome, número, `phone_number_id`, `waba_id`).
+   `https://SEU-DOMINIO/api/whatsapp/webhook`, verify token = `WHATSAPP_VERIFY_TOKEN`,
+   assinar o campo **`messages`**. ← **aqui o número sai do RVOPS e entra no CRM ON.**
+4. Criar o canal no painel do CRM ON (nome, número, `phone_number_id`, `waba_id`).
 
 ## Segurança
 
@@ -145,4 +145,4 @@ Rota autenticada (`getUser()` + membership). Body `{ conversationId | contactId,
 ## Ordem de dependência (produção)
 
 Igual ao pg_cron/Guru: webhook só funciona com a rota **publicada** + env vars na Vercel +
-webhook configurado na Meta apontando pro Lito.
+webhook configurado na Meta apontando pro CRM ON.

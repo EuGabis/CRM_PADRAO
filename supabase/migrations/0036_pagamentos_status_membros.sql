@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Pagamentos: todo membro enxerga a conexão da Guru
+-- CRM ON — Pagamentos: todo membro enxerga a conexão da Guru
 --
 -- Bug: um usuário não-administrador abria Pagamentos e via a tela de
 -- "Conectar Guru", como se a empresa não tivesse integração. Causa: desde a

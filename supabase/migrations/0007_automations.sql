@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Motor de automações (schema + captura de eventos)
+-- CRM ON — Motor de automações (schema + captura de eventos)
 -- Migração única: rode este arquivo inteiro de uma vez no SQL Editor.
 -- ============================================================
 set check_function_bodies = off;
@@ -325,7 +325,7 @@ end;
 $$;
 
 -- 12:00 UTC = 09:00 no horário de Brasília
-select cron.unschedule('lito-aniversarios')
-where exists (select 1 from cron.job where jobname = 'lito-aniversarios');
+select cron.unschedule('crm-aniversarios')
+where exists (select 1 from cron.job where jobname = 'crm-aniversarios');
 
-select cron.schedule('lito-aniversarios', '0 12 * * *', $$select private.enqueue_birthdays()$$);
+select cron.schedule('crm-aniversarios', '0 12 * * *', $$select private.enqueue_birthdays()$$);

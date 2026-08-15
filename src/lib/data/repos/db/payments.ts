@@ -240,7 +240,7 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
     };
 
     supabase
-      .channel("lito-pagamentos")
+      .channel("crm-pagamentos")
       .on("postgres_changes", { event: "*", schema: "public", table: "payment_subscriptions" }, refetch)
       .subscribe((status) => {
         if (status === "SUBSCRIBED") set({ realtime: "on" });

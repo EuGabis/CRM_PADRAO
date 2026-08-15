@@ -1,4 +1,4 @@
--- Lito CRM — permite mensagens do tipo 'video' (mídia real do WhatsApp).
+-- CRM ON — permite mensagens do tipo 'video' (mídia real do WhatsApp).
 -- Idempotente (drop + add da constraint). Aplicar no SQL Editor.
 set check_function_bodies = off;
 alter table public.messages drop constraint if exists messages_type_check;

@@ -1,6 +1,6 @@
 # Fundação de IA (OpenAI) — Design Spec
 
-> Base reutilizável pra IA no Lito CRM: cliente server da OpenAI (chave só no servidor),
+> Base reutilizável pra IA no CRM ON: cliente server da OpenAI (chave só no servidor),
 > rota autenticada `/api/ai/generate`, repo pro cliente, **logs de uso** (`ai_logs`) e um
 > **playground real no AI Studio** que prova a fundação. As features específicas (Content AI,
 > Conversation AI, Base de Conhecimento) vêm depois, em cima disso.

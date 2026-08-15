@@ -25,16 +25,16 @@ function PipelineVignette() {
       {/* Conversa que origina o lead */}
       <div className="mb-5 space-y-2">
         <div
-          className="lito-bubble flex w-fit items-center gap-2 rounded-2xl rounded-bl-sm bg-white/[0.07] px-3 py-2"
+          className="crm-bubble flex w-fit items-center gap-2 rounded-2xl rounded-bl-sm bg-white/[0.07] px-3 py-2"
           style={{ animationDelay: "0.4s" }}
         >
-          <span className="flex size-5 items-center justify-center rounded-full bg-[var(--lito-wa-green)]">
+          <span className="flex size-5 items-center justify-center rounded-full bg-[var(--crm-wa-green)]">
             <MessageCircle className="size-3 text-white" />
           </span>
           <span className="text-xs text-slate-200">Oi! Vi o anúncio de vocês 👋</span>
         </div>
         <div
-          className="lito-bubble ml-auto flex w-fit items-center gap-2 rounded-2xl rounded-br-sm bg-indigo-500/90 px-3 py-2"
+          className="crm-bubble ml-auto flex w-fit items-center gap-2 rounded-2xl rounded-br-sm bg-indigo-500/90 px-3 py-2"
           style={{ animationDelay: "1.1s" }}
         >
           <span className="text-xs text-white">Fechado! Te mando o contrato 🎉</span>
@@ -62,7 +62,7 @@ function PipelineVignette() {
           ))}
         </div>
         {/* Card do lead em movimento */}
-        <div className="lito-lead-card absolute top-7 w-[29%] rounded-md border border-indigo-400/40 bg-[#252d42] px-2 py-1.5 shadow-lg shadow-indigo-950/50">
+        <div className="crm-lead-card absolute top-7 w-[29%] rounded-md border border-indigo-400/40 bg-[#252d42] px-2 py-1.5 shadow-lg shadow-indigo-950/50">
           <p className="truncate text-[10px] font-semibold text-white">Maria Duarte</p>
           <p className="text-[9px] text-indigo-300">R$ 297/mês</p>
         </div>
@@ -157,7 +157,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[var(--lito-sidebar)]">
+    <div className="flex min-h-screen bg-[var(--crm-sidebar)]">
       {/* ============ Painel do produto ============ */}
       <div className="relative hidden w-[52%] flex-col justify-between overflow-hidden p-10 lg:flex xl:p-14">
         {/* brilho ambiente */}
@@ -168,7 +168,7 @@ export default function LoginPage() {
         />
 
         <div className="relative flex items-center gap-2.5">
-          <div className="flex size-9 items-center justify-center rounded-xl bg-[var(--lito-sidebar-accent)] text-base font-black text-white">
+          <div className="flex size-9 items-center justify-center rounded-xl bg-[var(--crm-sidebar-accent)] text-base font-black text-white">
             {brand.shortName[0]}
           </div>
           <span className="text-lg font-bold text-white">{brand.name}</span>
@@ -210,7 +210,7 @@ export default function LoginPage() {
         <div className="w-full max-w-[360px]">
           {/* marca no mobile */}
           <div className="mb-8 flex items-center gap-2 lg:hidden">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-[var(--lito-sidebar-accent)] text-sm font-black text-white">
+            <div className="flex size-8 items-center justify-center rounded-lg bg-[var(--crm-sidebar-accent)] text-sm font-black text-white">
               {brand.shortName[0]}
             </div>
             <span className="text-base font-bold text-slate-900">{brand.name}</span>

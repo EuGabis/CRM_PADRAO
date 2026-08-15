@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Conversas: rail funcional (bot/automação + visualizações salvas)
+-- CRM ON — Conversas: rail funcional (bot/automação + visualizações salvas)
 --
 -- 1) messages.automated — marca a mensagem que NÃO foi escrita por uma pessoa
 --    (motor de automações hoje; agente de IA amanhã). É o que dá lastro ao

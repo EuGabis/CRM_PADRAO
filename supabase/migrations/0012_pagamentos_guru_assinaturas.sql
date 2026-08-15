@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Assinaturas da Guru (estado atual por assinante)
+-- CRM ON — Assinaturas da Guru (estado atual por assinante)
 --
 -- `payment_events` (migração 0008) já guarda o log bruto de tudo que a
 -- Guru envia. Esta tabela guarda o estado ATUAL de cada assinatura —

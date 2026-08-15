@@ -15,7 +15,7 @@ vira o logo da empresa.
 
 1. **Whitelabel completo:** o logo aparece no **Perfil da empresa**, no **topo da sidebar**
    (substituindo o símbolo "L" da marca do produto) e nos **convites por e-mail**.
-2. O **nome "Lito CRM" continua vindo de `brand`** (config) — trocamos só o **símbolo/logo visual**.
+2. O **nome "CRM ON" continua vindo de `brand`** (config) — trocamos só o **símbolo/logo visual**.
 
 ## Não-objetivos (v1)
 

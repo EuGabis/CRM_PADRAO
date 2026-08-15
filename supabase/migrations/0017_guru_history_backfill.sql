@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Backfill histórico de vendas da Guru (retroativo)
+-- CRM ON — Backfill histórico de vendas da Guru (retroativo)
 --
 -- O sync incremental (migração 0013) só cobre pra frente a partir de
 -- quando a empresa conectou. Esta migração acrescenta o estado pra andar

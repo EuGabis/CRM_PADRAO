@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Integração de pagamentos: Digital Manager Guru
+-- CRM ON — Integração de pagamentos: Digital Manager Guru
 --
 -- Guru avisa vendas/assinaturas via webhook (POST com JSON), autenticado
 -- pelo campo `api_token` do corpo — o mesmo valor mostrado no painel da

@@ -62,7 +62,7 @@ Create `supabase/migrations/0024_forms.sql`:
 
 ```sql
 -- ============================================================
--- Lito CRM — Formulários de captação (Sites → Formulários)
+-- CRM ON — Formulários de captação (Sites → Formulários)
 --
 -- `forms`: config do formulário (campos, ação de sucesso, tag, lista inteligente).
 -- `form_submissions`: histórico de cada envio. O envio público (rota /api/forms/*)
@@ -239,7 +239,7 @@ function genSlug(): string {
 }
 
 export function embedSnippet(slug: string): string {
-  const base = process.env.NEXT_PUBLIC_APP_URL || "https://lito-crm.vercel.app";
+  const base = process.env.NEXT_PUBLIC_APP_URL || "https://SEU-DOMINIO";
   return `<script src="${base.replace(/\/$/, "")}/api/forms/${slug}/embed.js"></script>`;
 }
 
@@ -618,7 +618,7 @@ function js(body: string, status = 200) {
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const base = process.env.NEXT_PUBLIC_APP_URL || "https://lito-crm.vercel.app";
+  const base = process.env.NEXT_PUBLIC_APP_URL || "https://SEU-DOMINIO";
 
   let form: any = null;
   try {
@@ -630,10 +630,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       .maybeSingle();
     form = data;
   } catch {
-    return js(`console.error("[Lito Forms] servidor sem credenciais");`, 503);
+    return js(`console.error("[CRM ON Forms] servidor sem credenciais");`, 503);
   }
   if (!form || !form.active) {
-    return js(`console.warn("[Lito Forms] formulário indisponível: ${slug}");`);
+    return js(`console.warn("[CRM ON Forms] formulário indisponível: ${slug}");`);
   }
 
   const config = JSON.stringify({
@@ -645,7 +645,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   // O script renderiza o form (sem estilo) onde o <script> está e envia por fetch.
   const body = `(function(){
   var F = ${config};
-  var mount = document.getElementById("lito-form-" + F.slug) || document.currentScript.parentNode;
+  var mount = document.getElementById("crm-form-" + F.slug) || document.currentScript.parentNode;
   var form = document.createElement("form");
   F.fields.forEach(function(f){
     var wrap = document.createElement("p");

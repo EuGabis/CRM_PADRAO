@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Calendários: compromisso vinculado a um lead
+-- CRM ON — Calendários: compromisso vinculado a um lead
 --
 -- O compromisso já podia apontar para um contato; faltava apontar para a
 -- OPORTUNIDADE (o lead no funil) — é o que responde "essa reunião é de qual

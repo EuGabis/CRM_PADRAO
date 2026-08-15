@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Email Marketing (schema, RLS e funções)
+-- CRM ON — Email Marketing (schema, RLS e funções)
 -- Migração única: rode este arquivo inteiro de uma vez no SQL Editor.
 --
 -- Padrão de RLS/tenant idêntico à 0001: location_id em tudo, RLS habilitada,
@@ -18,7 +18,10 @@ create table if not exists public.email_campaigns (
   location_id uuid not null references public.locations (id) on delete cascade,
   name text not null,
   subject text not null default '',
-  from_email text not null default 'Lito CRM <nao-responder@news.litoaviation.com>',
+  -- Sem remetente embutido: quem manda é EMAIL_FROM, do domínio verificado na
+  -- conta do Resend de quem instalou. Default fixo aqui faria a campanha nascer
+  -- assinando um domínio de terceiro.
+  from_email text not null default '',
   reply_to text,
   body_html text not null default '',
   body_text text not null default '',

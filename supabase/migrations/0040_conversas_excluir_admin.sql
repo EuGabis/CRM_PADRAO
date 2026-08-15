@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Conversas: só administrador exclui
+-- CRM ON — Conversas: só administrador exclui
 --
 -- Excluir uma conversa apaga o histórico do atendimento junto (as mensagens
 -- caem por ON DELETE CASCADE) e não tem desfazer. Isso é decisão de

@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Pagamentos: relatórios com o histórico completo
+-- CRM ON — Pagamentos: relatórios com o histórico completo
 --
 -- Vendas e Relatórios calculavam receita/gráficos a partir do array em
 -- memória do store (`usePaymentEvents`), que só carrega as 100 vendas mais

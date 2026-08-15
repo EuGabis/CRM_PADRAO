@@ -9,23 +9,23 @@
 -- 0033_departamentos.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Departamentos (segmentaÃ§Ã£o de acesso padrÃ£o)
+-- CRM ON — Departamentos (segmentação de acesso padrão)
 --
--- AtÃ© aqui a permissÃ£o por mÃ³dulo era individual: cada usuÃ¡rio tinha seu
+-- Até aqui a permissão por módulo era individual: cada usuário tinha seu
 -- `location_members.permissions`, e montar um perfil novo era repetir a mesma
--- lista de mÃ³dulos na mÃ£o. Departamento passa a ser a base compartilhada.
+-- lista de módulos na mão. Departamento passa a ser a base compartilhada.
 --
--- Como as permissÃµes efetivas sÃ£o resolvidas (decisÃ£o do Gabriel, 2026-08-14):
---   1. Administrador vÃª tudo â€” departamento nÃ£o se aplica a ele. Isso evita a
---      empresa se trancar fora de ConfiguraÃ§Ãµes.
---   2. ExceÃ§Ã£o individual vence: se `location_members.permissions` tiver a
---      chave do mÃ³dulo, ela manda.
---   3. SenÃ£o, vale o `permissions` do departamento do usuÃ¡rio.
---   4. Sem departamento e sem exceÃ§Ã£o, libera (mantÃ©m o comportamento dos
---      membros antigos, que tÃªm `permissions = {}` e enxergam tudo).
+-- Como as permissões efetivas são resolvidas (decisão do Gabriel, 2026-08-14):
+--   1. Administrador vê tudo — departamento não se aplica a ele. Isso evita a
+--      empresa se trancar fora de Configurações.
+--   2. Exceção individual vence: se `location_members.permissions` tiver a
+--      chave do módulo, ela manda.
+--   3. Senão, vale o `permissions` do departamento do usuário.
+--   4. Sem departamento e sem exceção, libera (mantém o comportamento dos
+--      membros antigos, que têm `permissions = {}` e enxergam tudo).
 --
--- Por isso `location_members.permissions` deixa de ser "o acesso do usuÃ¡rio" e
--- passa a ser "as exceÃ§Ãµes dele" â€” a UI sÃ³ grava as chaves que divergem do
+-- Por isso `location_members.permissions` deixa de ser "o acesso do usuário" e
+-- passa a ser "as exceções dele" — a UI só grava as chaves que divergem do
 -- departamento.
 --
 -- Idempotente.
@@ -39,25 +39,25 @@ create table if not exists public.departments (
   location_id uuid not null references public.locations (id) on delete cascade,
   name text not null,
   description text not null default '',
-  -- { "conversas": true, "pagamentos": false, ... } â€” mapa completo dos mÃ³dulos
+  -- { "conversas": true, "pagamentos": false, ... } — mapa completo dos módulos
   permissions jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   created_by uuid references auth.users (id) on delete set null
 );
 
--- Dois departamentos com o mesmo nome na mesma empresa sÃ³ geram confusÃ£o.
+-- Dois departamentos com o mesmo nome na mesma empresa só geram confusão.
 create unique index if not exists departments_location_name_idx
   on public.departments (location_id, lower(name));
 
--- `on delete set null`: apagar um departamento nÃ£o pode derrubar o acesso de
--- ninguÃ©m â€” o usuÃ¡rio volta a ser regido sÃ³ pelas exceÃ§Ãµes dele.
+-- `on delete set null`: apagar um departamento não pode derrubar o acesso de
+-- ninguém — o usuário volta a ser regido só pelas exceções dele.
 alter table public.location_members
   add column if not exists department_id uuid references public.departments (id) on delete set null;
 
 create index if not exists location_members_department_idx
   on public.location_members (department_id);
 
--- ---------- 2. RLS: todo membro lÃª, sÃ³ admin escreve ----------
+-- ---------- 2. RLS: todo membro lê, só admin escreve ----------
 
 alter table public.departments enable row level security;
 revoke all on public.departments from anon;
@@ -83,10 +83,10 @@ create policy "admins excluem departamentos" on public.departments
   for delete to authenticated
   using (private.is_admin(location_id));
 
--- ---------- 3. Departamentos padrÃ£o ----------
+-- ---------- 3. Departamentos padrão ----------
 
 -- Chaves = `key` de NAV_ITEMS em src/lib/config/nav.ts. Mapa COMPLETO de
--- propÃ³sito: `false` explÃ­cito Ã© mais fÃ¡cil de auditar do que ausÃªncia.
+-- propósito: `false` explícito é mais fácil de auditar do que ausência.
 create or replace function private.seed_default_departments(loc uuid)
 returns void
 language plpgsql
@@ -113,7 +113,7 @@ begin
   values (
     loc,
     'Comercial',
-    'ProspecÃ§Ã£o, negociaÃ§Ã£o e fechamento de matrÃ­culas.',
+    'Prospecção, negociação e fechamento de matrículas.',
     jsonb_build_object(
       'dashboard', true, 'conversas', true, 'calendarios', true, 'contatos', true,
       'leads', true, 'automacoes', true, 'agentes-ia', true, 'midia', true,
@@ -128,7 +128,7 @@ $$;
 
 revoke all on function private.seed_default_departments(uuid) from public, anon, authenticated;
 
--- Empresas que jÃ¡ existem.
+-- Empresas que já existem.
 do $$
 declare l record;
 begin
@@ -137,8 +137,8 @@ begin
   end loop;
 end $$;
 
--- Empresas novas: gatilho prÃ³prio em vez de mexer no `handle_new_user`, que Ã©
--- compartilhado e jÃ¡ faz perfil + location + pipeline padrÃ£o.
+-- Empresas novas: gatilho próprio em vez de mexer no `handle_new_user`, que é
+-- compartilhado e já faz perfil + location + pipeline padrão.
 create or replace function private.on_location_created()
 returns trigger
 language plpgsql
@@ -156,14 +156,14 @@ create trigger seed_departments_on_location
   after insert on public.locations
   for each row execute function private.on_location_created();
 
--- ---------- 4. Convite jÃ¡ sai com departamento ----------
+-- ---------- 4. Convite já sai com departamento ----------
 
 alter table public.invitations
   add column if not exists department_id uuid references public.departments (id) on delete set null;
 
--- O `private.handle_new_user` (0006) Ã© quem cria o location_members a partir do
--- convite. Em vez de reescrevÃª-lo â€” funÃ§Ã£o compartilhada, que o outro Claude
--- tambÃ©m mexe â€”, um gatilho aditivo copia o departamento depois do insert.
+-- O `private.handle_new_user` (0006) é quem cria o location_members a partir do
+-- convite. Em vez de reescrevê-lo — função compartilhada, que o outro Claude
+-- também mexe —, um gatilho aditivo copia o departamento depois do insert.
 create or replace function private.apply_invite_department()
 returns trigger
 language plpgsql
@@ -175,7 +175,7 @@ declare
   dep uuid;
 begin
   if new.department_id is not null then
-    return new; -- jÃ¡ veio definido
+    return new; -- já veio definido
   end if;
 
   select u.email into invited_email from auth.users u where u.id = new.user_id;
@@ -212,13 +212,13 @@ create trigger apply_invite_department
 -- 0034_company_logo.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Logo da empresa (whitelabel)
+-- CRM ON — Logo da empresa (whitelabel)
 --
--- locations.logo_url guarda a URL pÃºblica do logo; o binÃ¡rio vai para o bucket
--- PÃšBLICO `branding` no caminho {location_id}/logo-{ts}.{ext}. Leitura liberada
--- (logo aparece no app e em e-mail); escrita/exclusÃ£o sÃ³ por membros da empresa,
--- escopadas pela pasta = location_id (mesmo padrÃ£o de payment-files/0015).
--- Setar logo_url em locations Ã© admin-only (a RLS de UPDATE de locations reforÃ§a).
+-- locations.logo_url guarda a URL pública do logo; o binário vai para o bucket
+-- PÚBLICO `branding` no caminho {location_id}/logo-{ts}.{ext}. Leitura liberada
+-- (logo aparece no app e em e-mail); escrita/exclusão só por membros da empresa,
+-- escopadas pela pasta = location_id (mesmo padrão de payment-files/0015).
+-- Setar logo_url em locations é admin-only (a RLS de UPDATE de locations reforça).
 -- Idempotente.
 -- ============================================================
 set check_function_bodies = off;
@@ -229,8 +229,8 @@ insert into storage.buckets (id, name, public)
 values ('branding', 'branding', true)
 on conflict (id) do nothing;
 
-drop policy if exists "logo leitura pÃºblica" on storage.objects;
-create policy "logo leitura pÃºblica" on storage.objects
+drop policy if exists "logo leitura pública" on storage.objects;
+create policy "logo leitura pública" on storage.objects
   for select using (bucket_id = 'branding');
 
 drop policy if exists "membros gravam logo" on storage.objects;
@@ -266,29 +266,29 @@ create policy "membros apagam logo" on storage.objects
 -- 0035_departamento_canais.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” SegmentaÃ§Ã£o de conversas por nÃºmero (canal) do WhatsApp
+-- CRM ON — Segmentação de conversas por número (canal) do WhatsApp
 --
--- O departamento jÃ¡ dizia QUAIS MÃ“DULOS a pessoa acessa (0033). Agora diz
--- tambÃ©m DE QUAIS NÃšMEROS ela vÃª conversa.
+-- O departamento já dizia QUAIS MÓDULOS a pessoa acessa (0033). Agora diz
+-- também DE QUAIS NÚMEROS ela vê conversa.
 --
 -- Regras decididas com o Gabriel (2026-08-14):
---   1. O vÃ­nculo Ã© do DEPARTAMENTO, nÃ£o da pessoa: nÃºmero ligado ao Comercial
+--   1. O vínculo é do DEPARTAMENTO, não da pessoa: número ligado ao Comercial
 --      vale para todo o Comercial.
---   2. Departamento sem nÃºmero vinculado = sem restriÃ§Ã£o (vÃª tudo). Assim
---      nenhum departamento existente perde acesso ao aplicar esta migraÃ§Ã£o.
---   3. Conversa SEM canal (e-mail, Instagram, WhatsApp antigo sem nÃºmero)
---      continua visÃ­vel para todos â€” a restriÃ§Ã£o vale sÃ³ para o WhatsApp que
---      jÃ¡ tem nÃºmero vinculado.
---   4. Administrador vÃª tudo, como no resto do sistema.
+--   2. Departamento sem número vinculado = sem restrição (vê tudo). Assim
+--      nenhum departamento existente perde acesso ao aplicar esta migração.
+--   3. Conversa SEM canal (e-mail, Instagram, WhatsApp antigo sem número)
+--      continua visível para todos — a restrição vale só para o WhatsApp que
+--      já tem número vinculado.
+--   4. Administrador vê tudo, como no resto do sistema.
 --
--- Isso Ã© RLS de verdade, nÃ£o filtro de tela: quem nÃ£o pode ver a conversa nÃ£o
+-- Isso é RLS de verdade, não filtro de tela: quem não pode ver a conversa não
 -- a recebe nem pela API.
 --
 -- Idempotente.
 -- ============================================================
 set check_function_bodies = off;
 
--- ---------- 1. VÃ­nculo departamento â†” nÃºmero ----------
+-- ---------- 1. Vínculo departamento ↔ número ----------
 
 create table if not exists public.department_channels (
   department_id uuid not null references public.departments (id) on delete cascade,
@@ -319,10 +319,10 @@ create policy "admins excluem canais do depto" on public.department_channels
   for delete to authenticated
   using (private.is_admin(location_id));
 
--- ---------- 2. O usuÃ¡rio pode ver este canal? ----------
+-- ---------- 2. O usuário pode ver este canal? ----------
 
 -- SECURITY DEFINER porque consulta location_members/department_channels, que
--- tÃªm RLS prÃ³pria â€” mesmo padrÃ£o de private.user_locations().
+-- têm RLS própria — mesmo padrão de private.user_locations().
 create or replace function private.channel_allowed(loc uuid, chan uuid)
 returns boolean
 language sql
@@ -331,11 +331,11 @@ stable
 set search_path = ''
 as $$
   select
-    -- 3: conversa sem nÃºmero nÃ£o entra na segmentaÃ§Ã£o
+    -- 3: conversa sem número não entra na segmentação
     chan is null
-    -- 4: admin vÃª tudo
+    -- 4: admin vê tudo
     or private.is_admin(loc)
-    -- 2: departamento sem nÃºmero vinculado (ou usuÃ¡rio sem departamento) = sem restriÃ§Ã£o
+    -- 2: departamento sem número vinculado (ou usuário sem departamento) = sem restrição
     or not exists (
       select 1
         from public.location_members lm
@@ -343,7 +343,7 @@ as $$
        where lm.user_id = auth.uid()
          and lm.location_id = loc
     )
-    -- 1: o nÃºmero estÃ¡ entre os do departamento da pessoa
+    -- 1: o número está entre os do departamento da pessoa
     or exists (
       select 1
         from public.location_members lm
@@ -359,9 +359,9 @@ grant execute on function private.channel_allowed(uuid, uuid) to authenticated;
 
 -- ---------- 3. Aplicar nas conversas e mensagens ----------
 
--- As policies "membros leem"/"membros editam" vÃªm do laÃ§o da 0001. Recriadas
--- aqui com o filtro de canal por cima do filtro de empresa â€” o de empresa
--- continua igual, nÃ£o Ã© afrouxado em nada.
+-- As policies "membros leem"/"membros editam" vêm do laço da 0001. Recriadas
+-- aqui com o filtro de canal por cima do filtro de empresa — o de empresa
+-- continua igual, não é afrouxado em nada.
 drop policy if exists "membros leem" on public.conversations;
 create policy "membros leem" on public.conversations
   for select to authenticated
@@ -402,7 +402,7 @@ create policy "membros editam" on public.messages
     and private.channel_allowed(location_id, channel_id)
   );
 
--- Enviar mensagem num canal que a pessoa nÃ£o enxerga tambÃ©m nÃ£o pode.
+-- Enviar mensagem num canal que a pessoa não enxerga também não pode.
 drop policy if exists "membros criam" on public.messages;
 create policy "membros criam" on public.messages
   for insert to authenticated
@@ -416,27 +416,27 @@ create policy "membros criam" on public.messages
 -- 0036_pagamentos_status_membros.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Pagamentos: todo membro enxerga a conexÃ£o da Guru
+-- CRM ON — Pagamentos: todo membro enxerga a conexão da Guru
 --
--- Bug: um usuÃ¡rio nÃ£o-administrador abria Pagamentos e via a tela de
--- "Conectar Guru", como se a empresa nÃ£o tivesse integraÃ§Ã£o. Causa: desde a
--- 0008, `payment_credentials` sÃ³ Ã© legÃ­vel por admin (`private.is_admin`) â€”
--- e com razÃ£o, porque a tabela guarda o Account Token e o User Token da Guru.
--- Sem a linha, o app concluÃ­a `connected = false`.
+-- Bug: um usuário não-administrador abria Pagamentos e via a tela de
+-- "Conectar Guru", como se a empresa não tivesse integração. Causa: desde a
+-- 0008, `payment_credentials` só é legível por admin (`private.is_admin`) —
+-- e com razão, porque a tabela guarda o Account Token e o User Token da Guru.
+-- Sem a linha, o app concluía `connected = false`.
 --
--- A conexÃ£o Ã© da EMPRESA, nÃ£o de quem estÃ¡ logado. Esta view expÃµe sÃ³ o
--- ESTADO da integraÃ§Ã£o â€” sem nenhum token â€” para qualquer membro:
+-- A conexão é da EMPRESA, não de quem está logado. Esta view expõe só o
+-- ESTADO da integração — sem nenhum token — para qualquer membro:
 --
---   * quem Ã© membro sabe que a Guru estÃ¡ conectada e quando sincronizou;
---   * ninguÃ©m alÃ©m do admin lÃª `api_key`/`webhook_token`, que continuam
---     protegidos pela RLS original (nÃ£o mexo nela).
+--   * quem é membro sabe que a Guru está conectada e quando sincronizou;
+--   * ninguém além do admin lê `api_key`/`webhook_token`, que continuam
+--     protegidos pela RLS original (não mexo nela).
 --
--- ATENÃ‡ÃƒO â€” esta view Ã© SECURITY DEFINER de propÃ³sito (sem
--- `security_invoker = on`, ao contrÃ¡rio das outras views do projeto): ela
+-- ATENÇÃO — esta view é SECURITY DEFINER de propósito (sem
+-- `security_invoker = on`, ao contrário das outras views do projeto): ela
 -- precisa justamente contornar a RLS admin-only da tabela base. Por isso o
--- isolamento entre empresas Ã© feito AQUI DENTRO, no `where` com
--- `private.user_locations()`. Se alguÃ©m remover esse where, vaza o estado de
--- integraÃ§Ã£o de outras empresas.
+-- isolamento entre empresas é feito AQUI DENTRO, no `where` com
+-- `private.user_locations()`. Se alguém remover esse where, vaza o estado de
+-- integração de outras empresas.
 --
 -- Idempotente.
 -- ============================================================
@@ -462,32 +462,32 @@ grant select on public.payment_integration_status to authenticated;
 -- 0037_dashboard_views.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Painel de controle: visualizaÃ§Ãµes por usuÃ¡rio e por departamento
+-- CRM ON — Painel de controle: visualizações por usuário e por departamento
 --
--- O seletor de painÃ©is do topo era decorativo: trÃªs nomes fixos no cÃ³digo
--- ("(PadrÃ£o) VisÃ£o Geral", "SDR Acompanhamento", "Funil Comercial") e um
--- "Adicionar painel" que sÃ³ emitia toast. Esta tabela dÃ¡ lastro a ele.
+-- O seletor de painéis do topo era decorativo: três nomes fixos no código
+-- ("(Padrão) Visão Geral", "SDR Acompanhamento", "Funil Comercial") e um
+-- "Adicionar painel" que só emitia toast. Esta tabela dá lastro a ele.
 --
--- Cada linha Ã© um painel: quais widgets aparecem, em que ordem, e a
--- configuraÃ§Ã£o de cada um (ex.: qual pipeline o funil resume).
+-- Cada linha é um painel: quais widgets aparecem, em que ordem, e a
+-- configuração de cada um (ex.: qual pipeline o funil resume).
 --
 -- DOIS ESCOPOS na mesma tabela:
---   * scope = 'user'       â†’ painel pessoal, sÃ³ o dono lÃª e edita.
---   * scope = 'department' â†’ painel montado pelo ADMIN para um departamento;
---                            todo mundo daquele departamento enxerga, mas sÃ³
+--   * scope = 'user'       → painel pessoal, só o dono lê e edita.
+--   * scope = 'department' → painel montado pelo ADMIN para um departamento;
+--                            todo mundo daquele departamento enxerga, mas só
 --                            admin cria/edita/apaga.
 --
--- Um escopo sÃ³ por linha (o check garante): painel de departamento nÃ£o tem
--- dono individual, painel pessoal nÃ£o tem departamento. Guardar os dois na
--- mesma tabela mantÃ©m uma consulta sÃ³ no seletor â€” que precisa listar as duas
+-- Um escopo só por linha (o check garante): painel de departamento não tem
+-- dono individual, painel pessoal não tem departamento. Guardar os dois na
+-- mesma tabela mantém uma consulta só no seletor — que precisa listar as duas
 -- coisas juntas de qualquer forma.
 --
--- Diferente de `inbox_views` (0027), que Ã© da empresa inteira e todo mundo
--- enxerga. O `location_id` continua nos dois escopos porque o mesmo usuÃ¡rio
--- pode ser membro de mais de uma empresa e os ids de pipeline de uma nÃ£o
+-- Diferente de `inbox_views` (0027), que é da empresa inteira e todo mundo
+-- enxerga. O `location_id` continua nos dois escopos porque o mesmo usuário
+-- pode ser membro de mais de uma empresa e os ids de pipeline de uma não
 -- existem na outra.
 --
--- PadrÃ£o multi-tenant de sempre: RLS, revoke do anon, UPDATE com
+-- Padrão multi-tenant de sempre: RLS, revoke do anon, UPDATE com
 -- USING + WITH CHECK. Idempotente.
 -- ============================================================
 
@@ -498,10 +498,10 @@ create table if not exists public.dashboard_views (
   user_id uuid references auth.users (id) on delete cascade,
   department_id uuid references public.departments (id) on delete cascade,
   name text not null,
-  -- [{ "key": "funil", "pipelineId": "<uuid>" }, ...] â€” a ORDEM do array Ã© a
-  -- ordem na tela; widget ausente do array Ã© widget escondido.
+  -- [{ "key": "funil", "pipelineId": "<uuid>" }, ...] — a ORDEM do array é a
+  -- ordem na tela; widget ausente do array é widget escondido.
   widgets jsonb not null default '[]'::jsonb,
-  -- Painel que abre por padrÃ£o dentro do prÃ³prio escopo.
+  -- Painel que abre por padrão dentro do próprio escopo.
   is_default boolean not null default false,
   created_by uuid references auth.users (id) on delete set null,
   created_at timestamptz not null default now(),
@@ -518,8 +518,8 @@ create index if not exists dashboard_views_owner_idx
 create index if not exists dashboard_views_department_idx
   on public.dashboard_views (department_id, created_at);
 
--- SÃ³ um padrÃ£o por usuÃ¡rio em cada empresa, e um por departamento. Ãndices
--- parciais Ãºnicos: o banco garante isso mesmo se duas abas marcarem padrÃ£o ao
+-- Só um padrão por usuário em cada empresa, e um por departamento. Índices
+-- parciais únicos: o banco garante isso mesmo se duas abas marcarem padrão ao
 -- mesmo tempo.
 create unique index if not exists dashboard_views_one_default_idx
   on public.dashboard_views (user_id, location_id)
@@ -531,8 +531,8 @@ create unique index if not exists dashboard_views_one_dept_default_idx
 
 -- ---------- Quem enxerga painel de departamento ----------
 -- SECURITY DEFINER pelo mesmo motivo de `private.channel_allowed`: a policy
--- consulta `location_members`, que tem RLS prÃ³pria â€” sem o definer a
--- subconsulta enxergaria sÃ³ o que o usuÃ¡rio jÃ¡ pode ver e a regra ficaria
+-- consulta `location_members`, que tem RLS própria — sem o definer a
+-- subconsulta enxergaria só o que o usuário já pode ver e a regra ficaria
 -- circular.
 create or replace function private.user_department_ids()
 returns setof uuid
@@ -553,9 +553,9 @@ grant execute on function private.user_department_ids() to authenticated;
 alter table public.dashboard_views enable row level security;
 revoke all on public.dashboard_views from anon;
 
--- Leitura: o prÃ³prio painel, o do meu departamento, ou tudo se for admin
--- (admin precisa enxergar para editar os painÃ©is dos departamentos).
--- Sempre dentro da empresa: sÃ³ `user_id` deixaria um ex-membro continuar
+-- Leitura: o próprio painel, o do meu departamento, ou tudo se for admin
+-- (admin precisa enxergar para editar os painéis dos departamentos).
+-- Sempre dentro da empresa: só `user_id` deixaria um ex-membro continuar
 -- lendo o painel de uma empresa da qual saiu.
 drop policy if exists "leitura de paineis" on public.dashboard_views;
 create policy "leitura de paineis" on public.dashboard_views
@@ -569,7 +569,7 @@ create policy "leitura de paineis" on public.dashboard_views
     )
   );
 
--- Escrita: painel pessoal Ã© do dono; painel de departamento Ã© sÃ³ do admin.
+-- Escrita: painel pessoal é do dono; painel de departamento é só do admin.
 drop policy if exists "cria paineis" on public.dashboard_views;
 create policy "cria paineis" on public.dashboard_views
   for insert to authenticated
@@ -610,9 +610,9 @@ create policy "exclui paineis" on public.dashboard_views
     )
   );
 
--- VersÃµes anteriores desta migraÃ§Ã£o criaram polÃ­ticas com outros nomes; some
--- com elas para nÃ£o ficarem duas regras concorrentes na mesma tabela.
-drop policy if exists "dono lÃª seus paineis" on public.dashboard_views;
+-- Versões anteriores desta migração criaram políticas com outros nomes; some
+-- com elas para não ficarem duas regras concorrentes na mesma tabela.
+drop policy if exists "dono lê seus paineis" on public.dashboard_views;
 drop policy if exists "dono cria seus paineis" on public.dashboard_views;
 drop policy if exists "dono edita seus paineis" on public.dashboard_views;
 drop policy if exists "dono exclui seus paineis" on public.dashboard_views;
@@ -621,7 +621,7 @@ drop policy if exists "dono exclui seus paineis" on public.dashboard_views;
 -- ------------------------------------------------------------
 -- 0038_message_type_video.sql
 -- ------------------------------------------------------------
--- Lito CRM â€” permite mensagens do tipo 'video' (mÃ­dia real do WhatsApp).
+-- CRM ON — permite mensagens do tipo 'video' (mídia real do WhatsApp).
 -- Idempotente (drop + add da constraint). Aplicar no SQL Editor.
 set check_function_bodies = off;
 alter table public.messages drop constraint if exists messages_type_check;
@@ -633,26 +633,26 @@ alter table public.messages add constraint messages_type_check
 -- 0039_pipelines_segmentacao.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Leads: segmentaÃ§Ã£o dos PIPELINES
+-- CRM ON — Leads: segmentação dos PIPELINES
 --
--- O pipeline jÃ¡ Ã© a forma de visualizar os leads; o que faltava era dizer de
--- QUEM ele Ã©. AtÃ© aqui todo pipeline era da empresa inteira: qualquer usuÃ¡rio
+-- O pipeline já é a forma de visualizar os leads; o que faltava era dizer de
+-- QUEM ele é. Até aqui todo pipeline era da empresa inteira: qualquer usuário
 -- criava um funil e ele aparecia para todo mundo.
 --
--- TrÃªs escopos:
---   * 'empresa'    â†’ todo mundo vÃª (Ã© o que todos os pipelines de hoje viram,
---                    entÃ£o nada muda para os dados existentes).
---   * 'department' â†’ sÃ³ quem Ã© daquele departamento (+ admin).
---   * 'user'       â†’ sÃ³ o dono (+ admin).
+-- Três escopos:
+--   * 'empresa'    → todo mundo vê (é o que todos os pipelines de hoje viram,
+--                    então nada muda para os dados existentes).
+--   * 'department' → só quem é daquele departamento (+ admin).
+--   * 'user'       → só o dono (+ admin).
 --
--- Quem cria o quÃª:
---   * usuÃ¡rio comum sÃ³ cria pipeline 'user' com owner_id = ele mesmo;
+-- Quem cria o quê:
+--   * usuário comum só cria pipeline 'user' com owner_id = ele mesmo;
 --   * admin cria em qualquer escopo e escolhe o departamento ou o dono.
--- Isso Ã© RLS, nÃ£o regra de tela: sem o `with check` abaixo, qualquer usuÃ¡rio
+-- Isso é RLS, não regra de tela: sem o `with check` abaixo, qualquer usuário
 -- poderia inserir um pipeline 'empresa' chamando a API direto.
 --
 -- A visibilidade contamina o que pende do pipeline: `stages` e `opportunities`
--- de um pipeline invisÃ­vel nÃ£o podem aparecer, senÃ£o o lead vazaria pelo
+-- de um pipeline invisível não podem aparecer, senão o lead vazaria pelo
 -- dashboard, pela busca ou pela API mesmo com o funil escondido.
 --
 -- Idempotente.
@@ -666,7 +666,7 @@ alter table public.pipelines
   add column if not exists owner_id uuid references auth.users (id) on delete cascade,
   add column if not exists created_by uuid references auth.users (id) on delete set null;
 
--- `add constraint if not exists` nÃ£o existe no Postgres; daÃ­ o guard.
+-- `add constraint if not exists` não existe no Postgres; daí o guard.
 do $$
 begin
   if not exists (
@@ -695,8 +695,8 @@ create index if not exists pipelines_scope_idx
 
 -- ---------- 2. Helpers ----------
 
--- Criada na 0037; repetida aqui (create or replace) para esta migraÃ§Ã£o nÃ£o
--- depender da ordem de aplicaÃ§Ã£o.
+-- Criada na 0037; repetida aqui (create or replace) para esta migração não
+-- depender da ordem de aplicação.
 create or replace function private.user_department_ids()
 returns setof uuid
 language sql
@@ -713,9 +713,9 @@ $$;
 revoke all on function private.user_department_ids() from public, anon;
 grant execute on function private.user_department_ids() to authenticated;
 
--- "Este pipeline Ã© visÃ­vel para mim?" â€” usada pelas policies de stages e
+-- "Este pipeline é visível para mim?" — usada pelas policies de stages e
 -- opportunities. SECURITY DEFINER pelo mesmo motivo de `private.channel_allowed`
--- (0035): consulta tabelas com RLS prÃ³pria e a regra ficaria circular.
+-- (0035): consulta tabelas com RLS própria e a regra ficaria circular.
 create or replace function private.pipeline_visible(pipe uuid)
 returns boolean
 language sql
@@ -739,7 +739,7 @@ $$;
 revoke all on function private.pipeline_visible(uuid) from public, anon;
 grant execute on function private.pipeline_visible(uuid) to authenticated;
 
--- "Posso administrar este pipeline?" â€” admin sempre; o dono, no escopo 'user'.
+-- "Posso administrar este pipeline?" — admin sempre; o dono, no escopo 'user'.
 create or replace function private.pipeline_manageable(pipe uuid)
 returns boolean
 language sql
@@ -754,9 +754,9 @@ as $$
        and (
          private.is_admin(p.location_id)
          or (p.scope = 'user' and p.owner_id = auth.uid())
-         -- Pipeline da empresa/departamento continua editÃ¡vel por qualquer
-         -- membro que o enxerga: era assim antes desta migraÃ§Ã£o e restringir
-         -- agora tiraria de gente que jÃ¡ organiza o prÃ³prio funil.
+         -- Pipeline da empresa/departamento continua editável por qualquer
+         -- membro que o enxerga: era assim antes desta migração e restringir
+         -- agora tiraria de gente que já organiza o próprio funil.
          or (p.scope <> 'user' and private.pipeline_visible(p.id))
        )
   );
@@ -766,8 +766,8 @@ revoke all on function private.pipeline_manageable(uuid) from public, anon;
 grant execute on function private.pipeline_manageable(uuid) to authenticated;
 
 -- ---------- 3. Policies de pipelines ----------
--- As policies "membros ..." vÃªm do laÃ§o da 0001. Recriadas com o escopo por
--- cima do filtro de empresa â€” o de empresa continua igual, nÃ£o Ã© afrouxado.
+-- As policies "membros ..." vêm do laço da 0001. Recriadas com o escopo por
+-- cima do filtro de empresa — o de empresa continua igual, não é afrouxado.
 
 drop policy if exists "membros leem" on public.pipelines;
 create policy "membros leem" on public.pipelines
@@ -782,7 +782,7 @@ create policy "membros leem" on public.pipelines
     )
   );
 
--- Criar: admin em qualquer escopo; usuÃ¡rio comum sÃ³ o prÃ³prio pipeline.
+-- Criar: admin em qualquer escopo; usuário comum só o próprio pipeline.
 drop policy if exists "membros criam" on public.pipelines;
 create policy "membros criam" on public.pipelines
   for insert to authenticated
@@ -811,8 +811,8 @@ create policy "membros editam" on public.pipelines
   with check (
     location_id in (select private.user_locations())
     and (
-      -- SÃ³ admin muda o escopo para algo que nÃ£o seja "meu". Sem o with check,
-      -- um usuÃ¡rio comum promoveria o prÃ³prio pipeline a 'empresa'.
+      -- Só admin muda o escopo para algo que não seja "meu". Sem o with check,
+      -- um usuário comum promoveria o próprio pipeline a 'empresa'.
       private.is_admin(location_id)
       or (scope = 'user' and owner_id = (select auth.uid()))
     )
@@ -868,9 +868,9 @@ create policy "membros excluem" on public.stages
   );
 
 -- ---------- 5. Oportunidades seguem o pipeline ----------
--- âš ï¸ Estas policies vÃªm da 0004 ("ver apenas dados atribuÃ­dos", via
--- private.sees_all). O filtro de lÃ¡ Ã© MANTIDO â€” sÃ³ ganha o de pipeline por
--- cima. Ao mexer nelas de novo, preserve as duas condiÃ§Ãµes.
+-- ⚠️ Estas policies vêm da 0004 ("ver apenas dados atribuídos", via
+-- private.sees_all). O filtro de lá é MANTIDO — só ganha o de pipeline por
+-- cima. Ao mexer nelas de novo, preserve as duas condições.
 
 drop policy if exists "membros leem" on public.opportunities;
 create policy "membros leem" on public.opportunities
@@ -911,30 +911,30 @@ create policy "membros excluem" on public.opportunities
     and private.pipeline_visible(pipeline_id)
   );
 
--- ---------- 6. Pipeline padrÃ£o do onboarding ----------
+-- ---------- 6. Pipeline padrão do onboarding ----------
 -- `private.handle_new_user` cria o pipeline inicial sem escopo; o default
--- 'empresa' jÃ¡ cobre isso â€” nada a mudar lÃ¡.
+-- 'empresa' já cobre isso — nada a mudar lá.
 
 
 -- ------------------------------------------------------------
 -- 0040_conversas_excluir_admin.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” Conversas: sÃ³ administrador exclui
+-- CRM ON — Conversas: só administrador exclui
 --
--- Excluir uma conversa apaga o histÃ³rico do atendimento junto (as mensagens
--- caem por ON DELETE CASCADE) e nÃ£o tem desfazer. Isso Ã© decisÃ£o de
--- administrador, nÃ£o de qualquer atendente â€” para tirar da vista existe
--- "Arquivar" (0029), que nÃ£o destrÃ³i nada.
+-- Excluir uma conversa apaga o histórico do atendimento junto (as mensagens
+-- caem por ON DELETE CASCADE) e não tem desfazer. Isso é decisão de
+-- administrador, não de qualquer atendente — para tirar da vista existe
+-- "Arquivar" (0029), que não destrói nada.
 --
--- Esconder o botÃ£o na tela nÃ£o bastaria: as policies "membros excluem" das
--- duas tabelas vÃªm do laÃ§o da 0001 e deixam qualquer membro apagar chamando a
+-- Esconder o botão na tela não bastaria: as policies "membros excluem" das
+-- duas tabelas vêm do laço da 0001 e deixam qualquer membro apagar chamando a
 -- API direto.
 --
--- `messages` entra junto de propÃ³sito: sem isso um usuÃ¡rio comum continuaria
--- conseguindo esvaziar a conversa mensagem por mensagem â€” o mesmo estrago,
--- por outro caminho. (A exclusÃ£o em cascata, disparada ao apagar a conversa,
--- nÃ£o passa por RLS, entÃ£o o admin continua excluindo tudo normalmente.)
+-- `messages` entra junto de propósito: sem isso um usuário comum continuaria
+-- conseguindo esvaziar a conversa mensagem por mensagem — o mesmo estrago,
+-- por outro caminho. (A exclusão em cascata, disparada ao apagar a conversa,
+-- não passa por RLS, então o admin continua excluindo tudo normalmente.)
 --
 -- Idempotente: derruba tanto a policy antiga quanto a nova antes de criar.
 -- ============================================================
@@ -962,17 +962,17 @@ create policy "admin exclui mensagens" on public.messages
 -- 0041_compromissos_lead.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” CalendÃ¡rios: compromisso vinculado a um lead
+-- CRM ON — Calendários: compromisso vinculado a um lead
 --
--- O compromisso jÃ¡ podia apontar para um contato; faltava apontar para a
--- OPORTUNIDADE (o lead no funil) â€” Ã© o que responde "essa reuniÃ£o Ã© de qual
--- negociaÃ§Ã£o?" quando o mesmo contato tem mais de uma.
+-- O compromisso já podia apontar para um contato; faltava apontar para a
+-- OPORTUNIDADE (o lead no funil) — é o que responde "essa reunião é de qual
+-- negociação?" quando o mesmo contato tem mais de uma.
 --
--- `on delete set null` (e nÃ£o cascade): excluir a oportunidade nÃ£o pode apagar
--- a reuniÃ£o da agenda de ninguÃ©m. O compromisso continua lÃ¡, sÃ³ perde o
--- vÃ­nculo â€” mesmo critÃ©rio do `contact_id` na 0001.
+-- `on delete set null` (e não cascade): excluir a oportunidade não pode apagar
+-- a reunião da agenda de ninguém. O compromisso continua lá, só perde o
+-- vínculo — mesmo critério do `contact_id` na 0001.
 --
--- Sem policy nova: `appointments` jÃ¡ tem RLS de membership desde a 0001, e a
+-- Sem policy nova: `appointments` já tem RLS de membership desde a 0001, e a
 -- coluna entra na mesma linha.
 --
 -- Idempotente.
@@ -982,8 +982,8 @@ alter table public.appointments
   add column if not exists opportunity_id uuid
     references public.opportunities (id) on delete set null;
 
--- Ãndice para "quais compromissos sÃ£o deste lead?" â€” a consulta do detalhe da
--- oportunidade. Parcial: a grande maioria dos compromissos nÃ£o tem lead.
+-- Índice para "quais compromissos são deste lead?" — a consulta do detalhe da
+-- oportunidade. Parcial: a grande maioria dos compromissos não tem lead.
 create index if not exists appointments_opportunity_idx
   on public.appointments (opportunity_id)
   where opportunity_id is not null;
@@ -993,22 +993,22 @@ create index if not exists appointments_opportunity_idx
 -- 0042_compromissos_lembrete.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” CalendÃ¡rios: lembrete do compromisso dentro do CRM
+-- CRM ON — Calendários: lembrete do compromisso dentro do CRM
 --
--- Quantos minutos antes do inÃ­cio o CRM deve avisar quem estiver com a
--- plataforma aberta. `null` = sem lembrete (Ã© o default, entÃ£o nenhum
+-- Quantos minutos antes do início o CRM deve avisar quem estiver com a
+-- plataforma aberta. `null` = sem lembrete (é o default, então nenhum
 -- compromisso existente passa a avisar do nada).
 --
--- Guardado no compromisso, e nÃ£o numa preferÃªncia do usuÃ¡rio: o aviso Ã© da
--- REUNIÃƒO. "Avisar 1 dia antes" faz sentido para uma visita e Ã© ruÃ­do para um
--- retorno de 10 minutos â€” quem marca decide, e vale para todo mundo que
+-- Guardado no compromisso, e não numa preferência do usuário: o aviso é da
+-- REUNIÃO. "Avisar 1 dia antes" faz sentido para uma visita e é ruído para um
+-- retorno de 10 minutos — quem marca decide, e vale para todo mundo que
 -- enxerga aquele compromisso.
 --
--- SÃ³ o "jÃ¡ avisei" fica FORA do banco (localStorage do navegador): Ã© estado de
+-- Só o "já avisei" fica FORA do banco (localStorage do navegador): é estado de
 -- tela, por dispositivo. Marcar no banco esconderia o aviso no computador
 -- porque o celular mostrou primeiro.
 --
--- Sem policy nova: `appointments` jÃ¡ tem RLS de membership desde a 0001 e a
+-- Sem policy nova: `appointments` já tem RLS de membership desde a 0001 e a
 -- coluna entra na mesma linha.
 --
 -- Idempotente.
@@ -1023,7 +1023,7 @@ begin
     select 1 from pg_constraint where conname = 'appointments_reminder_minutes_check'
   ) then
     -- Teto de 7 dias: acima disso o aviso deixa de ser lembrete e vira
-    -- ruÃ­do de semanas antes.
+    -- ruído de semanas antes.
     alter table public.appointments
       add constraint appointments_reminder_minutes_check
       check (reminder_minutes is null or (reminder_minutes >= 0 and reminder_minutes <= 10080));
@@ -1036,20 +1036,20 @@ $$;
 -- 0043_compromissos_por_usuario.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- Lito CRM â€” CalendÃ¡rios: agenda por usuÃ¡rio
+-- CRM ON — Calendários: agenda por usuário
 --
--- AtÃ© aqui a agenda era uma sÃ³: todo membro via (e apagava) o compromisso de
--- qualquer um. Agora cada compromisso tem dono e cada pessoa vÃª a prÃ³pria
--- agenda; administrador vÃª tudo.
+-- Até aqui a agenda era uma só: todo membro via (e apagava) o compromisso de
+-- qualquer um. Agora cada compromisso tem dono e cada pessoa vê a própria
+-- agenda; administrador vê tudo.
 --
--- `owner_id` NULO = compromisso da empresa, visÃ­vel para todos. Ã‰ o que os
--- compromissos JÃ EXISTENTES viram: nÃ£o hÃ¡ como adivinhar quem os criou, e
--- fazÃª-los sumir da agenda de todo mundo seria pior do que mantÃª-los
+-- `owner_id` NULO = compromisso da empresa, visível para todos. É o que os
+-- compromissos JÁ EXISTENTES viram: não há como adivinhar quem os criou, e
+-- fazê-los sumir da agenda de todo mundo seria pior do que mantê-los
 -- compartilhados. Os novos nascem com dono (o criador, ou quem o admin
 -- escolher).
 --
--- Isso Ã© RLS, nÃ£o filtro de tela: sem as policies abaixo, a agenda alheia
--- continuaria a um GET de distÃ¢ncia.
+-- Isso é RLS, não filtro de tela: sem as policies abaixo, a agenda alheia
+-- continuaria a um GET de distância.
 --
 -- Idempotente.
 -- ============================================================
@@ -1060,7 +1060,7 @@ alter table public.appointments
 create index if not exists appointments_owner_idx
   on public.appointments (location_id, owner_id);
 
--- ---------- Policies (recriam as do laÃ§o da 0001) ----------
+-- ---------- Policies (recriam as do laço da 0001) ----------
 
 drop policy if exists "membros leem" on public.appointments;
 drop policy if exists "agenda: leitura" on public.appointments;
@@ -1075,8 +1075,8 @@ create policy "agenda: leitura" on public.appointments
     )
   );
 
--- Criar para si mesmo, ou sem dono (compromisso da empresa). SÃ³ admin cria na
--- agenda de outra pessoa â€” senÃ£o qualquer um lotaria o calendÃ¡rio do colega.
+-- Criar para si mesmo, ou sem dono (compromisso da empresa). Só admin cria na
+-- agenda de outra pessoa — senão qualquer um lotaria o calendário do colega.
 drop policy if exists "membros criam" on public.appointments;
 drop policy if exists "agenda: criacao" on public.appointments;
 create policy "agenda: criacao" on public.appointments
@@ -1129,29 +1129,29 @@ create policy "agenda: exclusao" on public.appointments
 -- 0044_grants_service_role.sql
 -- ------------------------------------------------------------
 -- ============================================================
--- 0044 â€” privilÃ©gios do service_role no schema public
+-- 0044 — privilégios do service_role no schema public
 --
 -- POR QUE ISTO EXISTE
 --
--- Nenhuma migraÃ§Ã£o anterior concede privilÃ©gio ao `service_role`: a 0001
+-- Nenhuma migração anterior concede privilégio ao `service_role`: a 0001
 -- apenas REVOGA do `anon` e, no projeto Supabase original, o resto vinha
 -- dos default privileges daquele projeto. Num projeto novo esse default
--- nÃ£o veio junto, e o Postgres responde:
+-- não veio junto, e o Postgres responde:
 --
 --   42501  permission denied for table contacts
 --   hint:  GRANT SELECT ON public.contacts TO service_role;
 --
--- ConsequÃªncia sem esta migraÃ§Ã£o: tudo que usa `src/lib/supabase/admin.ts`
--- falha com 403 â€” motor de automaÃ§Ãµes, motor de e-mail marketing, webhook
--- do WhatsApp e sincronizaÃ§Ã£o da Guru. E falha em silÃªncio, porque essas
--- rotas sÃ£o mÃ¡quina-a-mÃ¡quina e ninguÃ©m estÃ¡ olhando a tela.
+-- Consequência sem esta migração: tudo que usa `src/lib/supabase/admin.ts`
+-- falha com 403 — motor de automações, motor de e-mail marketing, webhook
+-- do WhatsApp e sincronização da Guru. E falha em silêncio, porque essas
+-- rotas são máquina-a-máquina e ninguém está olhando a tela.
 --
--- SEGURANÃ‡A
+-- SEGURANÇA
 --
--- Isto NÃƒO afrouxa a RLS para usuÃ¡rios. `service_role` sÃ³ Ã© alcanÃ§Ã¡vel com
+-- Isto NÃO afrouxa a RLS para usuários. `service_role` só é alcançável com
 -- a chave secreta (`sb_secret_...`), que vive apenas no servidor e nunca
--- tem prefixo NEXT_PUBLIC_. Ignorar a RLS Ã© exatamente a funÃ§Ã£o dela.
--- O `anon` continua revogado; esta migraÃ§Ã£o nÃ£o toca nele.
+-- tem prefixo NEXT_PUBLIC_. Ignorar a RLS é exatamente a função dela.
+-- O `anon` continua revogado; esta migração não toca nele.
 -- ============================================================
 
 grant usage on schema public to service_role;
@@ -1160,7 +1160,7 @@ grant all privileges on all tables    in schema public to service_role;
 grant all privileges on all sequences in schema public to service_role;
 grant all privileges on all functions in schema public to service_role;
 
--- Vale tambÃ©m para o que for criado daqui pra frente, senÃ£o toda tabela
+-- Vale também para o que for criado daqui pra frente, senão toda tabela
 -- nova volta a dar 42501 e o erro reaparece meses depois, longe da causa.
 alter default privileges in schema public
   grant all on tables to service_role;
@@ -1169,9 +1169,81 @@ alter default privileges in schema public
 alter default privileges in schema public
   grant all on functions to service_role;
 
--- ReforÃ§a a intenÃ§Ã£o da 0001: o `anon` nÃ£o enxerga nada do schema public.
+-- Reforça a intenção da 0001: o `anon` não enxerga nada do schema public.
 -- Idempotente e barato; protege contra uma tabela nova ter nascido com
 -- grant para anon vindo de default privilege.
 revoke all on all tables in schema public from anon;
+
+
+-- ------------------------------------------------------------
+-- 0045_remove_marca_antiga.sql
+-- ------------------------------------------------------------
+-- ============================================================
+-- 0045 — remove a marca antiga de dentro do banco
+--
+-- Renomear no código não muda o que já foi gravado no Postgres. Três coisas
+-- ficaram para trás e esta migração corrige as duas primeiras; a terceira
+-- exige rodar a 0033 de novo (ver nota no fim).
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. Job do pg_cron
+--
+-- A 0007 agendou 'lito-aniversarios'. Renomear a string no arquivo não
+-- renomeia o job já criado: reaplicar a 0007 apenas criaria um SEGUNDO job
+-- com o nome novo, e os dois passariam a enfileirar aniversários — cada
+-- contato receberia a automação duas vezes por dia.
+-- ------------------------------------------------------------
+select cron.unschedule('lito-aniversarios')
+where exists (select 1 from cron.job where jobname = 'lito-aniversarios');
+
+select cron.unschedule('crm-aniversarios')
+where exists (select 1 from cron.job where jobname = 'crm-aniversarios');
+
+select cron.schedule('crm-aniversarios', '0 12 * * *', $$select private.enqueue_birthdays()$$);
+
+-- Os jobs de tick/sync nunca chegaram a ser criados aqui (as migrações de cron
+-- ficaram de fora do setup), mas o unschedule é barato e torna esta migração
+-- segura em um banco que já os tenha.
+select cron.unschedule('lito-automation-tick')
+where exists (select 1 from cron.job where jobname = 'lito-automation-tick');
+select cron.unschedule('lito-marketing-tick')
+where exists (select 1 from cron.job where jobname = 'lito-marketing-tick');
+select cron.unschedule('lito-guru-sync')
+where exists (select 1 from cron.job where jobname = 'lito-guru-sync');
+
+-- ------------------------------------------------------------
+-- 2. Remetente padrão das campanhas
+--
+-- A 0010 criou email_campaigns.from_email com DEFAULT apontando para um
+-- domínio de terceiro. Toda campanha nova nascia assinando aquele domínio;
+-- o Resend recusaria (domínio não verificado nesta conta) e o erro apareceria
+-- só na hora do disparo. Quem manda é a env EMAIL_FROM.
+-- ------------------------------------------------------------
+alter table public.email_campaigns
+  alter column from_email set default '';
+
+-- Limpa o que já nasceu com o default antigo. Rascunhos apenas: campanha já
+-- enviada fica como está, para o histórico não mentir sobre o que saiu.
+update public.email_campaigns
+   set from_email = ''
+ where from_email like '%litoaviation.com%'
+   and status in ('draft', 'rascunho', 'paused');
+
+-- ------------------------------------------------------------
+-- 3. NOTA — mojibake na descrição dos departamentos
+--
+-- O gerador de supabase/setup/ lia os arquivos como ANSI e gravava UTF-8,
+-- então os acentos das partes 02–04 chegaram corrompidos ao banco. O caso com
+-- dado real é a descrição do departamento Comercial, na 0033, que vive dentro
+-- do corpo de uma função e só apareceria ao criar a primeira empresa.
+--
+-- O gerador já foi corrigido. Para consertar o que está gravado, rode de novo:
+--
+--   supabase/migrations/0033_departamentos.sql
+--
+-- Ela é idempotente e redefine a função com o texto certo. Não dá para fazer
+-- isso aqui sem duplicar o corpo inteiro da função.
+-- ------------------------------------------------------------
 
 

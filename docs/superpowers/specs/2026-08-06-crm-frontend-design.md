@@ -1,4 +1,4 @@
-# Spec — Front-end completo do Lito CRM
+# Spec — Front-end completo do CRM ON
 
 **Data:** 2026-08-06
 **Fonte de requisitos:** `MAPA_FUNCIONALIDADES.md` (mapeamento do vídeo de referência WeSales/GoHighLevel)
@@ -6,7 +6,7 @@
 
 ## 1. Objetivo
 
-Construir o front-end completo do **Lito CRM**: um CRM all-in-one com os 19 módulos do mapa de funcionalidades. Nesta etapa não há backend — o app é totalmente navegável e interativo com dados fictícios, arquitetado para receber um backend depois sem reescrever telas.
+Construir o front-end completo do **CRM ON**: um CRM all-in-one com os 19 módulos do mapa de funcionalidades. Nesta etapa não há backend — o app é totalmente navegável e interativo com dados fictícios, arquitetado para receber um backend depois sem reescrever telas.
 
 ## 2. Decisões aprovadas
 
@@ -14,8 +14,8 @@ Construir o front-end completo do **Lito CRM**: um CRM all-in-one com os 19 mód
 |---|---|
 | Escopo | Shell completo (19 módulos navegáveis) + 5 módulos core profundos |
 | Stack | Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui |
-| Visual | Identidade própria (Lito CRM) sobre o layout estrutural do mapa |
-| Marca | "Lito CRM", centralizada em `src/lib/config/brand.ts` |
+| Visual | Identidade própria (CRM ON) sobre o layout estrutural do mapa |
+| Marca | "CRM ON", centralizada em `src/lib/config/brand.ts` |
 | Dados | Mock tipado + contrato de repositório sobre store em memória (Zustand) |
 
 Bibliotecas de apoio: **dnd-kit** (kanban), **Recharts** (gráficos), **Zustand** (estado), **lucide-react** (ícones, já vem com shadcn).

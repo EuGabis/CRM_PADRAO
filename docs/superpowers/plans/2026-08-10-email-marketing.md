@@ -17,7 +17,7 @@
 - Páginas são client components (`"use client"`); não passar ícone Lucide de Server→Client.
 - Toda tabela nova: `location_id` + RLS habilitada + `revoke ... from anon` + políticas `TO authenticated` via `private.user_locations()`. Funções em `private` são `security definer set search_path = ''` (referências schema-qualificadas).
 - Segredos (`RESEND_WEBHOOK_SECRET`) **nunca** com prefixo `NEXT_PUBLIC_`; adicionar em `.env.local`, `.env.example` e Vercel. Reuso de `AUTOMATION_SECRET` para o tick de marketing e para assinar unsubscribe.
-- Remetente padrão: `Lito CRM <nao-responder@news.litoaviation.com>` (env `EMAIL_FROM`).
+- Remetente padrão: `CRM ON <nao-responder@news.seudominio.com.br>` (env `EMAIL_FROM`).
 - Migrações: arquivo novo em `supabase/migrations/00NN_nome.sql`, aplicado pelo usuário no SQL Editor.
 - Cada tarefa termina com `npm run build` limpo + commit em português (`feat(marketing): ...`).
 - Estilo: h1 `text-lg font-bold text-slate-900`; cards `rounded-xl border bg-white`; tabelas `text-xs`; botões `h-8 text-xs`; badge sucesso `bg-emerald-100 text-emerald-700`; primário indigo.
@@ -59,7 +59,7 @@
 
 ```sql
 -- ============================================================
--- Lito CRM — Email Marketing (schema)
+-- CRM ON — Email Marketing (schema)
 -- Rode este arquivo inteiro de uma vez no SQL Editor.
 -- ============================================================
 set check_function_bodies = off;
@@ -72,7 +72,7 @@ create table if not exists public.email_campaigns (
   location_id uuid not null references public.locations (id) on delete cascade,
   name text not null,
   subject text not null default '',
-  from_email text not null default 'Lito CRM <nao-responder@news.litoaviation.com>',
+  from_email text not null default 'CRM ON <nao-responder@news.seudominio.com.br>',
   reply_to text,
   body_html text not null default '',
   body_text text not null default '',
@@ -564,7 +564,7 @@ git commit -m "feat(marketing): detalhe da campanha com métricas e destinatári
 - Create: `supabase/migrations/0011_marketing_cron.sql`
 - Modify: `.env.example`, `AGENTS.md`
 
-- [ ] **Step 1: Migração 0011** (espelha a `0009`): tabela `private.marketing_config` (tick_url + secret), função `private.marketing_tick()` (`net.http_post`), job `lito-marketing-tick` (`* * * * *`) com guard de `unschedule`. Secret placeholder `COLE_O_AUTOMATION_SECRET_AQUI`.
+- [ ] **Step 1: Migração 0011** (espelha a `0009`): tabela `private.marketing_config` (tick_url + secret), função `private.marketing_tick()` (`net.http_post`), job `crm-marketing-tick` (`* * * * *`) com guard de `unschedule`. Secret placeholder `COLE_O_AUTOMATION_SECRET_AQUI`.
 - [ ] **Step 2: `.env.example`** — adicionar `RESEND_WEBHOOK_SECRET="<secret do webhook do Resend>"`.
 - [ ] **Step 3: Passos manuais (usuário)** documentados: (a) `RESEND_WEBHOOK_SECRET` no `.env.local` + Vercel; (b) redeploy de produção; (c) criar webhook no Resend → `/api/marketing/resend-webhook` + ativar tracking; (d) aplicar 0010 (se ainda não) e 0011 no SQL Editor trocando o placeholder.
 - [ ] **Step 4: Verificação e2e** (produção): criar campanha p/ uma tag de teste (1–2 contatos), enviar agora, conferir recipients `sent` + recebimento, abrir o e-mail e ver `opened` subir, clicar e ver `clicked`, testar unsubscribe.

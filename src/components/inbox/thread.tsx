@@ -530,7 +530,7 @@ export function Thread({
               callContact(contact.phone, contactName(contact));
             }}
             title="Abrir o webphone com este número"
-            className="flex items-center gap-1.5 rounded-full bg-[var(--lito-wa-green)] px-3 py-1 text-xs font-bold text-white hover:opacity-90"
+            className="flex items-center gap-1.5 rounded-full bg-[var(--crm-wa-green)] px-3 py-1 text-xs font-bold text-white hover:opacity-90"
           >
             <Phone className="size-3.5" /> Ligar
           </button>

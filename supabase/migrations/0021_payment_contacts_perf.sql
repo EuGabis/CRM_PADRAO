@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Contatos: índices para a busca por valor ficar rápida
+-- CRM ON — Contatos: índices para a busca por valor ficar rápida
 --
 -- payment_contacts (migração 0016/0019) agrega payment_events +
 -- payment_subscriptions por contact_key com array_agg/group by. Buscar por

@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Calendários: lembrete do compromisso dentro do CRM
+-- CRM ON — Calendários: lembrete do compromisso dentro do CRM
 --
 -- Quantos minutos antes do início o CRM deve avisar quem estiver com a
 -- plataforma aberta. `null` = sem lembrete (é o default, então nenhum

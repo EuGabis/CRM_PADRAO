@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Equipe, convites e permissões
+-- CRM ON — Equipe, convites e permissões
 --
 -- Compatível com o que já existe: membros atuais continuam com
 -- acesso total (permissions '{}' = tudo liberado, only_assigned = false).

@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Contatos: telefone/documento na visão de valores
+-- CRM ON — Contatos: telefone/documento na visão de valores
 --
 -- migração 0016 criou payment_contacts/payment_contacts_summary (compras,
 -- total gasto, assinaturas ativas) agregando payment_events + payment_

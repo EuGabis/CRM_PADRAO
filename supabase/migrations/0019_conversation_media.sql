@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Conversas: anexos e áudio (Supabase Storage)
+-- CRM ON — Conversas: anexos e áudio (Supabase Storage)
 --
 -- O composer da caixa de entrada passa a enviar imagens, documentos
 -- (PDF/DOCX) e áudios gravados pelo microfone. Os binários vão para um

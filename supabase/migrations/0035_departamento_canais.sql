@@ -1,5 +1,5 @@
 -- ============================================================
--- Lito CRM — Segmentação de conversas por número (canal) do WhatsApp
+-- CRM ON — Segmentação de conversas por número (canal) do WhatsApp
 --
 -- O departamento já dizia QUAIS MÓDULOS a pessoa acessa (0033). Agora diz
 -- também DE QUAIS NÚMEROS ela vê conversa.
