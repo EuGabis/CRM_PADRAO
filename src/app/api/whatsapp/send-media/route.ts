@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { assertModuleEnabled } from "@/lib/plan/guard";
 import { uploadMedia, sendMediaMessage } from "@/lib/whatsapp/client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -31,6 +32,11 @@ export async function POST(request: Request) {
     .eq("id", conversationId)
     .maybeSingle();
   if (!conv) return Response.json({ error: "Conversa não encontrada" }, { status: 404 });
+
+  // Módulo bloqueado no plano não gasta o WHATSAPP_TOKEN global. A location vem
+  // da conversa (validada pela RLS), nunca do corpo do request.
+  const bloqueio = await assertModuleEnabled(conv.location_id, "whatsapp");
+  if (bloqueio) return Response.json({ error: bloqueio }, { status: 403 });
 
   const { data: channel } = await supabase
     .from("whatsapp_channels")

@@ -80,8 +80,16 @@ export async function POST(request: Request) {
     .single();
 
   if (error || !invite) {
-    const message =
-      error?.code === "23505"
+    // 23514 (check_violation) = trigger de limite da 0047. A mensagem da exceção
+    // já é legível e diz o limite ("LIMITE_USUARIOS: ..."), então repassamos o
+    // texto real em vez do genérico — mesmo comportamento do LIMITE_CANAIS, que
+    // sobe direto do client em db/whatsapp.ts. Sem isso o admin bate no teto do
+    // plano e só vê "Não foi possível criar o convite".
+    const limiteUsuarios =
+      error?.code === "23514" || error?.message?.startsWith("LIMITE_USUARIOS");
+    const message = limiteUsuarios
+      ? (error?.message ?? "Limite de usuários do plano atingido")
+      : error?.code === "23505"
         ? "Já existe um convite pendente para este e-mail"
         : error?.code === "42P01"
           ? "Aplique a migração 0004 no Supabase para habilitar convites"

@@ -10,6 +10,7 @@
  * `pendente → enviando → enviada | falhou`.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import { assertModuleEnabled } from "@/lib/plan/guard";
 import { sendText } from "@/lib/whatsapp/client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -101,6 +102,13 @@ type Delivery = { ok: true; waMessageId?: string | null } | { ok: false; error: 
 async function deliver(db: any, msg: any): Promise<Delivery> {
   if (msg.internal) return { ok: true };
   if (msg.channel !== "whatsapp") return { ok: true };
+
+  // O tick roda com service role, então a RLS não protege nada aqui: o plano da
+  // empresa é a única barreira antes de gastar o WHATSAPP_TOKEN global. Marca a
+  // mensagem como falha com motivo legível em vez de enviar — assim o usuário
+  // vê na conversa por que ela não saiu.
+  const bloqueio = await assertModuleEnabled(msg.location_id, "whatsapp");
+  if (bloqueio) return { ok: false, error: bloqueio };
 
   const { data: conv } = await db
     .from("conversations")

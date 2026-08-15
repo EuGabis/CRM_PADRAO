@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { assertModuleEnabled } from "@/lib/plan/guard";
 import { listTemplates, createTemplate, deleteTemplate } from "@/lib/whatsapp/client";
 import { validateTemplateInput, type TemplateCategory } from "@/lib/whatsapp/templates";
 
@@ -6,14 +7,38 @@ import { validateTemplateInput, type TemplateCategory } from "@/lib/whatsapp/tem
 
 export const dynamic = "force-dynamic";
 
-/** Resolve a WABA do canal respeitando a RLS (membership do usuário logado). */
-async function wabaOf(supabase: any, channelId: string): Promise<string | null> {
+/**
+ * Resolve a WABA e a empresa do canal respeitando a RLS (membership do usuário
+ * logado). O `location_id` sai daqui de propósito: é o único jeito de checar o
+ * plano sem confiar em nada que o cliente mandou no request.
+ */
+async function channelOf(
+  supabase: any,
+  channelId: string,
+): Promise<{ wabaId: string; locationId: string } | null> {
   const { data } = await supabase
     .from("whatsapp_channels")
-    .select("waba_id")
+    .select("waba_id, location_id")
     .eq("id", channelId)
     .maybeSingle();
-  return data?.waba_id || null;
+  if (!data?.waba_id || !data?.location_id) return null;
+  return { wabaId: data.waba_id, locationId: data.location_id };
+}
+
+/**
+ * Toda operação daqui bate na Graph API com o WHATSAPP_TOKEN global — inclusive
+ * o GET, que lista templates da WABA do dono da plataforma. Empresa com o
+ * módulo bloqueado no plano não passa em nenhuma delas.
+ */
+async function guard(
+  supabase: any,
+  channelId: string,
+): Promise<{ wabaId: string } | Response> {
+  const canal = await channelOf(supabase, channelId);
+  if (!canal) return Response.json({ error: "Canal sem WABA" }, { status: 404 });
+  const bloqueio = await assertModuleEnabled(canal.locationId, "whatsapp");
+  if (bloqueio) return Response.json({ error: bloqueio }, { status: 403 });
+  return { wabaId: canal.wabaId };
 }
 
 export async function GET(request: Request) {
@@ -26,8 +51,9 @@ export async function GET(request: Request) {
   const all = url.searchParams.get("all") === "1";
   if (!channelId) return Response.json({ error: "channelId ausente" }, { status: 400 });
 
-  const wabaId = await wabaOf(supabase, channelId);
-  if (!wabaId) return Response.json({ error: "Canal sem WABA" }, { status: 404 });
+  const checked = await guard(supabase, channelId);
+  if (checked instanceof Response) return checked;
+  const { wabaId } = checked;
 
   try {
     const templates = await listTemplates(wabaId, { all });
@@ -60,8 +86,9 @@ export async function POST(request: Request) {
   const check = validateTemplateInput(input);
   if (!check.ok) return Response.json({ error: check.error }, { status: 400 });
 
-  const wabaId = await wabaOf(supabase, channelId);
-  if (!wabaId) return Response.json({ error: "Canal sem WABA" }, { status: 404 });
+  const checked = await guard(supabase, channelId);
+  if (checked instanceof Response) return checked;
+  const { wabaId } = checked;
 
   try {
     const created = await createTemplate(wabaId, input);
@@ -84,8 +111,9 @@ export async function DELETE(request: Request) {
   const name = url.searchParams.get("name");
   if (!channelId || !name) return Response.json({ error: "channelId e name obrigatórios" }, { status: 400 });
 
-  const wabaId = await wabaOf(supabase, channelId);
-  if (!wabaId) return Response.json({ error: "Canal sem WABA" }, { status: 404 });
+  const checked = await guard(supabase, channelId);
+  if (checked instanceof Response) return checked;
+  const { wabaId } = checked;
 
   try {
     await deleteTemplate(wabaId, name);

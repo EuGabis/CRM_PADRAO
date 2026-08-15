@@ -4,6 +4,7 @@ import { brand } from "@/lib/config/brand";
 import { senderAddress, replyToAddress } from "@/lib/email/sender";
 import { renderCampaignEmail } from "@/lib/email/marketing-template";
 import { unsubscribeUrl } from "@/lib/marketing/unsubscribe";
+import { assertModuleEnabled } from "@/lib/plan/guard";
 import type { ActionResult, RunContext, Step } from "./types";
 
 type Db = ReturnType<typeof createAdminClient>;
@@ -304,6 +305,12 @@ export async function runAction(step: Step, ctx: RunContext): Promise<ActionResu
 
       const apiKey = process.env.RESEND_API_KEY;
       if (!apiKey) return { status: "skipped", message: "RESEND_API_KEY ausente" };
+
+      // Mesmo RESEND_API_KEY global das campanhas: automação não pode ser a
+      // porta dos fundos do módulo `marketing` bloqueado no plano.
+      if (await assertModuleEnabled(ctx.locationId, "marketing")) {
+        return { status: "skipped", message: "Modulo marketing bloqueado no plano" };
+      }
 
       const from = senderAddress();
       if (!from) return { status: "skipped", message: "EMAIL_FROM ausente" };

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { renderTemplate } from "@/lib/automations/actions";
 import { renderCampaignEmail } from "@/lib/email/marketing-template";
 import { unsubscribeUrl } from "@/lib/marketing/unsubscribe";
+import { assertModuleEnabled } from "@/lib/plan/guard";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -49,6 +50,28 @@ export async function processDueCampaigns(): Promise<{
   let errorTotal = 0;
 
   for (const camp of campaigns as any[]) {
+    // Ponto de estrangulamento do módulo `marketing`. Guardar só a rota
+    // /campaigns/[id]/send não adianta: `publish_campaign` e
+    // `add_campaign_recipients` têm grant execute para authenticated (0010) e a
+    // policy de email_campaigns é `for all`, então o tenant chega em
+    // status='sending' por RPC ou update direto pelo PostgREST. Quem realmente
+    // gasta o RESEND_API_KEY global é este laço — a checagem tem que estar aqui.
+    const bloqueio = await assertModuleEnabled(camp.location_id, "marketing");
+    if (bloqueio) {
+      // Pausa a campanha com motivo visível (a tela mostra o pause_reason) em
+      // vez de marcar como enviada. `continue` e não `return`: outras empresas
+      // com o módulo liberado precisam continuar sendo processadas neste tick.
+      await db
+        .from("email_campaigns")
+        .update({
+          status: "paused",
+          pause_reason: bloqueio,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", camp.id);
+      continue;
+    }
+
     // Claim atômico do lote (FOR UPDATE SKIP LOCKED): dois ticks nunca pegam o mesmo
     // destinatário → sem envio duplicado. Só claima se a campanha ainda estiver 'sending'.
     const { data: recips } = await db.rpc("claim_recipients", {

@@ -1,4 +1,5 @@
 import { chat } from "@/lib/ai/openai";
+import { assertModuleEnabled } from "@/lib/plan/guard";
 import { sendText } from "@/lib/whatsapp/client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -27,6 +28,14 @@ export async function maybeAutoReply(
 ): Promise<void> {
   try {
     if (!process.env.OPENAI_API_KEY) return;
+
+    // Plano da empresa ANTES de qualquer coisa: este caminho é o mais caro do
+    // produto — roda pelo webhook, com service role, e gasta OPENAI_API_KEY e
+    // WHATSAPP_TOKEN (ambos globais, na conta do dono da plataforma) a cada
+    // mensagem recebida. A location vem do próprio webhook, resolvida pelo
+    // canal/conversa. Saída silenciosa como as demais: a função é best-effort e
+    // não pode quebrar o 200 do webhook.
+    if (await assertModuleEnabled(p.locationId, "whatsapp")) return;
 
     // handoff: humano já assumiu esta conversa?
     const { data: conv } = await db
