@@ -26,6 +26,8 @@ export interface Campaign {
   accentColor: string | null;
   status: CampaignStatus;
   scheduledAt: string | null;
+  /** Motivo da última pausa automática feita pelo motor (ex.: módulo bloqueado no plano). */
+  pauseReason: string | null;
   total: number;
   sent: number;
   delivered: number;

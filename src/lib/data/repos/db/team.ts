@@ -219,11 +219,17 @@ export function useMyMembership() {
   const userId = useDbStore((s) => s.userId);
   const disabledModules = useLimitsStore((s) => s.limits.disabledModules);
   const loadLimits = useLimitsStore((s) => s.load);
+  const locationId = useDbStore((s) => s.locationId);
   useEffect(() => {
     void load();
+    // Os limites precisam reagir ao locationId: `load()` acima já marcou
+    // useDbStore.loading, então na primeira passada o loadLimits sai sem
+    // location e sem marcar loaded. Com deps [] ele nunca revalidaria e
+    // disabledModules ficaria [] pela sessão inteira (sidebar e ModuleGuard
+    // sem limite nenhum). Ver db/whatsapp.ts, mesma corrida.
     void loadLimits();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [locationId]);
   return useMemo(() => {
     const me = members.find((m) => m.userId === userId) ?? null;
     return {

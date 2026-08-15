@@ -123,6 +123,12 @@ export function CampaignDetail({
         )}
       </div>
 
+      {campaign.status === "paused" && campaign.pauseReason && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <span className="font-semibold">Envio interrompido:</span> {campaign.pauseReason}
+        </div>
+      )}
+
       <div className="mb-4 grid gap-3 md:grid-cols-3 lg:grid-cols-6">
         <KpiCard label="Destinatários" value={String(campaign.total)} />
         <KpiCard label="Enviados" value={String(campaign.sent)} />

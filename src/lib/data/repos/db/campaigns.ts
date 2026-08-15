@@ -20,6 +20,7 @@ const mapCampaign = (r: any): Campaign => ({
   accentColor: r.accent_color ?? null,
   status: r.status,
   scheduledAt: r.scheduled_at,
+  pauseReason: r.pause_reason ?? null,
   total: r.total ?? 0,
   sent: r.sent ?? 0,
   delivered: r.delivered ?? 0,
@@ -215,7 +216,9 @@ export const campaignActions = {
     const supabase = createClient();
     const { data, error } = await supabase
       .from("email_campaigns")
-      .update({ status: "sending", updated_at: new Date().toISOString() })
+      // Limpa o motivo da pausa: se a pausa foi automática (módulo bloqueado) e o
+      // bloqueio continuar, o próximo tick pausa de novo e regrava o motivo.
+      .update({ status: "sending", pause_reason: null, updated_at: new Date().toISOString() })
       .eq("id", id)
       .select()
       .single();
