@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
 import { useDbStore } from "./contacts";
+import { useLimitsStore } from "./limits";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -55,14 +56,20 @@ export interface Invitation {
 }
 
 /**
- * Acesso efetivo a um módulo. A ordem é a decidida com o Gabriel:
- * admin vê tudo → exceção individual → departamento → libera (legado).
+ * Acesso efetivo a um módulo:
+ * plano bloqueou → admin vê tudo → exceção individual → departamento → libera.
+ *
+ * O plano vem ANTES do admin de propósito. Se viesse depois, o admin da
+ * empresa cliente se daria permissão sozinho e usaria um módulo que o dono
+ * da plataforma não liberou.
  */
 export function canAccess(
   moduleKey: string,
   member: Pick<TeamMember, "role" | "permissions" | "departmentId"> | null,
-  departments: Department[]
+  departments: Department[],
+  disabledModules: string[] = []
 ): boolean {
+  if (disabledModules.includes(moduleKey)) return false;
   if (!member) return true;
   if (member.role === "admin") return true;
   const own = member.permissions?.[moduleKey];
@@ -210,8 +217,11 @@ export function useDepartments() {
 export function useMyMembership() {
   const { members, departments, loaded, load } = useTeamStore();
   const userId = useDbStore((s) => s.userId);
+  const disabledModules = useLimitsStore((s) => s.limits.disabledModules);
+  const loadLimits = useLimitsStore((s) => s.load);
   useEffect(() => {
     void load();
+    void loadLimits();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return useMemo(() => {
@@ -221,10 +231,12 @@ export function useMyMembership() {
       me,
       isAdmin: me?.role === "admin",
       department: departments.find((d) => d.id === me?.departmentId) ?? null,
-      /** Admin → exceção individual → departamento → libera. */
-      can: (moduleKey: string) => canAccess(moduleKey, me, departments),
+      /** Plano → admin → exceção individual → departamento → libera. */
+      can: (moduleKey: string) => canAccess(moduleKey, me, departments, disabledModules),
+      /** True quando é o PLANO que bloqueia (mensagem diferente da de permissão). */
+      planBlocks: (moduleKey: string) => disabledModules.includes(moduleKey),
     };
-  }, [members, departments, userId, loaded]);
+  }, [members, departments, userId, loaded, disabledModules]);
 }
 
 const locationId = () => useDbStore.getState().locationId;
