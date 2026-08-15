@@ -47,7 +47,8 @@ $partes = [ordered]@{
     "0044_grants_service_role.sql",
     "0045_remove_marca_antiga.sql",
     "0046_location_limits.sql",
-    "0047_limite_usuarios.sql"
+    "0047_limite_usuarios.sql",
+    "0048_limite_canais.sql"
   )
 }
 
