@@ -24,12 +24,37 @@ declare
   lim   int;
   atual int;
   loc   uuid := new.location_id;
+  mail  text;
 begin
   select max_users into lim from public.location_limits where location_id = loc;
 
   -- null = ilimitado. Zero é diferente de null e bloqueia.
   if lim is null then
     return new;
+  end if;
+
+  -- Promessa já feita: se a pessoa que está entrando tem convite PENDENTE nesta
+  -- empresa, o slot dela foi reservado quando o convite foi criado -- e naquele
+  -- momento o trigger de invitations validou o limite. Entrar tem que funcionar
+  -- mesmo que o dono da plataforma tenha REDUZIDO max_users depois.
+  --
+  -- Sem isto, o convidado se cadastra, o trigger levanta exceção dentro de
+  -- private.handle_new_user (que roda na transação de signup), o usuário do Auth
+  -- é desfeito junto e a pessoa vê um erro cru do GoTrue. NÃO "simplifique"
+  -- removendo este bloco.
+  --
+  -- Ler auth.users aqui é seguro: a função é security definer e só usa o e-mail
+  -- do próprio usuário que está sendo inserido.
+  if TG_TABLE_NAME = 'location_members' then
+    select u.email into mail from auth.users u where u.id = new.user_id;
+    if mail is not null and exists (
+      select 1 from public.invitations i
+       where i.location_id = loc
+         and i.status = 'pending'
+         and lower(i.email) = lower(mail)
+    ) then
+      return new;
+    end if;
   end if;
 
   -- A contagem diferencia por tabela de origem via TG_TABLE_NAME:

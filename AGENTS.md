@@ -115,7 +115,7 @@ deny-by-default, políticas `TO authenticated` checando membership. `admin.ts`
 
 - Migrações em `supabase/migrations/000N_nome.sql`, aplicadas **à mão no SQL Editor**.
 - Sempre **idempotentes** (`create ... if not exists`, `drop policy if exists`).
-- **Próximo número livre: `0049`.**
+- **Próximo número livre: `0050`.**
 - ⚠️ **Há números duplicados no histórico** — `0014`, `0015`, `0016` e `0019`
   aparecem duas vezes cada (colisão de trabalho paralelo no projeto anterior).
   Não dá pra confiar no número como ordem real; confira o conteúdo. **Não repita

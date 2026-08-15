@@ -66,9 +66,15 @@ create trigger seed_limits_on_location
   after insert on public.locations
   for each row execute function private.seed_location_limits();
 
--- Empresas que já existem antes desta migração.
+-- Retrocompatibilidade: empresas que já existiam antes desta migração ganham
+-- a linha de limites SEM nenhum módulo bloqueado.
+--
+-- Só empresa NOVA (trigger acima) nasce com os quatro módulos desligados.
+-- Empresa existente é o dono da plataforma ou cliente já em operação: aplicar
+-- o bloqueio retroativamente derrubaria IA, Marketing e WhatsApp de quem já
+-- usa, sem aviso. Quem precisar limitar um cliente antigo faz o update à mão.
 insert into public.location_limits (location_id, disabled_modules)
-select id, '{ai-studio,agentes-ia,marketing,whatsapp}'
+select id, '{}'
   from public.locations
 on conflict (location_id) do nothing;
 

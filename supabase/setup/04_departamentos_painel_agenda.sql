@@ -1318,9 +1318,15 @@ create trigger seed_limits_on_location
   after insert on public.locations
   for each row execute function private.seed_location_limits();
 
--- Empresas que já existem antes desta migração.
+-- Retrocompatibilidade: empresas que já existiam antes desta migração ganham
+-- a linha de limites SEM nenhum módulo bloqueado.
+--
+-- Só empresa NOVA (trigger acima) nasce com os quatro módulos desligados.
+-- Empresa existente é o dono da plataforma ou cliente já em operação: aplicar
+-- o bloqueio retroativamente derrubaria IA, Marketing e WhatsApp de quem já
+-- usa, sem aviso. Quem precisar limitar um cliente antigo faz o update à mão.
 insert into public.location_limits (location_id, disabled_modules)
-select id, '{ai-studio,agentes-ia,marketing,whatsapp}'
+select id, '{}'
   from public.locations
 on conflict (location_id) do nothing;
 
@@ -1357,12 +1363,37 @@ declare
   lim   int;
   atual int;
   loc   uuid := new.location_id;
+  mail  text;
 begin
   select max_users into lim from public.location_limits where location_id = loc;
 
   -- null = ilimitado. Zero é diferente de null e bloqueia.
   if lim is null then
     return new;
+  end if;
+
+  -- Promessa já feita: se a pessoa que está entrando tem convite PENDENTE nesta
+  -- empresa, o slot dela foi reservado quando o convite foi criado -- e naquele
+  -- momento o trigger de invitations validou o limite. Entrar tem que funcionar
+  -- mesmo que o dono da plataforma tenha REDUZIDO max_users depois.
+  --
+  -- Sem isto, o convidado se cadastra, o trigger levanta exceção dentro de
+  -- private.handle_new_user (que roda na transação de signup), o usuário do Auth
+  -- é desfeito junto e a pessoa vê um erro cru do GoTrue. NÃO "simplifique"
+  -- removendo este bloco.
+  --
+  -- Ler auth.users aqui é seguro: a função é security definer e só usa o e-mail
+  -- do próprio usuário que está sendo inserido.
+  if TG_TABLE_NAME = 'location_members' then
+    select u.email into mail from auth.users u where u.id = new.user_id;
+    if mail is not null and exists (
+      select 1 from public.invitations i
+       where i.location_id = loc
+         and i.status = 'pending'
+         and lower(i.email) = lower(mail)
+    ) then
+      return new;
+    end if;
   end if;
 
   -- A contagem diferencia por tabela de origem via TG_TABLE_NAME:
@@ -1448,5 +1479,27 @@ drop trigger if exists enforce_channel_limit_ins on public.whatsapp_channels;
 create trigger enforce_channel_limit_ins
   before insert on public.whatsapp_channels
   for each row execute function private.enforce_channel_limit();
+
+
+-- ------------------------------------------------------------
+-- 0049_campanha_motivo_pausa.sql
+-- ------------------------------------------------------------
+-- ============================================================
+-- 0049 — Motivo visível quando o motor pausa uma campanha sozinho
+--
+-- O motor (src/lib/marketing/engine.ts) passou a recusar campanha de empresa
+-- com o módulo `marketing` bloqueado no plano. Sem um lugar para gravar o
+-- motivo, a campanha simplesmente parava em 'paused' e o admin do cliente não
+-- tinha como saber por quê (a tela mostra só o status).
+--
+-- Coluna livre, preenchida pelo motor (service role) e limpa quando alguém
+-- retoma a campanha pela tela.
+-- ============================================================
+
+alter table public.email_campaigns
+  add column if not exists pause_reason text;
+
+comment on column public.email_campaigns.pause_reason is
+  'Motivo legível da última pausa automática (ex.: módulo bloqueado no plano). Null quando a campanha está rodando normalmente.';
 
 
