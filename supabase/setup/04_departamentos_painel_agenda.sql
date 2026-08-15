@@ -1365,10 +1365,21 @@ begin
     return new;
   end if;
 
-  select (select count(*) from public.location_members where location_id = loc)
-       + (select count(*) from public.invitations
-           where location_id = loc and status = 'pending')
-    into atual;
+  -- A contagem diferencia por tabela de origem via TG_TABLE_NAME:
+  -- * location_members: conta SOMENTE os membros. O convite pendente correspondente
+  --   ainda nao foi marcado 'accepted', entao nao contar junto evita double-counting
+  --   quando alguem usa um convite para se registrar.
+  -- * invitations: conta membros + convites pendentes. Impede criar multiplos
+  --   convites de uma vez ultrapassando o limite.
+  if TG_TABLE_NAME = 'location_members' then
+    select count(*) from public.location_members where location_id = loc
+      into atual;
+  else
+    select (select count(*) from public.location_members where location_id = loc)
+         + (select count(*) from public.invitations
+             where location_id = loc and status = 'pending')
+      into atual;
+  end if;
 
   if atual >= lim then
     raise exception 'LIMITE_USUARIOS: esta empresa atingiu o limite de % usuarios (membros + convites pendentes)', lim
