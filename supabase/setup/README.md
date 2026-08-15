@@ -104,6 +104,34 @@ heranças que a instalação nova não tem. Rode, em ordem:
 2. `migrations/0045_remove_marca_antiga.sql` — renomeia o job do `pg_cron` e
    limpa o remetente padrão das campanhas.
 
+## Planos e limites — aplicar antes de abrir o cadastro
+
+As migrações abaixo entregam o limite por empresa. Aplique **nesta ordem** — a
+`0047` e a `0048` leem a tabela criada pela `0046`, e aplicar fora de ordem faz
+todo cadastro de usuário falhar com `relation "public.location_limits" does not
+exist`, em silêncio, até alguém tentar:
+
+1. `migrations/0046_location_limits.sql`
+2. `migrations/0047_limite_usuarios.sql`
+3. `migrations/0048_limite_canais.sql`
+4. `migrations/0049_campaign_pause_reason.sql`
+
+⚠️ **A `0049` não é opcional.** Sem ela, retomar campanha pausada falha, porque o
+código grava `pause_reason`.
+
+Depois de aplicar, dois passos que não são automáticos:
+
+- **Trocar `assertModuleEnabled` para falhar fechado** (`src/lib/plan/guard.ts`).
+  Hoje ele ignora o `error` da consulta e LIBERA — foi mantido assim de propósito
+  para o app não quebrar antes destas migrações existirem. Com elas aplicadas,
+  o motivo acabou, e o número de caminhos que dependem desse helper cresceu.
+- **Conferir os limites da sua própria empresa.** O backfill da `0046` deixa
+  empresa existente sem bloqueio (`disabled_modules = '{}'`), mas vale confirmar:
+  `select location_id, disabled_modules from public.location_limits;`
+
+Só então `update private.app_settings set signup_mode = 'open';`. Antes disso,
+cadastro aberto significa consumo anônimo nas suas chaves de OpenAI, Resend e Meta.
+
 ## O que ficou de fora (de propósito)
 
 Três migrações não entraram porque agendam `pg_cron` chamando uma URL pública
