@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { chat, defaultModel } from "@/lib/ai/openai";
+import { assertModuleEnabled } from "@/lib/plan/guard";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export const dynamic = "force-dynamic";
@@ -31,6 +32,17 @@ export async function POST(request: Request) {
     .limit(1)
     .maybeSingle();
   const locationId = (membership as any)?.location_id ?? null;
+
+  // Plano: recusa antes de gastar credencial global. Sem empresa resolvida
+  // também recusa — não dá para saber que plano aplicar, e liberar "na
+  // dúvida" seria consumo anônimo na conta do dono da plataforma.
+  if (!locationId) {
+    return Response.json({ error: "Empresa não encontrada" }, { status: 403 });
+  }
+  const bloqueio = await assertModuleEnabled(locationId, "ai-studio");
+  if (bloqueio) {
+    return Response.json({ error: bloqueio }, { status: 403 });
+  }
 
   const model = (body?.model || defaultModel()) as string;
   const messages: { role: "system" | "user" | "assistant"; content: string }[] = [];

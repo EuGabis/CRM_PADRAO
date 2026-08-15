@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { assertModuleEnabled } from "@/lib/plan/guard";
 
 interface SendBody {
   mode?: "now" | "scheduled";
@@ -25,6 +26,20 @@ export async function POST(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "Não autenticado" }, { status: 401 });
+
+  const { data: camp } = await supabase
+    .from("email_campaigns")
+    .select("location_id")
+    .eq("id", id)
+    .maybeSingle();
+  const locationId = (camp as { location_id?: string } | null)?.location_id ?? null;
+  if (!locationId) {
+    return Response.json({ error: "Empresa não encontrada" }, { status: 403 });
+  }
+  const bloqueio = await assertModuleEnabled(locationId, "marketing");
+  if (bloqueio) {
+    return Response.json({ error: bloqueio }, { status: 403 });
+  }
 
   let body: SendBody;
   try {

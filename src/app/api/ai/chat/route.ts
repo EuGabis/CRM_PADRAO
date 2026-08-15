@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { chat } from "@/lib/ai/openai";
+import { assertModuleEnabled } from "@/lib/plan/guard";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export const dynamic = "force-dynamic";
@@ -30,6 +31,15 @@ export async function POST(request: Request) {
     .eq("id", agentId)
     .maybeSingle();
   if (!agent) return Response.json({ error: "Agente não encontrado" }, { status: 404 });
+
+  const locationId = (agent as any)?.location_id ?? null;
+  if (!locationId) {
+    return Response.json({ error: "Empresa não encontrada" }, { status: 403 });
+  }
+  const bloqueio = await assertModuleEnabled(locationId, "agentes-ia");
+  if (bloqueio) {
+    return Response.json({ error: bloqueio }, { status: 403 });
+  }
 
   const parts = [
     agent.personality,

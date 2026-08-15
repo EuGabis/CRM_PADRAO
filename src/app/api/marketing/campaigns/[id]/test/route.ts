@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { renderTemplate } from "@/lib/automations/actions";
 import { renderCampaignEmail } from "@/lib/email/marketing-template";
 import { unsubscribeUrl } from "@/lib/marketing/unsubscribe";
+import { assertModuleEnabled } from "@/lib/plan/guard";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -28,6 +29,15 @@ export async function POST(
     .eq("id", id)
     .maybeSingle();
   if (error || !camp) return Response.json({ error: "Campanha não encontrada" }, { status: 404 });
+
+  const locationId = (camp as any)?.location_id ?? null;
+  if (!locationId) {
+    return Response.json({ error: "Empresa não encontrada" }, { status: 403 });
+  }
+  const bloqueio = await assertModuleEnabled(locationId, "marketing");
+  if (bloqueio) {
+    return Response.json({ error: bloqueio }, { status: 403 });
+  }
 
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
