@@ -33,7 +33,7 @@ export function ContentAiTab() {
     if (!p) return toast.error("Descreva o que você quer criar");
     setLoading(true);
     setResult(null);
-    const system = `Você é redator de marketing e vendas do Lito CRM. Escreva em português do Brasil, tom persuasivo e claro. Formato: ${FORMATS[format]}. Devolva apenas o texto final, pronto para publicar, sem comentários seus.`;
+    const system = `Você é redator de marketing e vendas do CRM ON. Escreva em português do Brasil, tom persuasivo e claro. Formato: ${FORMATS[format]}. Devolva apenas o texto final, pronto para publicar, sem comentários seus.`;
     const res = await aiActions.generate({ feature: "content", system, prompt: p });
     setLoading(false);
     if (res.ok) setResult(res.text ?? "");

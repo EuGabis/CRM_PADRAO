@@ -25,7 +25,7 @@ const companies = [
 const tagPool = [["assinante"], ["negociando"], ["quente"], ["assinante", "vip"], ["negociando", "follow-up"], []];
 const channels: Channel[] = ["whatsapp", "instagram", "facebook", "sms", "email"];
 const ownerIds = ["u-gustavo", "u-camila", "u-emille", "u-halyson", "u-lucas", "u-rhayan"];
-const sources = ["Facebook", "Instagram", "Indicação", "Checkout", "Quiz Lito - Teste Grátis"];
+const sources = ["Facebook", "Instagram", "Indicação", "Checkout", "Quiz CRM ON - Teste Grátis"];
 
 function pad(n: number) {
   return String(n).padStart(2, "0");

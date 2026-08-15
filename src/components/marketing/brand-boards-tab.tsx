@@ -103,7 +103,7 @@ export function BrandBoardsTab() {
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Nome</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} className="h-8 text-xs" placeholder="Ex.: Lito — Principal" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} className="h-8 text-xs" placeholder="Ex.: CRM ON — Principal" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Paleta (cores hex, separadas por vírgula)</Label>

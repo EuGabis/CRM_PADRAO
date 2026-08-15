@@ -1,4 +1,4 @@
-# Lito CRM
+# CRM ON
 
 CRM all-in-one (inspirado no GoHighLevel), construído com Next.js + TypeScript +
 Tailwind + shadcn/ui e backend **Supabase** (Postgres + Auth + RLS multi-tenant).

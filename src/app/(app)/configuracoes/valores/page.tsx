@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 
 /**
  * Antes esta tela listava "valores personalizados" inventados
- * ({{empresa.nome}} = "Lito Comercial", um telefone fictício etc.) com um
+ * ({{empresa.nome}} = "CRM ON Comercial", um telefone fictício etc.) com um
  * botão que só emitia toast. Cadastro de valores próprios não existe.
  *
  * O que existe de verdade são as variáveis que o motor de automações e o de

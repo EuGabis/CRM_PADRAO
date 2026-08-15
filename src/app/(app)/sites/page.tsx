@@ -34,8 +34,8 @@ const TABS = [
 ];
 
 const SITES = [
-  { name: "Site institucional", domain: "www.litocrm.com.br", status: "Publicado", visits: "12.480" },
-  { name: "Página de lançamento — Agente de IA", domain: "lancamento.litocrm.com.br", status: "Rascunho", visits: "—" },
+  { name: "Site institucional", domain: "www.crmon.com.br", status: "Publicado", visits: "12.480" },
+  { name: "Página de lançamento — Agente de IA", domain: "lancamento.crmon.com.br", status: "Rascunho", visits: "—" },
 ];
 
 const STORE_PRODUCTS = [
@@ -73,14 +73,14 @@ const SURVEYS = [
 ];
 
 const QUIZZES = [
-  { name: "Quiz Lito — Teste grátis", started: 842, completed: 617, leads: 512 },
+  { name: "Quiz CRM ON — Teste grátis", started: 842, completed: 617, leads: 512 },
   { name: "Diagnóstico: maturidade comercial", started: 436, completed: 298, leads: 251 },
 ];
 
 const QR_CODES = [
-  { name: "Cartão de visita digital", url: "litocrm.com.br/contato", scans: 342 },
-  { name: "Evento — Feira do Empreendedor", url: "lito.link/feira2026", scans: 1208 },
-  { name: "Cardápio de serviços", url: "litocrm.com.br/servicos", scans: 96 },
+  { name: "Cartão de visita digital", url: "crmon.com.br/contato", scans: 342 },
+  { name: "Evento — Feira do Empreendedor", url: "on.link/feira2026", scans: 1208 },
+  { name: "Cardápio de serviços", url: "crmon.com.br/servicos", scans: 96 },
 ];
 
 const CHAT_COLORS = ["#4f46e5", "#10b981", "#0f172a"];

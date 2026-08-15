@@ -18,7 +18,7 @@ const FILES = [
   { name: "Depoimento Donizetti v2.mp4", type: "video" },
   { name: "Criativo Lucas — formato vertical.mp4", type: "video" },
   { name: "banner-promo-agosto.png", type: "image" },
-  { name: "logo-lito-fundo-escuro.png", type: "image" },
+  { name: "logo-crmon-fundo-escuro.png", type: "image" },
   { name: "mockup-dashboard.png", type: "image" },
   { name: "Export_Contacts_Julho.csv", type: "csv" },
   { name: "planilha-metas-q3.csv", type: "csv" },

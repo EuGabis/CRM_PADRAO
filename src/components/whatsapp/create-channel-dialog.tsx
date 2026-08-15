@@ -65,7 +65,7 @@ export function CreateChannelDialog() {
         <div className="grid gap-3">
           {(
             [
-              ["name", "Nome do canal", "Ex.: Lito Academy Vendas"],
+              ["name", "Nome do canal", "Ex.: Comercial — Vendas"],
               ["sector", "Setor", "Ex.: Comercial Principal"],
               ["phoneE164", "Número (E.164)", "+55 11 99999-9999"],
               ["phoneNumberId", "phone_number_id (Meta)", "Ex.: 123456789012345"],
@@ -84,7 +84,7 @@ export function CreateChannelDialog() {
             </div>
           ))}
           <p className="text-[10px] leading-relaxed text-slate-400">
-            Conectar de verdade = apontar o webhook da Meta para o Lito (passo manual no painel
+            Conectar de verdade = apontar o webhook da Meta para o CRM ON (passo manual no painel
             da Meta). Aqui só cadastramos o número.
           </p>
         </div>

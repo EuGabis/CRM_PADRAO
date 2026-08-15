@@ -255,7 +255,7 @@ function ConfigCalendarios() {
               </span>
               <div>
                 <p className="text-xs font-semibold text-slate-800">Google Calendar</p>
-                <p className="text-[11px] text-slate-500">gustavo@litocrm.com.br</p>
+                <p className="text-[11px] text-slate-500">gustavo@crmon.com.br</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -503,7 +503,7 @@ function AppointmentDialog({
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Ex.: Demo Lito CRM — Maria"
+              placeholder="Ex.: Demo CRM ON — Maria"
               className="h-8"
             />
           </div>

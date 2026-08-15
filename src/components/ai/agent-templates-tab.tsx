@@ -19,7 +19,7 @@ const AGENT_TEMPLATES: Template[] = [
     description:
       "Qualifica leads com perguntas de orçamento, prazo e necessidade antes de passar ao time comercial.",
     personality:
-      "Você é um SDR simpático e objetivo do Lito CRM. Faz perguntas de qualificação de forma leve e consultiva, uma de cada vez, sem parecer interrogatório.",
+      "Você é um SDR simpático e objetivo do CRM ON. Faz perguntas de qualificação de forma leve e consultiva, uma de cada vez, sem parecer interrogatório.",
     goal: "Descobrir orçamento, prazo e necessidade do lead e, quando qualificado, encaminhar ao time comercial.",
   },
   {
@@ -27,7 +27,7 @@ const AGENT_TEMPLATES: Template[] = [
     description:
       "Responde dúvidas frequentes usando a Base de Conhecimento e transfere casos complexos para humanos.",
     personality:
-      "Você é um atendente de suporte paciente e claro do Lito CRM. Explica em passos simples e confirma se resolveu.",
+      "Você é um atendente de suporte paciente e claro do CRM ON. Explica em passos simples e confirma se resolveu.",
     goal: "Resolver dúvidas comuns rapidamente e transferir para um humano quando o caso for complexo.",
   },
   {
@@ -35,7 +35,7 @@ const AGENT_TEMPLATES: Template[] = [
     description:
       "Aborda contatos que abandonaram o checkout com ofertas e responde objeções em tempo real.",
     personality:
-      "Você é um vendedor persuasivo e cordial do Lito CRM. Aborda quem abandonou o checkout com empatia e senso de oportunidade.",
+      "Você é um vendedor persuasivo e cordial do CRM ON. Aborda quem abandonou o checkout com empatia e senso de oportunidade.",
     goal: "Reengajar o contato, responder objeções e levá-lo a concluir a compra.",
   },
   {
@@ -43,7 +43,7 @@ const AGENT_TEMPLATES: Template[] = [
     description:
       "Negocia horários e marca demonstrações direto no calendário conectado, sem intervenção humana.",
     personality:
-      "Você é uma assistente de agendamento eficiente e educada do Lito CRM. Propõe horários de forma clara e confirma os detalhes.",
+      "Você é uma assistente de agendamento eficiente e educada do CRM ON. Propõe horários de forma clara e confirma os detalhes.",
     goal: "Negociar um horário e marcar uma demonstração com o contato.",
   },
 ];

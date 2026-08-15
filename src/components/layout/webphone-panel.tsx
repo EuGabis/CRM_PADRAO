@@ -21,7 +21,7 @@ export function WebphonePanel() {
   return (
     <div className="w-64 p-3">
       <p className="mb-1 text-center text-[10px] text-slate-400">
-        Ligando de · Lito Comercial +55 21 3828-0872
+        Ligando de · CRM ON Comercial +55 21 3828-0872
       </p>
       {target && (
         <p className="mb-1 truncate text-center text-[11px] font-semibold text-indigo-600">

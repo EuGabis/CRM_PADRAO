@@ -272,10 +272,10 @@ export function CampaignComposer({
               }}
             >
               <SelectTrigger className="h-8 text-xs">
-                <SelectValue>{boards.find((b) => b.id === brandId)?.name ?? "Padrão (Lito)"}</SelectValue>
+                <SelectValue>{boards.find((b) => b.id === brandId)?.name ?? "Padrão (CRM ON)"}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__default__" className="text-xs">Padrão (Lito)</SelectItem>
+                <SelectItem value="__default__" className="text-xs">Padrão (CRM ON)</SelectItem>
                 {boards.map((b) => (
                   <SelectItem key={b.id} value={b.id} className="text-xs">{b.name}</SelectItem>
                 ))}

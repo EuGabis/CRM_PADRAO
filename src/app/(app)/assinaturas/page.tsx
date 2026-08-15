@@ -19,7 +19,7 @@ const TABS = [
   { label: "Marketplace" },
 ];
 
-const PORTAL_URL = "https://clientes.litocrm.com.br";
+const PORTAL_URL = "https://clientes.crmon.com.br";
 
 const COURSES = [
   { title: "CRM na Prática", subtitle: "40 aulas avançadas", students: 148, completion: 72, status: "Publicado" },
@@ -28,7 +28,7 @@ const COURSES = [
 ];
 
 const COMMUNITIES = [
-  { name: "Comunidade Lito", members: 412, postsWeek: 38, status: "Ativa" },
+  { name: "Comunidade CRM ON", members: 412, postsWeek: 38, status: "Ativa" },
   { name: "Alunos — CRM na Prática", members: 148, postsWeek: 21, status: "Ativa" },
 ];
 

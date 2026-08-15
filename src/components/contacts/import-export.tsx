@@ -203,7 +203,7 @@ export function exportContactsCsv(contacts: Contact[]) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `contatos-lito-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `contatos-crmon-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
   void logBulk("Exportação de contatos (CSV)", contacts.length);

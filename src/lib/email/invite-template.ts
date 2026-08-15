@@ -7,7 +7,7 @@ export interface InviteEmailData {
   companyName: string;
   /** Papel na equipe */
   role: "admin" | "user";
-  /** URL de cadastro (ex.: https://app.litocrm.com.br/login) */
+  /** URL de cadastro (ex.: https://app.crmon.com.br/login) */
   signupUrl: string;
   /** E-mail convidado — usado para reforçar qual endereço usar no cadastro */
   email: string;
@@ -19,7 +19,7 @@ const INDIGO = "#6366f1";
 const GRAPHITE = "#131826";
 
 /**
- * E-mail de convite com a identidade do Lito CRM.
+ * E-mail de convite com a identidade do CRM ON.
  * HTML com tabelas e estilo inline — o que os clientes de e-mail
  * (Gmail, Outlook, Apple Mail) renderizam de forma confiável.
  */

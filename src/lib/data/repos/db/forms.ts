@@ -35,7 +35,9 @@ function genSlug(): string {
 }
 
 export function embedSnippet(slug: string): string {
-  const base = process.env.NEXT_PUBLIC_APP_URL || "https://lito-crm.vercel.app";
+  // Fallback local de propósito: apontar para um domínio de produção alheio
+  // geraria embed servindo o formulário de outra aplicação.
+  const base = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   return `<script src="${base.replace(/\/$/, "")}/api/forms/${slug}/embed.js"></script>`;
 }
 

@@ -13,7 +13,7 @@ interface InviteBody {
 }
 
 /**
- * Cria o convite e envia o e-mail com a identidade do Lito CRM.
+ * Cria o convite e envia o e-mail com a identidade do CRM ON.
  *
  * Segurança: a sessão é validada no servidor e a criação passa pela RLS
  * (apenas administradores da empresa conseguem inserir em `invitations`).

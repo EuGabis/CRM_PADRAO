@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/shared/empty-state";
  * O módulo Calendários é real (compromissos no banco, repo db/appointments),
  * mas não existe conexão com Google Calendar nem preferências persistidas de
  * duração/buffer. Antes esta tela mostrava uma conta Google "Conectada"
- * (gustavo@litocrm.com.br — inventada) e dois selects que não salvavam nada.
+ * (gustavo@crmon.com.br — inventada) e dois selects que não salvavam nada.
  */
 export default function ConfigCalendariosPage() {
   return (

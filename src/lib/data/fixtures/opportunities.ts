@@ -1,7 +1,7 @@
 import type { Opportunity } from "../types";
 import { contacts } from "./contacts";
 
-const sources = ["Facebook", "Instagram", "Indicação", "Checkout", "Demonstração Lito"];
+const sources = ["Facebook", "Instagram", "Indicação", "Checkout", "Demonstração CRM ON"];
 const ownerIds = ["u-gustavo", "u-camila", "u-emille", "u-halyson", "u-lucas", "u-rhayan"];
 
 // distribuição nas 9 fases do pipe-controle (~80 oportunidades)

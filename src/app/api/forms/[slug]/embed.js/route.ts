@@ -16,7 +16,8 @@ function js(body: string, status = 200) {
 
 export async function GET(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const base = process.env.NEXT_PUBLIC_APP_URL || "https://lito-crm.vercel.app";
+  // Ver comentário em lib/data/repos/db/forms.ts: nunca cair num domínio alheio.
+  const base = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
   let form: any = null;
   try {
@@ -28,10 +29,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
       .maybeSingle();
     form = data;
   } catch {
-    return js(`console.error("[Lito Forms] servidor sem credenciais");`, 503);
+    return js(`console.error("[CRM ON Forms] servidor sem credenciais");`, 503);
   }
   if (!form || !form.active) {
-    return js(`console.warn("[Lito Forms] formulário indisponível:", ${JSON.stringify(slug)});`);
+    return js(`console.warn("[CRM ON Forms] formulário indisponível:", ${JSON.stringify(slug)});`);
   }
 
   const config = JSON.stringify({

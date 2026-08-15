@@ -1,6 +1,6 @@
 export const brand = {
-  name: "Lito CRM",
-  shortName: "Lito",
+  name: "CRM ON",
+  shortName: "ON",
   tagline: "Seu negócio inteiro em um lugar",
 } as const;
 

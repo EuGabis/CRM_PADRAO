@@ -6,7 +6,7 @@ import { senderAddress, replyToAddress } from "@/lib/email/sender";
 /**
  * Server component de propósito: o remetente real vem de `EMAIL_FROM` (env
  * privada, resolvida por senderAddress()), que não existe no client. Antes
- * esta tela mostrava "contato@litocrm.com.br" / "mail.litocrm.com.br" com
+ * esta tela mostrava "contato@crmon.com.br" / "mail.crmon.com.br" com
  * selo "Verificado" e um toggle de SMTP dedicado — nada disso existe: o
  * envio é todo pelo Resend e não há suporte a SMTP próprio.
  *

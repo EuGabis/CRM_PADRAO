@@ -4,7 +4,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 /**
  * Não existe gestão de domínios: nenhuma tabela guarda domínios e o CRM não
  * serve sites/funis próprios. Antes esta tela listava três domínios
- * fictícios (litocrm.com.br) com SSL "Ativo".
+ * fictícios (crmon.com.br) com SSL "Ativo".
  *
  * O único domínio real do projeto é o de envio de e-mail, verificado no
  * Resend — esse aparece em Configurações → Serviços de e-mail.

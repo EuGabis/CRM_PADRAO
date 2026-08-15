@@ -64,10 +64,10 @@ const AGENT_STATS = [
 ];
 
 const APPOINTMENT_ROWS = [
-  { title: "Demo Lito CRM", date: "3 ago 2026 10:00", status: "Realizado" },
+  { title: "Demo CRM ON", date: "3 ago 2026 10:00", status: "Realizado" },
   { title: "Onboarding — Linx", date: "4 ago 2026 09:30", status: "Realizado" },
   { title: "Call de fechamento", date: "5 ago 2026 11:00", status: "No-show" },
-  { title: "Demo Lito CRM", date: "5 ago 2026 16:00", status: "Realizado" },
+  { title: "Demo CRM ON", date: "5 ago 2026 16:00", status: "Realizado" },
   { title: "Follow-up", date: "6 ago 2026 14:00", status: "Agendado" },
 ];
 
