@@ -115,7 +115,7 @@ deny-by-default, políticas `TO authenticated` checando membership. `admin.ts`
 
 - Migrações em `supabase/migrations/000N_nome.sql`, aplicadas **à mão no SQL Editor**.
 - Sempre **idempotentes** (`create ... if not exists`, `drop policy if exists`).
-- **Próximo número livre: `0046`.**
+- **Próximo número livre: `0049`.**
 - ⚠️ **Há números duplicados no histórico** — `0014`, `0015`, `0016` e `0019`
   aparecem duas vezes cada (colisão de trabalho paralelo no projeto anterior).
   Não dá pra confiar no número como ordem real; confira o conteúdo. **Não repita
@@ -143,6 +143,44 @@ cronológica real (a numérica está errada). Procedimento completo em
 
 Ao criar migração nova, registre-a em `scripts/gerar-setup.ps1` e rode o script —
 ele falha de propósito se alguma migração ficar sem classificar.
+
+### Planos e limites por empresa
+
+`public.location_limits` guarda o limite de cada empresa: `max_users`,
+`max_whatsapp_channels` (`null` = ilimitado) e `disabled_modules` (lista de
+BLOQUEIO — módulo novo nasce liberado para todos).
+
+Fica **fora** da `locations` porque aquela tabela é editável pelo admin do
+próprio tenant; aqui não existe policy de escrita para `authenticated`, só a
+service role escreve. Não crie uma: seria o cliente definindo o próprio plano.
+
+Os limites numéricos são aplicados por trigger (`0047`, `0048`), não na tela —
+o admin do cliente chama a API direto. O limite de módulo tem precedência
+**sobre o admin** em `canAccess`, senão ele se autoriza sozinho.
+
+Empresa nova nasce com `ai-studio`, `agentes-ia`, `marketing` e `whatsapp`
+bloqueados: essas features consomem `OPENAI_API_KEY`, `RESEND_API_KEY` e
+`WHATSAPP_TOKEN`, que são **globais** — o consumo de todo cliente cai na conta
+do dono da plataforma. Liberar um módulo é assumir esse custo.
+
+Ajustar um cliente:
+
+```sql
+update public.location_limits
+   set max_users = 5,
+       disabled_modules = '{ai-studio}',
+       notes = 'Plano combinado em <data>',
+       updated_at = now()
+ where location_id = '<uuid>';
+```
+
+⚠️ **`assertModuleEnabled` (`src/lib/plan/guard.ts`) falha ABERTO hoje**: ele lê
+`data?.disabled_modules ?? []` sem checar o `error` da consulta, então se a query
+falhar — tabela ausente, erro transitório, RLS mudada — o módulo é liberado em
+silêncio e o consumo volta a cair na conta do dono da plataforma. Isso foi mantido
+de propósito para não quebrar IA e Marketing antes das migrações `0046`–`0048`
+serem aplicadas. **Assim que estiverem no banco, troque para falhar fechado**
+(checar `error` e recusar). É pendência ativa, não decisão final.
 
 ## Armadilhas verificadas neste código
 

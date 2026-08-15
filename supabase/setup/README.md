@@ -72,7 +72,10 @@ update private.app_settings set signup_mode = 'invite_only';
 
 O trigger de onboarding cria sozinho o perfil, a empresa (`location`) e um pipeline
 padrão com 9 fases. Daí em diante todo mundo entra por convite, em
-Configurações → Equipe.
+Configurações → Equipe. A empresa nova nasce com alguns módulos bloqueados
+(AI Studio, Agentes de IA, Marketing e WhatsApp) porque consomem credenciais
+globais do dono da plataforma — para mais detalhes e como ajustar os limites por
+cliente, consulte a seção "Planos e limites por empresa" em `AGENTS.md`.
 
 ### 3. Conferir
 
