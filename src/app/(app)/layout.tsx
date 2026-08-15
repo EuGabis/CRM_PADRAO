@@ -3,6 +3,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { SessionManager } from "@/components/layout/session-manager";
 import { AppointmentReminders } from "@/components/calendar/appointment-reminders";
+import { ModuleGuard } from "@/components/layout/module-guard";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
@@ -14,7 +15,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
-        <main className="min-h-0 flex-1 overflow-y-auto bg-slate-50">{children}</main>
+        <main className="min-h-0 flex-1 overflow-y-auto bg-slate-50">
+          <ModuleGuard>{children}</ModuleGuard>
+        </main>
       </div>
     </div>
   );
