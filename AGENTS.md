@@ -124,9 +124,24 @@ deny-by-default, políticas `TO authenticated` checando membership. `admin.ts`
   `conversations`/`messages`). Ao mexer numa policy, verifique se outra migração
   posterior já a redefiniu, e preserve todas as condições existentes.
 
-**Não sei quais migrações estão aplicadas no banco atual** — o projeto anterior
-listava várias pendentes (0031, 0037, 0039–0043). Confirme no SQL Editor antes de
-assumir que uma tabela/coluna existe.
+### Instalar num projeto Supabase novo
+
+**`supabase/setup/`** tem as migrações concatenadas em 4 partes, na ordem
+cronológica real (a numérica está errada). Procedimento completo em
+`supabase/setup/README.md`. Os três pontos que travam quem não leu:
+
+1. **Habilitar `pg_cron` antes** — nenhuma migração cria extensão; sem isso a
+   parte 01 quebra no fim.
+2. **O cadastro nasce fechado** (`0006`, `invite_only`) e num banco zerado não há
+   quem te convide. Abra com `update private.app_settings set signup_mode = 'open';`,
+   crie sua conta, feche de novo.
+3. **Três migrações de cron ficaram de fora** (`0009`, `0011`, `0014_guru_sync_config`,
+   mais o fim do `0013`): elas agendam `pg_cron` batendo em `lito-crm.vercel.app`,
+   a produção do projeto antigo. Consequência: automações, campanhas e mensagens
+   agendadas não disparam sozinhas até termos URL pública própria.
+
+Ao criar migração nova, registre-a em `scripts/gerar-setup.ps1` e rode o script —
+ele falha de propósito se alguma migração ficar sem classificar.
 
 ## Armadilhas verificadas neste código
 
