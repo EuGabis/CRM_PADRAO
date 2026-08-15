@@ -46,7 +46,8 @@ $partes = [ordered]@{
     # schema public", entao precisa rodar depois que todas ja existem.
     "0044_grants_service_role.sql",
     "0045_remove_marca_antiga.sql",
-    "0046_location_limits.sql"
+    "0046_location_limits.sql",
+    "0047_limite_usuarios.sql"
   )
 }
 
