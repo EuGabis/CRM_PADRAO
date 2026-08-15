@@ -45,7 +45,8 @@ $partes = [ordered]@{
     # 0044 por ULTIMO de proposito: concede privilegio em "all tables in
     # schema public", entao precisa rodar depois que todas ja existem.
     "0044_grants_service_role.sql",
-    "0045_remove_marca_antiga.sql"
+    "0045_remove_marca_antiga.sql",
+    "0046_location_limits.sql"
   )
 }
 
