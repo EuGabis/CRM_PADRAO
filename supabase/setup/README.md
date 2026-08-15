@@ -17,10 +17,15 @@ da data do commit que criou cada arquivo.
 ### 0. Habilitar `pg_cron` — ANTES de tudo
 
 **Nenhuma migração cria as extensões.** No projeto antigo elas foram ligadas à mão
-pelo painel. Se pular este passo, a parte 01 quebra no fim com
-`schema "cron" does not exist`.
+pelo painel.
 
 Supabase → **Database** → **Extensions** → habilite **`pg_cron`**.
+
+Pular este passo já mordeu uma vez: a `0007` termina com
+`cron.schedule('lito-aniversarios', ...)`. Sem a extensão, essa linha falha, e como
+o SQL Editor roda tudo em transação **a migração inteira volta atrás** — sem erro
+visível se você não leu a saída até o fim. O sintoma é `automation_runs` e
+`automation_logs` não existirem depois de você jurar que rodou a `0007`.
 
 (`pg_net` só faz falta pra sincronização automática da Guru e para o motor de
 automações, que estão de fora deste setup — ver "O que ficou de fora".)
@@ -34,7 +39,12 @@ No SQL Editor, uma de cada vez, esperando terminar antes da próxima:
 | 1º | `01_fundacao.sql` | Schema base multi-tenant, RLS, contatos, pipelines, conversas, equipe/permissões, checklist, automações |
 | 2º | `02_marketing_pagamentos.sql` | E-mail marketing e integração Guru (vendas, assinaturas, relatórios) |
 | 3º | `03_conversas_whatsapp_ia.sql` | Mídia nas conversas, WhatsApp, Google Ads, formulários, IA |
-| 4º | `04_departamentos_painel_agenda.sql` | Departamentos, logo, painéis personalizados, segmentação de pipelines, agenda |
+| 4º | `04_departamentos_painel_agenda.sql` | Departamentos, logo, painéis personalizados, segmentação de pipelines, agenda, **grants do `service_role`** |
+
+A parte 04 termina com a `0044`, que concede os privilégios do `service_role` em
+`all tables in schema public` — por isso ela roda por último, quando todas as
+tabelas já existem. Sem ela, tudo que usa `admin.ts` (automações, marketing,
+webhook do WhatsApp, sync da Guru) responde `42501 permission denied`.
 
 As migrações são idempotentes (`if not exists`, `drop policy if exists`), então
 rodar de novo não quebra.

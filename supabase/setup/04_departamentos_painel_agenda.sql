@@ -1125,3 +1125,53 @@ create policy "agenda: exclusao" on public.appointments
   );
 
 
+-- ------------------------------------------------------------
+-- 0044_grants_service_role.sql
+-- ------------------------------------------------------------
+-- ============================================================
+-- 0044 â€” privilÃ©gios do service_role no schema public
+--
+-- POR QUE ISTO EXISTE
+--
+-- Nenhuma migraÃ§Ã£o anterior concede privilÃ©gio ao `service_role`: a 0001
+-- apenas REVOGA do `anon` e, no projeto Supabase original, o resto vinha
+-- dos default privileges daquele projeto. Num projeto novo esse default
+-- nÃ£o veio junto, e o Postgres responde:
+--
+--   42501  permission denied for table contacts
+--   hint:  GRANT SELECT ON public.contacts TO service_role;
+--
+-- ConsequÃªncia sem esta migraÃ§Ã£o: tudo que usa `src/lib/supabase/admin.ts`
+-- falha com 403 â€” motor de automaÃ§Ãµes, motor de e-mail marketing, webhook
+-- do WhatsApp e sincronizaÃ§Ã£o da Guru. E falha em silÃªncio, porque essas
+-- rotas sÃ£o mÃ¡quina-a-mÃ¡quina e ninguÃ©m estÃ¡ olhando a tela.
+--
+-- SEGURANÃ‡A
+--
+-- Isto NÃƒO afrouxa a RLS para usuÃ¡rios. `service_role` sÃ³ Ã© alcanÃ§Ã¡vel com
+-- a chave secreta (`sb_secret_...`), que vive apenas no servidor e nunca
+-- tem prefixo NEXT_PUBLIC_. Ignorar a RLS Ã© exatamente a funÃ§Ã£o dela.
+-- O `anon` continua revogado; esta migraÃ§Ã£o nÃ£o toca nele.
+-- ============================================================
+
+grant usage on schema public to service_role;
+
+grant all privileges on all tables    in schema public to service_role;
+grant all privileges on all sequences in schema public to service_role;
+grant all privileges on all functions in schema public to service_role;
+
+-- Vale tambÃ©m para o que for criado daqui pra frente, senÃ£o toda tabela
+-- nova volta a dar 42501 e o erro reaparece meses depois, longe da causa.
+alter default privileges in schema public
+  grant all on tables to service_role;
+alter default privileges in schema public
+  grant all on sequences to service_role;
+alter default privileges in schema public
+  grant all on functions to service_role;
+
+-- ReforÃ§a a intenÃ§Ã£o da 0001: o `anon` nÃ£o enxerga nada do schema public.
+-- Idempotente e barato; protege contra uma tabela nova ter nascido com
+-- grant para anon vindo de default privilege.
+revoke all on all tables in schema public from anon;
+
+

@@ -41,7 +41,10 @@ $partes = [ordered]@{
     "0036_pagamentos_status_membros.sql","0037_dashboard_views.sql","0038_message_type_video.sql",
     "0039_pipelines_segmentacao.sql","0040_conversas_excluir_admin.sql",
     "0041_compromissos_lead.sql","0042_compromissos_lembrete.sql",
-    "0043_compromissos_por_usuario.sql"
+    "0043_compromissos_por_usuario.sql",
+    # 0044 por ULTIMO de proposito: concede privilegio em "all tables in
+    # schema public", entao precisa rodar depois que todas ja existem.
+    "0044_grants_service_role.sql"
   )
 }
 

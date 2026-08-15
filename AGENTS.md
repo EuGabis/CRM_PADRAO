@@ -115,7 +115,7 @@ deny-by-default, políticas `TO authenticated` checando membership. `admin.ts`
 
 - Migrações em `supabase/migrations/000N_nome.sql`, aplicadas **à mão no SQL Editor**.
 - Sempre **idempotentes** (`create ... if not exists`, `drop policy if exists`).
-- **Próximo número livre: `0044`.**
+- **Próximo número livre: `0045`.**
 - ⚠️ **Há números duplicados no histórico** — `0014`, `0015`, `0016` e `0019`
   aparecem duas vezes cada (colisão de trabalho paralelo no projeto anterior).
   Não dá pra confiar no número como ordem real; confira o conteúdo. **Não repita
@@ -159,7 +159,12 @@ ele falha de propósito se alguma migração ficar sem classificar.
    `ChannelIcon` usa badge de texto para essas redes.
 6. Páginas são client components (`"use client"`) — não dá pra passar ícone
    Lucide de Server para Client component como prop.
-7. **`src/proxy.ts` protege tudo por padrão.** Rota máquina-a-máquina (cron,
+7. **A chave secreta do Supabase é `sb_secret_...`, não a JWT `service_role`.**
+   Este projeto usa o sistema de chaves novo; a JWT antiga ainda passa na API de
+   Auth mas o PostgREST a trata como `anon`, então `admin.ts` deixa de furar a
+   RLS **em silêncio**. E o `service_role` só tem privilégio por causa da `0044` —
+   se aparecer `42501 permission denied`, é ela que faltou.
+8. **`src/proxy.ts` protege tudo por padrão.** Rota máquina-a-máquina (cron,
    webhook, embed público) precisa sair do `matcher` **e** validar a própria
    credencial — senão o middleware responde 307 para `/login`. Já estão fora:
    `api/automations`, `api/whatsapp`, `api/forms`, `api/webhooks`,
