@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { suspendedLocationIds } from "@/lib/plan/suspensao";
 import { runAction } from "./actions";
 import {
   MAX_STEPS_PER_RUN,
@@ -175,7 +176,16 @@ export async function processDueRuns(limit = 25): Promise<{ processed: number; e
 
   const runs = (data ?? []) as RunRow[];
 
+  // Empresa suspensa não move a fila: as ações do run mandam e-mail e mensagem
+  // usando credencial global do dono da plataforma. Suspender quem parou de
+  // pagar tem que parar o gasto, não só o acesso à tela.
+  const suspensas = await suspendedLocationIds(db, runs.map((r) => r.location_id));
+
   for (const run of runs) {
+    // `continue`, nunca `return`: os runs das outras empresas seguem neste
+    // mesmo tick. O run fica `pending`/`waiting` e volta a andar na reativação.
+    if (suspensas.has(run.location_id)) continue;
+
     // Marca como `running` condicionando ao status lido: se outro tick já
     // pegou este run, o update não afeta linha nenhuma e nós pulamos.
     const { data: claimed } = await db

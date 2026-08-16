@@ -4,6 +4,7 @@ import { renderTemplate } from "@/lib/automations/actions";
 import { renderCampaignEmail } from "@/lib/email/marketing-template";
 import { unsubscribeUrl } from "@/lib/marketing/unsubscribe";
 import { assertModuleEnabled } from "@/lib/plan/guard";
+import { suspendedLocationIds } from "@/lib/plan/suspensao";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -49,7 +50,19 @@ export async function processDueCampaigns(): Promise<{
   let sentTotal = 0;
   let errorTotal = 0;
 
+  // Empresa suspensa não gasta a RESEND_API_KEY global do dono: suspender quem
+  // parou de pagar tem que parar o consumo, não só a tela.
+  const suspensas = await suspendedLocationIds(
+    db,
+    (campaigns as any[]).map((c) => c.location_id)
+  );
+
   for (const camp of campaigns as any[]) {
+    // `continue`, nunca `return`: as campanhas das outras empresas precisam
+    // continuar saindo neste mesmo tick. A campanha fica como está (`sending`)
+    // e volta a andar sozinha quando a empresa for reativada.
+    if (suspensas.has(camp.location_id)) continue;
+
     // Ponto de estrangulamento do módulo `marketing`. Guardar só a rota
     // /campaigns/[id]/send não adianta: `publish_campaign` e
     // `add_campaign_recipients` têm grant execute para authenticated (0010) e a

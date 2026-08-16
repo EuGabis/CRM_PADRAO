@@ -1,5 +1,6 @@
 import { chat } from "@/lib/ai/openai";
 import { assertModuleEnabled } from "@/lib/plan/guard";
+import { isLocationSuspended } from "@/lib/plan/suspensao";
 import { sendText } from "@/lib/whatsapp/client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -36,6 +37,13 @@ export async function maybeAutoReply(
     // canal/conversa. Saída silenciosa como as demais: a função é best-effort e
     // não pode quebrar o 200 do webhook.
     if (await assertModuleEnabled(p.locationId, "whatsapp")) return;
+
+    // Empresa suspensa não responde: o webhook roda com service role, então a
+    // suspensão da 0051 (que vive na RLS) não chega aqui. Suspender quem parou
+    // de pagar tem que parar o gasto de OPENAI_API_KEY e WHATSAPP_TOKEN, senão
+    // o inadimplente segue consumindo credencial global do dono da plataforma.
+    // Só esta empresa é pulada — o webhook das demais continua respondendo.
+    if (await isLocationSuspended(p.locationId, db)) return;
 
     // handoff: humano já assumiu esta conversa?
     const { data: conv } = await db

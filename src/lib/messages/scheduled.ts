@@ -11,6 +11,7 @@
  */
 import { createAdminClient } from "@/lib/supabase/admin";
 import { assertModuleEnabled } from "@/lib/plan/guard";
+import { suspendedLocationIds } from "@/lib/plan/suspensao";
 import { sendText } from "@/lib/whatsapp/client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -41,7 +42,16 @@ export async function dispatchScheduledMessages(): Promise<ScheduledResult> {
   let dispatched = 0;
   let failed = 0;
 
+  // Empresa suspensa não gasta o WHATSAPP_TOKEN global do dono: suspender quem
+  // parou de pagar tem que parar o consumo, não só a tela.
+  const suspensas = await suspendedLocationIds(db, due.map((m) => m.location_id));
+
   for (const msg of due) {
+    // `continue`, nunca `return`: as agendadas das outras empresas saem neste
+    // mesmo tick. A mensagem continua `pendente` (não é reivindicada) e sai
+    // quando a empresa for reativada.
+    if (suspensas.has(msg.location_id)) continue;
+
     // Claim: só um tick pega a mensagem, mesmo com dois rodando ao mesmo tempo.
     const { data: claimed } = await db
       .from("messages")
