@@ -17,11 +17,17 @@ export default async function SuspensaPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: susp } = await supabase.rpc("my_suspension");
+  const { data: susp, error: suspError } = await supabase.rpc("my_suspension");
+  if (suspError) {
+    console.error("[SuspensaPage] my_suspension() falhou para o usuário", user.id, suspError);
+  }
   // Sem linha = sem vínculo com empresa nenhuma = não suspenso. Não faz
-  // sentido mostrar esta tela para quem não está de fato suspenso.
+  // sentido mostrar esta tela para quem não está de fato suspenso. Mas se o
+  // RPC falhou, não temos como saber — nesse caso é mais seguro permanecer
+  // aqui do que mandar de volta pro CRM (e arriscar um pingue-pongue com o
+  // shell, que também pode estar vendo o mesmo erro intermitente).
   const linha = Array.isArray(susp) ? susp[0] : susp;
-  if (!linha?.suspended) redirect("/dashboard");
+  if (!suspError && !linha?.suspended) redirect("/dashboard");
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">

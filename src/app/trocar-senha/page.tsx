@@ -20,6 +20,11 @@ export default function TrocarSenhaPage() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
+  // Fica true assim que o Auth aceita a nova senha. Numa nova tentativa (ex.:
+  // a chamada a /api/conta/senha-trocada falhou da primeira vez), não repete
+  // o updateUser — o GoTrue rejeitaria com "a nova senha é igual à atual" e a
+  // pessoa ficaria presa sem entender por quê.
+  const [passwordChanged, setPasswordChanged] = useState(false);
 
   const submit = async () => {
     if (password.length < 8) {
@@ -33,11 +38,25 @@ export default function TrocarSenhaPage() {
 
     setLoading(true);
     const supabase = createClient();
-    const { error: updateError } = await supabase.auth.updateUser({ password });
-    if (updateError) {
-      setLoading(false);
-      toast.error(updateError.message || "Não foi possível trocar a senha");
-      return;
+
+    if (!passwordChanged) {
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) {
+        // "New password should be different from the old password": sinal de
+        // que a senha já foi trocada numa tentativa anterior (ex.: em outra
+        // aba, ou nesta mesma se o estado local se perdeu com um reload).
+        // Trata como sucesso e segue para baixar a flag, em vez de travar a
+        // pessoa num erro que ela não causou.
+        const mesmaSenha = /different from the old|should be different/i.test(
+          updateError.message
+        );
+        if (!mesmaSenha) {
+          setLoading(false);
+          toast.error(updateError.message || "Não foi possível trocar a senha");
+          return;
+        }
+      }
+      setPasswordChanged(true);
     }
 
     // A coluna must_change_password só a service role consegue baixar (trigger
