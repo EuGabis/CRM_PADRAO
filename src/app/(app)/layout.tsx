@@ -1,11 +1,37 @@
 import type { ReactNode } from "react";
+import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { SessionManager } from "@/components/layout/session-manager";
 import { AppointmentReminders } from "@/components/calendar/appointment-reminders";
 import { ModuleGuard } from "@/components/layout/module-guard";
+import { createClient } from "@/lib/supabase/server";
 
-export default function AppLayout({ children }: { children: ReactNode }) {
+export default async function AppLayout({ children }: { children: ReactNode }) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    // Empresa suspensa: TEM que ser checada antes de qualquer resolução de
+    // location_id — suspender remove a empresa de private.user_locations(),
+    // que esconde também location_members. Checar a empresa primeiro faria o
+    // cliente ver "sem empresa" em vez do motivo real da suspensão.
+    const { data: susp } = await supabase.rpc("my_suspension");
+    // my_suspension() devolve ZERO LINHAS quando não há vínculo — tratar
+    // ausência de linha como "não suspenso".
+    const linha = Array.isArray(susp) ? susp[0] : susp;
+    if (linha?.suspended) redirect("/suspensa");
+
+    const { data: perfil } = await supabase
+      .from("profiles")
+      .select("must_change_password")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (perfil?.must_change_password) redirect("/trocar-senha");
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <SessionManager />
