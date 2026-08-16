@@ -1686,10 +1686,30 @@ as $$
     from public.location_members m
     join public.locations l on l.id = m.location_id
    where m.user_id = (select auth.uid())
+   -- assume uma empresa por usuário, igual ao resto do código (.maybeSingle()
+   -- sobre location_members)
    limit 1
 $$;
 
 revoke all on function public.my_suspension() from public, anon;
 grant execute on function public.my_suspension() to authenticated;
+
+-- ------------------------------------------------------------
+-- A suspensão mora em locations, que o admin do tenant edita desde a 0001
+-- ("admin edita location", usada pelo app para nome, cidade e logo). Sem
+-- fechar isso, o admin da empresa suspensa manda um PATCH com
+-- suspended_at = null e cancela a própria suspensão — UPDATE não exige
+-- SELECT, então nem precisa conseguir ler a linha.
+--
+-- O `using` impede editar enquanto suspensa; o `with check` impede gravar
+-- suspended_at pelo lado do cliente. O dono da plataforma continua podendo,
+-- porque passa pela policy própria "plataforma edita locations" (policies
+-- permissivas são OR).
+-- ------------------------------------------------------------
+drop policy if exists "admin edita location" on public.locations;
+create policy "admin edita location" on public.locations
+  for update to authenticated
+  using (private.is_admin(id) and suspended_at is null)
+  with check (private.is_admin(id) and suspended_at is null);
 
 
