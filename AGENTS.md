@@ -174,13 +174,12 @@ update public.location_limits
  where location_id = '<uuid>';
 ```
 
-⚠️ **`assertModuleEnabled` (`src/lib/plan/guard.ts`) falha ABERTO hoje**: ele lê
-`data?.disabled_modules ?? []` sem checar o `error` da consulta, então se a query
-falhar — tabela ausente, erro transitório, RLS mudada — o módulo é liberado em
-silêncio e o consumo volta a cair na conta do dono da plataforma. Isso foi mantido
-de propósito para não quebrar IA e Marketing antes das migrações `0046`–`0048`
-serem aplicadas. **Assim que estiverem no banco, troque para falhar fechado**
-(checar `error` e recusar). É pendência ativa, não decisão final.
+`assertModuleEnabled` (`src/lib/plan/guard.ts`) falha FECHADO: se a consulta a
+`location_limits` der `error` (RLS mudada, erro transitório, coluna renomeada),
+ele recusa o módulo em vez de liberar, para não deixar o consumo cair na conta
+do dono da plataforma em silêncio. Isso só foi possível depois que as migrações
+`0046`–`0049` foram aplicadas no banco; antes disso o helper falhava aberto de
+propósito. Não reverta para `data?.disabled_modules ?? []` sem checar `error`.
 
 ## Armadilhas verificadas neste código
 
