@@ -64,6 +64,13 @@ export async function POST(request: Request) {
   });
 
   if (prepareError || !locationId) {
+    // Convite pendente para o e-mail em outra empresa é condição de entrada
+    // (o dono digitou um e-mail que já está esperando outro convite), não
+    // falha de servidor — devolve 400 com o texto da exceção em vez do 500
+    // genérico abaixo.
+    if (prepareError?.message?.toLowerCase().includes("convite pendente")) {
+      return Response.json({ error: prepareError.message }, { status: 400 });
+    }
     return Response.json(
       { error: `Empresa não criada (${prepareError?.message ?? "erro desconhecido"}).` },
       { status: 500 },

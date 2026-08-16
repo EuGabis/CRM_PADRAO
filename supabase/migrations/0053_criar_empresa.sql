@@ -46,16 +46,16 @@ security definer
 set search_path = ''
 as $$
 declare
-  loc   uuid;
-  pipe  uuid;
-  email text := lower(trim(p_email));
+  loc     uuid;
+  pipe    uuid;
+  v_email text := lower(trim(p_email));
 begin
   -- Validar ANTES de qualquer insert: se falhar depois, sobra empresa
   -- órfã sem convite e sem dono.
   if coalesce(trim(p_nome), '') = '' then
     raise exception 'nome da empresa e obrigatorio';
   end if;
-  if email is null or position('@' in email) = 0 then
+  if v_email is null or position('@' in v_email) = 0 then
     raise exception 'e-mail invalido';
   end if;
 
@@ -66,10 +66,10 @@ begin
   -- o membro aqui, desfaria tudo, e o convite alheio ficaria "accepted"
   -- morto — o convidado de verdade perderia o convite dele.
   if exists (
-    select 1 from public.invitations
-     where status = 'pending' and lower(email) = email
+    select 1 from public.invitations i
+     where i.status = 'pending' and lower(i.email) = v_email
   ) then
-    raise exception 'Já existe um convite pendente para este e-mail em outra empresa';
+    raise exception 'Já existe um convite pendente para este e-mail em outra empresa. Revogue esse convite ou peça que a pessoa o aceite antes de cadastrar esta empresa.';
   end if;
 
   insert into public.locations (name) values (trim(p_nome)) returning id into loc;
@@ -84,7 +84,7 @@ begin
   -- limites reais fossem gravados antes, o convite do admin (contagem 0
   -- atual >= 0) seria barrado antes de existir qualquer membro.
   insert into public.invitations (location_id, email, role, status, created_by)
-  values (loc, email, 'admin', 'pending', p_criado_por);
+  values (loc, v_email, 'admin', 'pending', p_criado_por);
 
   update public.location_limits
      set max_users             = p_max_users,
