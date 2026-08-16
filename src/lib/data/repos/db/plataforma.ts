@@ -61,6 +61,13 @@ interface PlataformaState {
   empresas: EmpresaPlataforma[];
   loaded: boolean;
   loading: boolean;
+  /**
+   * Erro da última tentativa de `load()`. Precisa ser distinto de "loaded sem
+   * empresas": um `permission denied` (RLS de plataforma ainda não aplicada,
+   * erro transitório) não pode virar "nenhuma empresa ainda" na tela — é a
+   * pior mensagem possível para o erro mais provável.
+   */
+  erro: string | null;
   load: (force?: boolean) => Promise<void>;
 }
 
@@ -68,6 +75,7 @@ export const usePlataformaStore = create<PlataformaState>((set, get) => ({
   empresas: [],
   loaded: false,
   loading: false,
+  erro: null,
 
   load: async (force = false) => {
     if (!force && (get().loaded || get().loading)) return;
@@ -83,7 +91,10 @@ export const usePlataformaStore = create<PlataformaState>((set, get) => ({
       ]);
 
     if (locError || statsError) {
-      set({ loading: false });
+      set({
+        loading: false,
+        erro: (locError ?? statsError)?.message ?? "Erro desconhecido ao carregar as empresas",
+      });
       return;
     }
 
@@ -92,18 +103,18 @@ export const usePlataformaStore = create<PlataformaState>((set, get) => ({
       mapEmpresa(l, statsByLocation.get(l.id))
     );
 
-    set({ empresas, loaded: true, loading: false });
+    set({ empresas, loaded: true, loading: false, erro: null });
   },
 }));
 
 /** Empresas clientes cadastradas na plataforma, com contadores de uso. */
 export function useEmpresas() {
-  const { empresas, loaded, loading, load } = usePlataformaStore();
+  const { empresas, loaded, loading, erro, load } = usePlataformaStore();
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return { empresas, loaded, loading };
+  return { empresas, loaded, loading, erro };
 }
 
 async function reload() {
@@ -146,7 +157,7 @@ export const plataformaActions = {
       .from("locations")
       .update({ suspended_at: new Date().toISOString(), suspended_reason: motivo })
       .eq("id", locationId);
-    if (error) return { ok: false, error: "Não foi possível suspender a empresa" };
+    if (error) return { ok: false, error: `Não foi possível suspender a empresa (${error.message})` };
     await reload();
     return { ok: true };
   },
@@ -157,7 +168,7 @@ export const plataformaActions = {
       .from("locations")
       .update({ suspended_at: null, suspended_reason: null })
       .eq("id", locationId);
-    if (error) return { ok: false, error: "Não foi possível reativar a empresa" };
+    if (error) return { ok: false, error: `Não foi possível reativar a empresa (${error.message})` };
     await reload();
     return { ok: true };
   },
@@ -177,7 +188,7 @@ export const plataformaActions = {
         updated_at: new Date().toISOString(),
       })
       .eq("location_id", locationId);
-    if (error) return { ok: false, error: "Não foi possível salvar os limites" };
+    if (error) return { ok: false, error: `Não foi possível salvar os limites (${error.message})` };
     await reload();
     return { ok: true };
   },

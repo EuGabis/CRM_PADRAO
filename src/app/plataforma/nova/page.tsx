@@ -40,6 +40,16 @@ const PROVIDER_LABEL: Record<"meta" | "evolution", string> = {
   evolution: "Evolution",
 };
 
+/**
+ * "0" ou negativo não é limite válido — o próprio admin da empresa seria
+ * barrado pelo trigger da 0047 na primeira tentativa de adicionar alguém.
+ * Trata como vazio: nulo = ilimitado.
+ */
+function parseLimite(valor: string): number | null {
+  const n = Number(valor);
+  return valor.trim() && n > 0 ? n : null;
+}
+
 export default function NovaEmpresaPage() {
   const router = useRouter();
 
@@ -76,8 +86,8 @@ export default function NovaEmpresaPage() {
       nome: nome.trim(),
       email: email.trim().toLowerCase(),
       senha,
-      maxUsers: maxUsers.trim() ? Number(maxUsers) : null,
-      maxChannels: maxChannels.trim() ? Number(maxChannels) : null,
+      maxUsers: parseLimite(maxUsers),
+      maxChannels: parseLimite(maxChannels),
       disabledModules,
       provider,
     });
@@ -222,7 +232,10 @@ export default function NovaEmpresaPage() {
       <ConfirmacaoDialog
         dados={criada}
         onOpenChange={(o) => {
-          if (!o) router.push("/plataforma");
+          if (!o) {
+            setCriada(null);
+            router.push("/plataforma");
+          }
         }}
       />
     </div>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Building2, Loader2, Plus, ShieldOff, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Building2, Loader2, Plus, ShieldOff, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   plataformaActions,
   useEmpresas,
+  usePlataformaStore,
   type EmpresaPlataforma,
 } from "@/lib/data/repos/db/plataforma";
 
@@ -29,7 +30,7 @@ const PROVIDER_LABEL: Record<EmpresaPlataforma["whatsappProvider"], string> = {
 };
 
 export default function PlataformaPage() {
-  const { empresas, loaded, loading } = useEmpresas();
+  const { empresas, loaded, loading, erro } = useEmpresas();
   const [suspendendo, setSuspendendo] = useState<EmpresaPlataforma | null>(null);
 
   if (loading && !loaded) {
@@ -54,7 +55,21 @@ export default function PlataformaPage() {
         </Button>
       </div>
 
-      {empresas.length === 0 ? (
+      {erro ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center">
+          <AlertTriangle className="mx-auto mb-2 size-6 text-red-400" />
+          <p className="text-sm font-semibold text-red-700">Não foi possível carregar as empresas</p>
+          <p className="mx-auto mt-1 max-w-md text-xs text-red-600">{erro}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3 h-8 text-xs"
+            onClick={() => void usePlataformaStore.getState().load(true)}
+          >
+            Tentar de novo
+          </Button>
+        </div>
+      ) : empresas.length === 0 ? (
         <div className="rounded-xl border border-dashed bg-white p-8 text-center">
           <Building2 className="mx-auto mb-2 size-6 text-slate-300" />
           <p className="text-sm font-semibold text-slate-700">Nenhuma empresa ainda</p>
