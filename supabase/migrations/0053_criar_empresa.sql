@@ -47,6 +47,7 @@ set search_path = ''
 as $$
 declare
   loc   uuid;
+  pipe  uuid;
   email text := lower(trim(p_email));
 begin
   -- Validar ANTES de qualquer insert: se falhar depois, sobra empresa
@@ -58,17 +59,30 @@ begin
     raise exception 'e-mail invalido';
   end if;
 
+  -- Convite pendente de outra empresa para o mesmo e-mail é perigoso:
+  -- handle_new_user (0006) busca o convite pendente mais antigo do e-mail
+  -- SEM filtrar por empresa. Se deixássemos passar, o trigger vincularia
+  -- o novo usuário à empresa antiga (não a esta), a rota não encontraria
+  -- o membro aqui, desfaria tudo, e o convite alheio ficaria "accepted"
+  -- morto — o convidado de verdade perderia o convite dele.
+  if exists (
+    select 1 from public.invitations
+     where status = 'pending' and lower(email) = email
+  ) then
+    raise exception 'Já existe um convite pendente para este e-mail em outra empresa';
+  end if;
+
   insert into public.locations (name) values (trim(p_nome)) returning id into loc;
 
   -- O convite ANTES dos limites é deliberado. O trigger
   -- seed_limits_on_location (0046) já criou a linha de location_limits
   -- aqui, com max_users NULO (= ilimitado). O trigger
-  -- enforce_user_limit_invites (0047) conta membros + convites pendentes
-  -- contra max_users — como ainda está nulo neste ponto, o insert do
-  -- convite sempre passa. Se os limites reais fossem gravados primeiro,
-  -- cadastrar uma empresa com max_users = 1 falharia aqui (o próprio
-  -- convite do admin já contaria como 1 e estouraria o limite antes de
-  -- existir qualquer membro).
+  -- enforce_user_limit_invites (0047) roda `before insert` e compara a
+  -- contagem ATUAL (sem a linha nova) com max_users — com max_users nulo
+  -- neste ponto, qualquer contagem passa, então a ordem não importa para
+  -- max_users nulo. O caso que a inversão quebraria é max_users = 0: se os
+  -- limites reais fossem gravados antes, o convite do admin (contagem 0
+  -- atual >= 0) seria barrado antes de existir qualquer membro.
   insert into public.invitations (location_id, email, role, status, created_by)
   values (loc, email, 'admin', 'pending', p_criado_por);
 
@@ -79,6 +93,26 @@ begin
          whatsapp_provider     = coalesce(nullif(trim(p_provider), ''), 'meta'),
          updated_at            = now()
    where location_id = loc;
+
+  -- Espelha o funil padrão que handle_new_user (0006) cria no ramo de
+  -- cadastro público. Este fluxo usa o ramo "convidado" do trigger, que só
+  -- vincula o membro e não cria pipeline — sem isto o cliente entraria e o
+  -- módulo de Leads não teria nenhum funil.
+  insert into public.pipelines (location_id, name, position)
+  values (loc, '✅ Controle de Leads', 0)
+  returning id into pipe;
+
+  insert into public.stages (location_id, pipeline_id, name, color, position)
+  values
+    (loc, pipe, 'NOVO LEAD', '#94a3b8', 0),
+    (loc, pipe, 'NEGOCIANDO', '#3b82f6', 1),
+    (loc, pipe, 'QUENTE 🔥', '#f43f5e', 2),
+    (loc, pipe, 'TESTE GRÁTIS', '#f59e0b', 3),
+    (loc, pipe, 'FINALIZOU TESTE', '#ec4899', 4),
+    (loc, pipe, 'ASSINOU', '#22c55e', 5),
+    (loc, pipe, 'FILA DEMO', '#94a3b8', 6),
+    (loc, pipe, 'CALL DEMO', '#64748b', 7),
+    (loc, pipe, 'PERDIDO', '#ef4444', 8);
 
   return loc;
 end;

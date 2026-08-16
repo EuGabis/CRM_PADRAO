@@ -89,13 +89,12 @@ export async function POST(request: Request) {
       );
     }
     const jaExiste = authError?.message?.toLowerCase().includes("already");
+    const aviso = discardError ? " (a empresa preparada não pôde ser removida — verifique manualmente)" : "";
     return Response.json(
       {
         error: jaExiste
-          ? "Já existe uma conta com este e-mail"
-          : `${authError?.message ?? "Falha ao criar o acesso"}${
-              discardError ? " (a empresa preparada não pôde ser removida — verifique manualmente)" : ""
-            }`,
+          ? `Já existe uma conta com este e-mail${aviso}`
+          : `${authError?.message ?? "Falha ao criar o acesso"}${aviso}`,
       },
       { status: 400 },
     );
@@ -159,5 +158,11 @@ export async function POST(request: Request) {
     );
   }
 
-  return Response.json({ locationId, email });
+  return Response.json({
+    locationId,
+    email,
+    ...(passwordFlagError
+      ? { warning: "Empresa criada, mas não foi possível marcar a troca obrigatória de senha." }
+      : {}),
+  });
 }
