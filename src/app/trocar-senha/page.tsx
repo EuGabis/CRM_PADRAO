@@ -42,19 +42,25 @@ export default function TrocarSenhaPage() {
     if (!passwordChanged) {
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) {
-        // "New password should be different from the old password": sinal de
-        // que a senha já foi trocada numa tentativa anterior (ex.: em outra
-        // aba, ou nesta mesma se o estado local se perdeu com um reload).
-        // Trata como sucesso e segue para baixar a flag, em vez de travar a
-        // pessoa num erro que ela não causou.
+        // NÃO dá para tratar "a nova senha é igual à atual" como prova de que
+        // a troca já aconteceu numa tentativa anterior: essa mesma mensagem
+        // também aparece quando a pessoa digita a senha TEMPORÁRIA recebida
+        // de quem cadastrou a empresa nos dois campos (por preguiça ou por
+        // não entender a tela). Inferir sucesso a partir do texto do erro
+        // deixaria a troca obrigatória passar batido — quem cadastrou a
+        // empresa continuaria sabendo a senha do cliente, exatamente o que
+        // esta tela existe para evitar. Por isso: erro é sempre erro, e quem
+        // repetir a senha antiga recebe um pedido claro de senha diferente.
         const mesmaSenha = /different from the old|should be different/i.test(
           updateError.message
         );
-        if (!mesmaSenha) {
-          setLoading(false);
-          toast.error(updateError.message || "Não foi possível trocar a senha");
-          return;
-        }
+        setLoading(false);
+        toast.error(
+          mesmaSenha
+            ? "Escolha uma senha diferente da que você está usando agora."
+            : updateError.message || "Não foi possível trocar a senha"
+        );
+        return;
       }
       setPasswordChanged(true);
     }
