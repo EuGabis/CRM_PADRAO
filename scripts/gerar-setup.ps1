@@ -49,7 +49,8 @@ $partes = [ordered]@{
     "0046_location_limits.sql",
     "0047_limite_usuarios.sql",
     "0048_limite_canais.sql",
-    "0049_campanha_motivo_pausa.sql"
+    "0049_campanha_motivo_pausa.sql",
+    "0050_plataforma.sql"
   )
 }
 
