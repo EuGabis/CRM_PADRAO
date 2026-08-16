@@ -4,7 +4,15 @@ import Link from "next/link";
 import { useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { AlertTriangle, Building2, Loader2, Plus, ShieldOff, ShieldCheck } from "lucide-react";
+import {
+  AlertTriangle,
+  Building2,
+  Loader2,
+  Plus,
+  ShieldCheck,
+  ShieldOff,
+  SlidersHorizontal,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -101,7 +109,14 @@ export default function PlataformaPage() {
                 const suspensa = !!e.suspensaEm;
                 return (
                   <tr key={e.id} className="border-b last:border-0">
-                    <td className="px-4 py-2.5 font-medium text-slate-800">{e.nome}</td>
+                    <td className="px-4 py-2.5 font-medium text-slate-800">
+                      <Link
+                        href={`/plataforma/${e.id}`}
+                        className="hover:text-indigo-600 hover:underline"
+                      >
+                        {e.nome}
+                      </Link>
+                    </td>
                     <td className="px-4 py-2.5 text-slate-500">
                       {format(new Date(e.criadaEm), "d MMM yyyy", { locale: ptBR })}
                     </td>
@@ -128,6 +143,13 @@ export default function PlataformaPage() {
                       )}
                     </td>
                     <td className="px-4 py-2.5">
+                      <div className="flex items-center gap-3">
+                      <Link
+                        href={`/plataforma/${e.id}`}
+                        className="flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-indigo-600"
+                      >
+                        <SlidersHorizontal className="size-3.5" /> Plano
+                      </Link>
                       {suspensa ? (
                         <button
                           onClick={async () => {
@@ -150,6 +172,7 @@ export default function PlataformaPage() {
                           <ShieldOff className="size-3.5" /> Suspender
                         </button>
                       )}
+                      </div>
                     </td>
                   </tr>
                 );

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
+import { BotaoSair } from "@/components/shared/botao-sair";
 import { brand } from "@/lib/config/brand";
 import { createClient } from "@/lib/supabase/server";
 
@@ -50,6 +51,9 @@ export default async function SuspensaPage() {
         <p className="mt-6 text-sm text-slate-500">
           Fale com o suporte para regularizar o acesso.
         </p>
+        <div className="mt-6 border-t pt-4">
+          <BotaoSair />
+        </div>
       </div>
     </div>
   );

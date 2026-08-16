@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { KeyRound, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { BotaoSair } from "@/components/shared/botao-sair";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,6 @@ import { createClient } from "@/lib/supabase/client";
  * tela dentro de (app) disparia o redirect de novo ao renderizar.
  */
 export default function TrocarSenhaPage() {
-  const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
@@ -88,8 +87,12 @@ export default function TrocarSenhaPage() {
     }
 
     toast.success("Senha alterada com sucesso!");
-    router.push("/dashboard");
-    router.refresh();
+    // Navegação DURA, não router.push + refresh: o Router Cache pode servir um
+    // payload do layout de (app) capturado quando must_change_password ainda
+    // era true, e o shell manda de volta para cá. A volta perde o estado
+    // `passwordChanged`, a tentativa seguinte chama updateUser de novo e falha
+    // com "senha igual à atual" — laço confuso no primeiro minuto do cliente.
+    window.location.href = "/dashboard";
   };
 
   return (
@@ -114,11 +117,16 @@ export default function TrocarSenhaPage() {
           <div className="mt-5 space-y-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-slate-700">Nova senha</Label>
+              {/* Travados depois que o Auth aceitou a senha: a partir daí o
+                  submit não chama updateUser de novo, então um valor novo aqui
+                  NÃO viraria a senha real — a tela diria sucesso e a pessoa
+                  ficaria trancada fora no próximo login. */}
               <Input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Mínimo 8 caracteres"
+                disabled={passwordChanged}
                 className="h-10 bg-white"
               />
             </div>
@@ -130,14 +138,25 @@ export default function TrocarSenhaPage() {
                 onChange={(e) => setConfirm(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submit()}
                 placeholder="Repita a senha"
+                disabled={passwordChanged}
                 className="h-10 bg-white"
               />
             </div>
+            {passwordChanged && (
+              <p className="text-xs text-slate-500">
+                A senha já foi trocada. Falta só concluir — os campos ficam travados
+                para não gravar uma senha diferente da que você definiu.
+              </p>
+            )}
             <Button className="h-10 w-full text-sm" disabled={loading} onClick={submit}>
               {loading && <Loader2 className="size-4 animate-spin" />}
-              Salvar e continuar
+              {passwordChanged ? "Concluir" : "Salvar e continuar"}
             </Button>
           </div>
+        </div>
+
+        <div className="mt-4 flex justify-center">
+          <BotaoSair />
         </div>
       </div>
     </div>
