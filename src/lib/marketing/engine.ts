@@ -26,21 +26,62 @@ export async function processDueCampaigns(): Promise<{
 }> {
   const db = createAdminClient();
 
-  // 1. Promove agendadas vencidas para "sending".
-  await db
+  // 1. Promove agendadas vencidas para "sending" — exceto as de empresa
+  // suspensa. Sem este filtro a suspensa ACUMULA campanhas em `sending` a cada
+  // tick e, como o envio abaixo as pula sem tirar da fila, elas entulhariam as
+  // CAMPAIGN_LIMIT vagas do tick e travariam o marketing de todo mundo.
+  const agora = new Date().toISOString();
+  const { data: aPromover } = await db
     .from("email_campaigns")
-    .update({ status: "sending", updated_at: new Date().toISOString() })
+    .select("id, location_id")
     .eq("status", "scheduled")
-    .lte("scheduled_at", new Date().toISOString());
+    .lte("scheduled_at", agora);
+
+  if (aPromover?.length) {
+    const suspensasPromocao = await suspendedLocationIds(
+      db,
+      (aPromover as any[]).map((c) => c.location_id)
+    );
+    const idsAtivas = (aPromover as any[])
+      .filter((c) => !suspensasPromocao.has(c.location_id))
+      .map((c) => c.id);
+    if (idsAtivas.length) {
+      await db
+        .from("email_campaigns")
+        .update({ status: "sending", updated_at: new Date().toISOString() })
+        .in("id", idsAtivas);
+    }
+  }
 
   // 2. Campanhas em envio.
-  const { data: campaigns } = await db
+  //
+  // Busca 3x o limite DE PROPÓSITO: o LIMIT é aplicado pelo banco antes do
+  // filtro de suspensão, e a campanha da suspensa continua em `sending` (é o
+  // desenho: volta a andar na reativação). Buscando exatamente CAMPAIGN_LIMIT,
+  // 5 campanhas presas de um inadimplente ocupariam as 5 vagas em todo tick e
+  // o marketing da plataforma inteira pararia. Não "otimize" de volta para
+  // .limit(CAMPAIGN_LIMIT).
+  const { data: candidatas } = await db
     .from("email_campaigns")
     .select("*")
     .eq("status", "sending")
-    .limit(CAMPAIGN_LIMIT);
+    .limit(CAMPAIGN_LIMIT * 3);
 
-  if (!campaigns?.length) return { processed: 0, sent: 0, errors: 0 };
+  if (!candidatas?.length) return { processed: 0, sent: 0, errors: 0 };
+
+  // Empresa suspensa não gasta a RESEND_API_KEY global do dono: suspender quem
+  // parou de pagar tem que parar o consumo, não só a tela.
+  const suspensas = await suspendedLocationIds(
+    db,
+    (candidatas as any[]).map((c) => c.location_id)
+  );
+
+  // Filtra ANTES de cortar no limite efetivo: as vagas do tick são das ativas.
+  const campaigns = (candidatas as any[])
+    .filter((c) => !suspensas.has(c.location_id))
+    .slice(0, CAMPAIGN_LIMIT);
+
+  if (!campaigns.length) return { processed: 0, sent: 0, errors: 0 };
 
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return { processed: 0, sent: 0, errors: campaigns.length };
@@ -50,19 +91,7 @@ export async function processDueCampaigns(): Promise<{
   let sentTotal = 0;
   let errorTotal = 0;
 
-  // Empresa suspensa não gasta a RESEND_API_KEY global do dono: suspender quem
-  // parou de pagar tem que parar o consumo, não só a tela.
-  const suspensas = await suspendedLocationIds(
-    db,
-    (campaigns as any[]).map((c) => c.location_id)
-  );
-
   for (const camp of campaigns as any[]) {
-    // `continue`, nunca `return`: as campanhas das outras empresas precisam
-    // continuar saindo neste mesmo tick. A campanha fica como está (`sending`)
-    // e volta a andar sozinha quando a empresa for reativada.
-    if (suspensas.has(camp.location_id)) continue;
-
     // Ponto de estrangulamento do módulo `marketing`. Guardar só a rota
     // /campaigns/[id]/send não adianta: `publish_campaign` e
     // `add_campaign_recipients` têm grant execute para authenticated (0010) e a

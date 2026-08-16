@@ -29,22 +29,34 @@ export async function dispatchScheduledMessages(): Promise<ScheduledResult> {
   const db = createAdminClient();
   const now = new Date().toISOString();
 
-  const { data: due, error } = await db
+  const { data: candidatas, error } = await db
     .from("messages")
     .select("id, conversation_id, location_id, channel, body, internal, scheduled_for")
     .eq("schedule_status", "pendente")
     .lte("scheduled_for", now)
     .order("scheduled_for", { ascending: true })
-    .limit(BATCH);
+    // 3x o teto DE PROPÓSITO: o LIMIT é aplicado pelo banco antes do filtro de
+    // suspensão, e a mensagem da empresa suspensa continua `pendente` (é o
+    // desenho: sai na reativação). Como a ordenação é por `scheduled_for`, as
+    // vencidas da suspensa são as mais antigas e ficariam na cabeça da fila
+    // para sempre, ocupando as vagas das empresas ativas em todo tick. Não
+    // "otimize" de volta para .limit(BATCH).
+    .limit(BATCH * 3);
 
-  if (error || !due?.length) return { dispatched: 0, failed: 0 };
-
-  let dispatched = 0;
-  let failed = 0;
+  if (error || !candidatas?.length) return { dispatched: 0, failed: 0 };
 
   // Empresa suspensa não gasta o WHATSAPP_TOKEN global do dono: suspender quem
   // parou de pagar tem que parar o consumo, não só a tela.
-  const suspensas = await suspendedLocationIds(db, due.map((m) => m.location_id));
+  const suspensas = await suspendedLocationIds(
+    db,
+    candidatas.map((m) => m.location_id)
+  );
+
+  // Filtra ANTES de cortar no teto efetivo: as vagas do tick são das ativas.
+  const due = candidatas.filter((m) => !suspensas.has(m.location_id)).slice(0, BATCH);
+
+  let dispatched = 0;
+  let failed = 0;
 
   for (const msg of due) {
     // `continue`, nunca `return`: as agendadas das outras empresas saem neste

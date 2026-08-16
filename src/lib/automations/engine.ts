@@ -170,16 +170,29 @@ export async function processDueRuns(limit = 25): Promise<{ processed: number; e
     .in("status", ["pending", "waiting"])
     .lte("next_run_at", new Date().toISOString())
     .order("next_run_at", { ascending: true })
-    .limit(limit);
+    // 3x o limite DE PROPÓSITO: o LIMIT é aplicado pelo banco antes do filtro
+    // de suspensão, e o run da empresa suspensa continua na fila (é o desenho:
+    // volta a andar na reativação). Como a ordenação é por `next_run_at`, os
+    // runs vencidos da suspensa são os mais antigos e ficariam na cabeça da
+    // fila para sempre — um inadimplente com 25 runs vencidos pararia as
+    // automações de todos os outros clientes. Não "otimize" de volta para
+    // .limit(limit).
+    .limit(limit * 3);
 
   if (error) throw new Error(`Não foi possível ler a fila: ${error.message}`);
 
-  const runs = (data ?? []) as RunRow[];
+  const candidatos = (data ?? []) as RunRow[];
 
   // Empresa suspensa não move a fila: as ações do run mandam e-mail e mensagem
   // usando credencial global do dono da plataforma. Suspender quem parou de
   // pagar tem que parar o gasto, não só o acesso à tela.
-  const suspensas = await suspendedLocationIds(db, runs.map((r) => r.location_id));
+  const suspensas = await suspendedLocationIds(
+    db,
+    candidatos.map((r) => r.location_id)
+  );
+
+  // Filtra ANTES de cortar no limite efetivo: as vagas do tick são das ativas.
+  const runs = candidatos.filter((r) => !suspensas.has(r.location_id)).slice(0, limit);
 
   for (const run of runs) {
     // `continue`, nunca `return`: os runs das outras empresas seguem neste

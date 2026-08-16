@@ -36,7 +36,19 @@ export async function suspendedLocationIds(
     .select("id, suspended_at")
     .in("id", ids);
 
-  if (error) return new Set(ids);
+  if (error) {
+    // Falha fechado trata o LOTE INTEIRO como suspenso — diferente do
+    // assertModuleEnabled, que falha fechado por empresa. Na prática o produto
+    // para para todo mundo até a consulta voltar, então isso NÃO pode ser
+    // silencioso: sem este log vira um mistério de madrugada ("o cron roda e
+    // nada sai"). Nada se perde — nada é reivindicado e o tick seguinte tenta
+    // de novo.
+    console.error(
+      "[suspensao] não foi possível ler locations.suspended_at; tratando o lote inteiro como suspenso:",
+      error.message ?? error
+    );
+    return new Set(ids);
+  }
 
   const suspensas = new Set<string>();
   for (const l of (data ?? []) as any[]) {
