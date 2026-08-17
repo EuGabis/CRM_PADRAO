@@ -48,7 +48,11 @@ const useConnStore = create<ConnState>((setState, get) => ({
     await useDbStore.getState().load();
     const locationId = useDbStore.getState().locationId;
     if (!locationId) {
-      setState({ loading: false, loaded: true });
+      // Sem locationId ainda: NÃO marca loaded, senão cacheia "sem conexão"
+      // para sempre. useDbStore.load() acima pode voltar na hora se outro
+      // store já estiver carregando (guard `loaded || loading`); quem refaz é
+      // o useEffect de useGoogleAdsConnection(), que observa o locationId.
+      setState({ loading: false });
       return;
     }
     const supabase = createClient();
@@ -75,10 +79,12 @@ const useConnStore = create<ConnState>((setState, get) => ({
 
 export function useGoogleAdsConnection() {
   const { connection, loaded, loading, load } = useConnStore();
+  // Refaz o load quando o locationId aparecer (mesmo padrão de db/whatsapp.ts).
+  const locationId = useDbStore((s) => s.locationId);
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [locationId]);
   return { connection, ready: loaded && !loading };
 }
 

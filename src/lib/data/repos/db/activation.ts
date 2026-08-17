@@ -32,7 +32,11 @@ export const useActivationStore = create<ActivationState>((set, get) => ({
     await useDbStore.getState().load();
     const locationId = useDbStore.getState().locationId;
     if (!locationId) {
-      set({ loading: false, loaded: true });
+      // Sem locationId ainda: NÃO marca loaded, senão cacheia "sem passos"
+      // para sempre. useDbStore.load() acima pode voltar na hora se outro
+      // store já estiver carregando (guard `loaded || loading`); quem refaz é
+      // o useEffect de useActivation(), que observa o locationId.
+      set({ loading: false });
       return;
     }
     const supabase = createClient();
@@ -56,10 +60,12 @@ export const useActivationStore = create<ActivationState>((set, get) => ({
 
 export function useActivation() {
   const store = useActivationStore();
+  // Refaz o load quando o locationId aparecer (mesmo padrão de db/whatsapp.ts).
+  const locationId = useDbStore((s) => s.locationId);
   useEffect(() => {
     void store.load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [locationId]);
   return store;
 }
 

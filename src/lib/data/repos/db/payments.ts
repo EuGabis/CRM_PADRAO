@@ -159,7 +159,12 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
     await useDbStore.getState().load();
     const locationId = useDbStore.getState().locationId;
     if (!locationId) {
-      set({ loading: false, loaded: true });
+      // Sem locationId ainda: NÃO marca loaded, senão cacheia "Guru
+      // desconectada"/"sem assinaturas" para sempre. useDbStore.load() acima
+      // pode voltar na hora se outro store já estiver carregando (guard
+      // `loaded || loading`); quem refaz são os useEffect de
+      // useGuruIntegration()/usePaymentSubscriptions(), que observam o locationId.
+      set({ loading: false });
       return;
     }
     const supabase = createClient();
@@ -252,19 +257,22 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
 
 export function useGuruIntegration() {
   const { guru, loaded, load } = usePaymentsStore();
+  // Refaz o load quando o locationId aparecer (mesmo padrão de db/whatsapp.ts).
+  const locationId = useDbStore((s) => s.locationId);
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [locationId]);
   return { guru, loaded };
 }
 
 export function usePaymentSubscriptions() {
   const { subscriptions, load } = usePaymentsStore();
+  const locationId = useDbStore((s) => s.locationId);
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [locationId]);
   return useMemo(() => subscriptions, [subscriptions]);
 }
 

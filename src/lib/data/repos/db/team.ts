@@ -134,7 +134,11 @@ export const useTeamStore = create<TeamState>((set, get) => ({
     await useDbStore.getState().load();
     const locationId = useDbStore.getState().locationId;
     if (!locationId) {
-      set({ loading: false, loaded: true });
+      // Sem locationId ainda: NÃO marca loaded, senão cacheia "equipe vazia"
+      // para sempre. useDbStore.load() acima pode voltar na hora se outro
+      // store já estiver carregando (guard `loaded || loading`); quem refaz é
+      // o useEffect de useTeam()/useDepartments(), que observa o locationId.
+      set({ loading: false });
       return;
     }
     const supabase = createClient();
@@ -196,20 +200,23 @@ export const useTeamStore = create<TeamState>((set, get) => ({
 
 export function useTeam() {
   const store = useTeamStore();
+  // Refaz o load quando o locationId aparecer (mesmo padrão de db/whatsapp.ts).
+  const locationId = useDbStore((s) => s.locationId);
   useEffect(() => {
     void store.load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [locationId]);
   return store;
 }
 
 /** Departamentos da empresa (segmentações de acesso). */
 export function useDepartments() {
   const { departments, load } = useTeamStore();
+  const locationId = useDbStore((s) => s.locationId);
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [locationId]);
   return departments;
 }
 

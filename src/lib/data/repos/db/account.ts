@@ -42,7 +42,12 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     await useDbStore.getState().load();
     const { locationId, userId } = useDbStore.getState();
     if (!locationId || !userId) {
-      set({ loading: false, loaded: true });
+      // Sem locationId/userId ainda: NÃO marca loaded, senão cacheia
+      // "empresa não encontrada" para sempre (foi o bug do upload de logo em
+      // produção). O useDbStore.load() acima pode voltar na hora se outro
+      // store já estiver carregando (guard `loaded || loading`); quem refaz é
+      // o useEffect de useAccount(), que observa o locationId.
+      set({ loading: false });
       return;
     }
     const supabase = createClient();
@@ -72,10 +77,14 @@ export const useAccountStore = create<AccountState>((set, get) => ({
 
 export function useAccount() {
   const store = useAccountStore();
+  // Refaz o load quando o locationId aparecer (mesmo padrão de db/whatsapp.ts):
+  // na primeira passada ele costuma ser null por causa da corrida com os
+  // outros stores, e com deps [] a conta nunca carregaria.
+  const locationId = useDbStore((s) => s.locationId);
   useEffect(() => {
     void store.load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [locationId]);
   return store;
 }
 

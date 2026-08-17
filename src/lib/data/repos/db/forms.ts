@@ -60,7 +60,11 @@ const useFormsStore = create<FormsState>((setState, get) => ({
     await useDbStore.getState().load();
     const locationId = useDbStore.getState().locationId;
     if (!locationId) {
-      setState({ loading: false, loaded: true });
+      // Sem locationId ainda: NÃO marca loaded, senão cacheia "sem formulários"
+      // para sempre. useDbStore.load() acima pode voltar na hora se outro
+      // store já estiver carregando (guard `loaded || loading`); quem refaz é
+      // o useEffect de useForms(), que observa o locationId.
+      setState({ loading: false });
       return;
     }
     const supabase = createClient();
@@ -75,10 +79,12 @@ const useFormsStore = create<FormsState>((setState, get) => ({
 
 export function useForms() {
   const { forms, loaded, loading, load } = useFormsStore();
+  // Refaz o load quando o locationId aparecer (mesmo padrão de db/whatsapp.ts).
+  const locationId = useDbStore((s) => s.locationId);
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [locationId]);
   return { forms, ready: loaded && !loading };
 }
 
