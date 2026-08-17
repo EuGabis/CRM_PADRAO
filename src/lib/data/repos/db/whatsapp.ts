@@ -18,6 +18,9 @@ export interface WhatsappChannel {
   dailyLimit: number;
   active: boolean;
   createdAt: string;
+  provider: "meta" | "evolution";
+  connectionState: string;
+  disconnectedAt: string | null;
 }
 
 function mapRow(r: any): WhatsappChannel {
@@ -32,6 +35,9 @@ function mapRow(r: any): WhatsappChannel {
     dailyLimit: r.daily_limit ?? 1000,
     active: r.active,
     createdAt: r.created_at,
+    provider: (r.provider ?? "meta") as "meta" | "evolution",
+    connectionState: r.connection_state ?? "disconnected",
+    disconnectedAt: r.disconnected_at ?? null,
   };
 }
 
@@ -40,8 +46,9 @@ interface ChannelsState {
   loading: boolean;
   retries: number;
   channels: WhatsappChannel[];
-  load: () => Promise<void>;
+  load: (force?: boolean) => Promise<void>;
   set: (channels: WhatsappChannel[]) => void;
+  patch: (id: string, patch: Partial<WhatsappChannel>) => void;
 }
 
 const useChannelsStore = create<ChannelsState>((setState, get) => ({
@@ -50,8 +57,10 @@ const useChannelsStore = create<ChannelsState>((setState, get) => ({
   retries: 0,
   channels: [],
   set: (channels) => setState({ channels }),
-  load: async () => {
-    if (get().loaded || get().loading) return;
+  patch: (id, patch) =>
+    setState({ channels: get().channels.map((c) => (c.id === id ? { ...c, ...patch } : c)) }),
+  load: async (force = false) => {
+    if (!force && (get().loaded || get().loading)) return;
     setState({ loading: true });
     await useDbStore.getState().load();
     const locationId = useDbStore.getState().locationId;
@@ -77,9 +86,40 @@ const useChannelsStore = create<ChannelsState>((setState, get) => ({
       }
       return;
     }
-    setState({ loaded: true, loading: false, channels: (data ?? []).map(mapRow) });
+    const channels = (data ?? []).map(mapRow);
+    setState({ loaded: true, loading: false, channels });
+    void reconciliarEvolution(channels);
   },
 }));
+
+/**
+ * O webhook (`CONNECTION_UPDATE`) pode se perder — sem essa checagem, um
+ * canal caído continua marcado como conectado até a próxima entrega de
+ * sorte. Roda em segundo plano (não bloqueia `loaded`), uma consulta por
+ * canal Evolution, e só grava no store o que realmente divergir.
+ */
+async function reconciliarEvolution(channels: WhatsappChannel[]) {
+  const evolutionChannels = channels.filter((c) => c.provider === "evolution");
+  for (const c of evolutionChannels) {
+    try {
+      const res = await fetch("/api/whatsapp/evolution/estado", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId: c.id }),
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      if (json.state && (json.state !== c.connectionState || json.disconnectedAt !== c.disconnectedAt)) {
+        useChannelsStore.getState().patch(c.id, {
+          connectionState: json.state,
+          disconnectedAt: json.disconnectedAt ?? null,
+        });
+      }
+    } catch {
+      // Reconciliação é best-effort — falha de rede não pode travar a tela.
+    }
+  }
+}
 
 export function useWhatsappChannels() {
   const { channels, loaded, loading, load } = useChannelsStore();
@@ -127,6 +167,49 @@ export const whatsappActions = {
     const s = useChannelsStore.getState();
     s.set([mapRow(data), ...s.channels]);
     return { ok: true };
+  },
+
+  /** Recarrega a lista de canais ignorando o cache (`loaded`). */
+  refresh(): void {
+    void useChannelsStore.getState().load(true);
+  },
+
+  /** Grava localmente o estado de conexão sem esperar o próximo `load`. */
+  setConnectionState(id: string, connectionState: string, disconnectedAt: string | null): void {
+    useChannelsStore.getState().patch(id, { connectionState, disconnectedAt });
+  },
+
+  /**
+   * Chama `POST /api/whatsapp/evolution/conectar`. Sem `channelId` cria um
+   * canal novo; com `channelId` reconecta o existente (mesma instância).
+   */
+  async conectarEvolution(input: {
+    channelId?: string;
+    nome?: string;
+  }): Promise<
+    | { ok: true; channelId: string; instancia: string; qrBase64: string | null; state: string }
+    | { ok: false; error: string }
+  > {
+    try {
+      const res = await fetch("/api/whatsapp/evolution/conectar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          input.channelId ? { channelId: input.channelId } : { nome: input.nome },
+        ),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: json?.error ?? "Não foi possível conectar" };
+      return {
+        ok: true,
+        channelId: json.channelId,
+        instancia: json.instancia,
+        qrBase64: json.qrBase64 ?? null,
+        state: json.state ?? "connecting",
+      };
+    } catch {
+      return { ok: false, error: "Falha de conexão ao gerar o QR" };
+    }
   },
 
   async toggleActive(id: string, active: boolean): Promise<boolean> {

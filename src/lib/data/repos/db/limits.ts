@@ -9,12 +9,14 @@ export interface Limits {
   maxUsers: number | null;
   maxWhatsappChannels: number | null;
   disabledModules: string[];
+  whatsappProvider: "meta" | "evolution";
 }
 
 const SEM_LIMITE: Limits = {
   maxUsers: null,
   maxWhatsappChannels: null,
   disabledModules: [],
+  whatsappProvider: "meta",
 };
 
 interface LimitsState {
@@ -47,7 +49,7 @@ export const useLimitsStore = create<LimitsState>((set, get) => ({
     const supabase = createClient();
     const { data, error } = await supabase
       .from("location_limits")
-      .select("max_users, max_whatsapp_channels, disabled_modules")
+      .select("max_users, max_whatsapp_channels, disabled_modules, whatsapp_provider")
       .eq("location_id", locationId)
       .maybeSingle();
     if (error) {
@@ -68,6 +70,7 @@ export const useLimitsStore = create<LimitsState>((set, get) => ({
             maxUsers: data.max_users ?? null,
             maxWhatsappChannels: data.max_whatsapp_channels ?? null,
             disabledModules: data.disabled_modules ?? [],
+            whatsappProvider: (data.whatsapp_provider ?? "meta") as "meta" | "evolution",
           }
         : SEM_LIMITE,
       loaded: true,
