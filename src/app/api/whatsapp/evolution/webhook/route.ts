@@ -96,14 +96,28 @@ export async function POST(request: Request) {
           await handleMessage(db, channel, item);
         } catch (e) {
           // Best-effort: uma mensagem malformada/sem suporte nunca derruba o webhook.
-          console.error("[whatsapp/evolution/webhook] falha ao processar mensagem:", e);
+          // NUNCA logar o objeto de erro inteiro nem sua mensagem: erro de
+          // tipo/constraint do Postgres ecoa o VALOR OFENSOR, que aqui pode
+          // ser o conteúdo da mensagem do cliente final (dado de terceiro).
+          console.error(
+            "[whatsapp/evolution/webhook] falha ao processar mensagem — instância:",
+            instancia,
+            "código:",
+            (e as any)?.code ?? "desconhecido",
+          );
         }
       }
     } else if (evento === "CONNECTION_UPDATE") {
       try {
         await handleConnectionUpdate(db, channel, body);
       } catch (e) {
-        console.error("[whatsapp/evolution/webhook] falha ao processar connection_update:", e);
+        // Idem: sem objeto de erro inteiro nem mensagem do Postgres no log.
+        console.error(
+          "[whatsapp/evolution/webhook] falha ao processar connection_update — instância:",
+          instancia,
+          "código:",
+          (e as any)?.code ?? "desconhecido",
+        );
       }
     }
     // Outros eventos: ignora silenciosamente (não assinados no webhook/set).
@@ -112,7 +126,13 @@ export async function POST(request: Request) {
   } catch (e) {
     // Responde 200 mesmo em erro interno: webhook que responde erro faz o
     // gateway reentregar em laço.
-    console.error("[whatsapp/evolution/webhook] erro inesperado:", e);
+    // Mesmo critério dos catches acima: nunca o objeto de erro inteiro nem
+    // sua mensagem, só o código — pode ter chegado aqui vindo de uma
+    // operação com dado de terceiro embutido no erro do Postgres.
+    console.error(
+      "[whatsapp/evolution/webhook] erro inesperado — código:",
+      (e as any)?.code ?? "desconhecido",
+    );
     return Response.json({ ok: true });
   }
 }
@@ -135,7 +155,21 @@ async function handleMessage(db: any, channel: any, item: any) {
   // Mensagem enviada pelo próprio número (do celular, não pela API): o
   // Baileys ecoa no messages.upsert, mas não é uma mensagem de cliente pra
   // entrar no inbox como "in".
-  if (key.fromMe) return;
+  //
+  // `fromMe` nunca foi confirmado por sonda real (formato deduzido — ver
+  // cabeçalho do arquivo). Checagem estrita, não por truthy: uma string
+  // "false" não pode ser tratada como própria (descartaria mensagem real de
+  // cliente em silêncio), e um `undefined` (campo ausente) também não pode
+  // cair no "não é própria" sem deixar rastro — se o gateway omitir o campo
+  // em algum tipo de evento, é melhor logar a suposição furada do que
+  // duplicar a conversa do cliente com o eco da própria mensagem.
+  if (key.fromMe === true || key.fromMe === "true") return;
+  if (key.fromMe === undefined) {
+    console.error(
+      "[whatsapp/evolution/webhook] mensagem sem key.fromMe — assumindo recebida (chaves):",
+      Object.keys(key),
+    );
+  }
 
   const remoteJid: string | undefined = key.remoteJid;
   if (!remoteJid) {
