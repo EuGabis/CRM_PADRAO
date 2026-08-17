@@ -72,8 +72,10 @@ async function evo(path: string, apikey: string, init?: RequestInit): Promise<an
 }
 
 /**
- * Cria a instância e já configura o webhook dela (evento `MESSAGES_UPSERT`,
- * único confirmado na sondagem — é o mesmo usado em produção no gateway).
+ * Cria a instância e já configura o webhook dela (eventos `MESSAGES_UPSERT`
+ * e `CONNECTION_UPDATE` — o primeiro confirmado na sondagem, o segundo
+ * necessário pro webhook detectar queda de conexão e carimbar
+ * `disconnected_at`; sem ele nunca chega evento de mudança de estado).
  * `webhookSecret` vai no header `apikey` que a Evolution envia de volta nas
  * chamadas do webhook — é o CRM quem valida esse header ao receber.
  * Devolve o token da instância (campo `hash` da resposta do /instance/create).
@@ -123,7 +125,7 @@ export async function createInstance(
           url: webhookUrl,
           headers: { apikey: webhookSecret },
           enabled: true,
-          events: ["MESSAGES_UPSERT"],
+          events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
           webhookByEvents: false,
           webhookBase64: false,
         },
