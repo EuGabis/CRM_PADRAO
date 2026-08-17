@@ -54,7 +54,10 @@ $partes = [ordered]@{
     "0051_suspensao.sql",
     "0052_primeiro_acesso.sql",
     "0053_criar_empresa.sql",
-    "0054_suspensao_is_admin.sql"
+    "0054_suspensao_is_admin.sql",
+    # 0055 por ULTIMO: concede em "all tables in schema public" para
+    # authenticated, entao precisa rodar depois que todas ja existem.
+    "0055_grants_authenticated.sql"
   )
 }
 
