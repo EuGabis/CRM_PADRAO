@@ -2232,9 +2232,14 @@ alter table public.whatsapp_channels
 alter table public.whatsapp_channels
   add constraint whatsapp_channels_coerencia_check
   check (
-    (provider = 'meta'      and phone_number_id is not null) or
-    (provider = 'evolution' and evolution_instance is not null)
+    (provider = 'meta'      and phone_number_id is not null and evolution_instance is null) or
+    (provider = 'evolution' and evolution_instance is not null and phone_number_id is null)
   );
+
+-- Canal é de um provedor só. Permitir colunas dos DOIS criaria estado que o
+-- código não sabe tratar: webhook da Evolution resolveria por evolution_instance,
+-- mas enviaria via API da Meta; índice único faria a instância ocupar nome que
+-- deveria estar livre. Exclusão mútua é deliberada.
 
 -- ------------------------------------------------------------
 -- evolution_token e webhook_secret são SEGREDOS: com o token dá para enviar
