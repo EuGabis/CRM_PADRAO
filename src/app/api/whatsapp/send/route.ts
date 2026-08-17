@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { assertModuleEnabled } from "@/lib/plan/guard";
 import { sendText, sendTemplate } from "@/lib/whatsapp/client";
+import { sendText as sendEvolutionText } from "@/lib/evolution/client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -9,10 +10,16 @@ export const dynamic = "force-dynamic";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Envia mensagem de WhatsApp pela Cloud API. Autenticada (getUser + a RLS
- * garante que o usuário é membro da empresa da conversa). Dentro da janela de
- * 24h manda texto livre; fora, exige template aprovado. Respeita o limite
- * diário do canal e grava a mensagem de saída.
+ * Envia mensagem de WhatsApp. Autenticada (getUser + a RLS garante que o
+ * usuário é membro da empresa da conversa). Bifurca por `channel.provider`:
+ *
+ * - `meta` (Cloud API oficial): dentro da janela de 24h manda texto livre,
+ *   fora exige template aprovado — regras da Meta, só valem aqui.
+ * - `evolution` (gateway próprio/Baileys): não existe janela nem template;
+ *   exige que o canal esteja com `connection_state = "open"`.
+ *
+ * O limite diário (`daily_limit`) é regra do produto e vale nos dois
+ * caminhos.
  */
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -74,49 +81,95 @@ export async function POST(request: Request) {
     return Response.json({ error: "Limite diário do canal atingido" }, { status: 429 });
   }
 
-  // janela de 24h = última mensagem de entrada
-  const { data: lastIn } = await supabase
-    .from("messages")
-    .select("created_at")
-    .eq("conversation_id", conversationId)
-    .eq("direction", "in")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const within24h =
-    !!lastIn && Date.now() - new Date(lastIn.created_at).getTime() < DAY_MS;
-
-  let waResp: any;
+  let waMessageId: string | null;
   let bodyText: string;
-  try {
-    if (template) {
-      waResp = await sendTemplate(
-        channel.phone_number_id,
-        to,
-        template.name,
-        template.language,
-        template.components,
+
+  if (channel.provider === "evolution") {
+    // Sem janela de 24h e sem template nesse provedor — checagem exclusiva
+    // do caminho `meta`, não se aplica aqui.
+    if (channel.connection_state !== "open") {
+      return Response.json(
+        {
+          error:
+            "WhatsApp desconectado — reconecte o canal (escaneie o QR novamente) antes de enviar.",
+        },
+        { status: 409 },
       );
-      bodyText = `[template: ${template.name}]`;
-    } else {
-      if (!within24h) {
-        return Response.json(
-          { error: "Janela de 24h fechada — envie um template", needsTemplate: true },
-          { status: 409 },
-        );
-      }
-      if (!text?.trim()) return Response.json({ error: "Mensagem vazia" }, { status: 400 });
-      waResp = await sendText(channel.phone_number_id, to, text.trim());
-      bodyText = text.trim();
     }
-  } catch (e) {
-    return Response.json(
-      { error: e instanceof Error ? e.message : "Falha na Cloud API" },
-      { status: 502 },
-    );
+    if (!text?.trim()) return Response.json({ error: "Mensagem vazia" }, { status: 400 });
+
+    let waResp: { id: string };
+    try {
+      waResp = await sendEvolutionText(
+        channel.evolution_instance,
+        channel.evolution_token,
+        to,
+        text.trim(),
+      );
+    } catch (e) {
+      return Response.json(
+        { error: e instanceof Error ? e.message : "Falha ao enviar pela Evolution" },
+        { status: 502 },
+      );
+    }
+    bodyText = text.trim();
+    // Rota json?.key?.id nunca foi confirmada por sondagem (o teste de envio
+    // só retornou erro, sem número conectado). Se vier vazio, não inventa id
+    // — grava em branco e loga alto, porque isso quebra a idempotência do
+    // webhook (que casa por wa_message_id) para esta mensagem.
+    if (!waResp.id) {
+      console.error(
+        "[whatsapp/send] Evolution não devolveu id da mensagem (key.id vazio) — confirme o caminho real do id na resposta do gateway.",
+      );
+    }
+    waMessageId = waResp.id || null;
+  } else {
+    // caminho `meta` (Cloud API oficial) — comportamento original, intocado.
+
+    // janela de 24h = última mensagem de entrada
+    const { data: lastIn } = await supabase
+      .from("messages")
+      .select("created_at")
+      .eq("conversation_id", conversationId)
+      .eq("direction", "in")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const within24h =
+      !!lastIn && Date.now() - new Date(lastIn.created_at).getTime() < DAY_MS;
+
+    let waResp: any;
+    try {
+      if (template) {
+        waResp = await sendTemplate(
+          channel.phone_number_id,
+          to,
+          template.name,
+          template.language,
+          template.components,
+        );
+        bodyText = `[template: ${template.name}]`;
+      } else {
+        if (!within24h) {
+          return Response.json(
+            { error: "Janela de 24h fechada — envie um template", needsTemplate: true },
+            { status: 409 },
+          );
+        }
+        if (!text?.trim()) return Response.json({ error: "Mensagem vazia" }, { status: 400 });
+        waResp = await sendText(channel.phone_number_id, to, text.trim());
+        bodyText = text.trim();
+      }
+    } catch (e) {
+      return Response.json(
+        { error: e instanceof Error ? e.message : "Falha na Cloud API" },
+        { status: 502 },
+      );
+    }
+
+    waMessageId = waResp?.messages?.[0]?.id ?? null;
   }
 
-  const waMessageId = waResp?.messages?.[0]?.id ?? null;
   const { data: msg, error: insErr } = await supabase
     .from("messages")
     .insert({
