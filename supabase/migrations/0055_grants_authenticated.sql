@@ -92,13 +92,25 @@ from authenticated;
 --
 -- `automation_runs` mantém DELETE: limpar o histórico é ação legítima do
 -- cliente e tem policy própria desde a 0007.
+--
+-- ⚠️ `location_limits` NÃO entra nesta lista, e isso é deliberado. Parece
+-- tabela de leitura pelo lado do cliente, mas o PAINEL DE PLATAFORMA escreve
+-- nela pelo navegador (`db/plataforma.ts`, `salvarLimites`) — é assim que o
+-- dono muda o plano de um cliente. Ele também é `authenticated`, então
+-- revogar o UPDATE aqui quebra a própria feature.
+--
+-- O que protege `location_limits` é a RLS: a ÚNICA policy de UPDATE nela é
+-- "plataforma edita limites" (0050), condicionada a `private.is_platform_admin()`.
+-- Cliente comum tem o privilégio de tabela mas nenhuma policy que o deixe
+-- passar — as duas camadas fazendo exatamente o que devem.
 -- ------------------------------------------------------------
 revoke insert, update, delete on
-  public.location_limits,
   public.payment_events,
   public.automation_logs,
   public.email_campaign_recipients
 from authenticated;
+
+revoke insert, delete on public.location_limits from authenticated;
 
 revoke insert, update on public.automation_runs from authenticated;
 
