@@ -92,7 +92,23 @@ export async function createInstance(
     }),
   });
   const token = created?.hash;
-  if (!token) throw new Error(`Evolution não devolveu token (hash) ao criar ${nome}`);
+  if (!token) {
+    // A instância já existe no gateway mesmo sem o `hash` — o /instance/create
+    // respondeu 200. Sem limpar aqui, ela fica órfã em silêncio (mesmo risco
+    // do webhook falho logo abaixo).
+    try {
+      await deleteInstance(nome);
+    } catch (deleteErr) {
+      throw new Error(
+        `Evolution não devolveu token (hash) ao criar "${nome}" e a limpeza automática ` +
+          `também falhou (${(deleteErr as Error).message}). A instância "${nome}" ficou ` +
+          `órfã no gateway — apague manualmente.`,
+      );
+    }
+    throw new Error(
+      `Evolution não devolveu token (hash) ao criar "${nome}". A instância foi desfeita automaticamente.`,
+    );
+  }
 
   // A limpeza fica AQUI, não no chamador: se o /webhook/set falhar, o
   // chamador nunca chegou a receber o token nem soube que a instância foi

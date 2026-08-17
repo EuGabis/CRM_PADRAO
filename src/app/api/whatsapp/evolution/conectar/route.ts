@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createInstance, connectInstance, deleteInstance } from "@/lib/evolution/client";
+import { assertModuleEnabled } from "@/lib/plan/guard";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -51,6 +52,13 @@ export async function POST(request: Request) {
   const locationId = (membership as any)?.location_id ?? null;
   if (!locationId) return Response.json({ error: "Empresa não encontrada" }, { status: 403 });
 
+  // Mesma barreira das outras rotas de WhatsApp (send, send-media, templates):
+  // a instância consome o gateway pago do dono da plataforma, então precisa
+  // do módulo liberado ANTES de qualquer efeito colateral — criar canal,
+  // criar instância ou até reconectar uma já existente.
+  const bloqueio = await assertModuleEnabled(locationId, "whatsapp");
+  if (bloqueio) return Response.json({ error: bloqueio }, { status: 403 });
+
   const channelIdInput = typeof body?.channelId === "string" ? body.channelId.trim() : "";
 
   // ------------------------------------------------------------
@@ -70,13 +78,21 @@ export async function POST(request: Request) {
 
     try {
       const { qrBase64, state } = await connectInstance(instancia);
-      await supabase.from("whatsapp_channels").update({ connection_state: state }).eq("id", channel.id);
+      const { error: syncError } = await supabase
+        .from("whatsapp_channels")
+        .update({ connection_state: state })
+        .eq("id", channel.id);
+      if (syncError) {
+        console.error(
+          `[whatsapp/evolution/conectar] falha ao gravar connection_state do canal ${channel.id}:`,
+          syncError,
+        );
+      }
       return Response.json({ channelId: channel.id, instancia, qrBase64, state });
-    } catch (e) {
-      return Response.json(
-        { error: e instanceof Error ? e.message : "Falha ao pedir o QR" },
-        { status: 502 },
-      );
+    } catch {
+      // Não repassa e.message cru: pode ser o corpo da própria requisição
+      // ecoado pelo gateway numa mensagem de validação.
+      return Response.json({ error: "Falha ao pedir o QR no gateway" }, { status: 502 });
     }
   }
 
@@ -99,13 +115,16 @@ export async function POST(request: Request) {
 
   if (createChannelError) {
     // Mensagem do trigger de limite (0048) já é legível pro cliente — repassa como está.
+    // Qualquer outro erro do Postgres fica só no log: o texto cru vaza nome de
+    // constraint/coluna, que não é assunto do cliente.
     if (createChannelError.message?.includes("LIMITE_CANAIS")) {
       return Response.json({ error: createChannelError.message }, { status: 400 });
     }
-    return Response.json(
-      { error: `Não foi possível criar o canal (${createChannelError.message}).` },
-      { status: 500 },
+    console.error(
+      `[whatsapp/evolution/conectar] falha ao criar canal (location ${locationId}):`,
+      createChannelError,
     );
+    return Response.json({ error: "Não foi possível criar o canal." }, { status: 500 });
   }
 
   const webhookSecret = randomBytes(24).toString("hex"); // 48 caracteres
@@ -115,14 +134,33 @@ export async function POST(request: Request) {
     const created = await createInstance(instancia, WEBHOOK_URL, webhookSecret);
     token = created.token;
   } catch (e) {
-    // createInstance já se autocompensa no gateway se o passo do webhook falhar
-    // (apaga a instância que acabou de criar). O que sobra pra nós desfazer
-    // aqui é só o canal que criamos no passo anterior.
-    await supabase.from("whatsapp_channels").delete().eq("id", channelId);
-    return Response.json(
-      { error: e instanceof Error ? e.message : "Falha ao criar a instância no gateway" },
-      { status: 502 },
-    );
+    // createInstance já se autocompensa no gateway se o passo do webhook (ou
+    // a falta de `hash`) falhar — apaga a instância que acabou de criar. O
+    // que sobra pra nós desfazer aqui é só o canal que criamos no passo
+    // anterior.
+    //
+    // Não repassa e.message ao cliente nem loga cru: o /webhook/set manda o
+    // webhook_secret no corpo, e se o gateway ecoar esse corpo numa mensagem
+    // de validação, o segredo vazaria na resposta HTTP ou no log do
+    // servidor. Redige o valor do segredo antes de logar o detalhe.
+    const detalhe = (e instanceof Error ? e.message : String(e)).split(webhookSecret).join("[segredo redigido]");
+    console.error(`[whatsapp/evolution/conectar] falha ao criar instância "${instancia}" no gateway:`, detalhe);
+    const { error: rollbackError } = await supabase.from("whatsapp_channels").delete().eq("id", channelId);
+    if (rollbackError) {
+      console.error(
+        `[whatsapp/evolution/conectar] falha ao desfazer canal ${channelId} após erro no gateway:`,
+        rollbackError,
+      );
+      return Response.json(
+        {
+          error:
+            "Falha ao criar a instância no gateway, e o canal criado não pôde ser removido — " +
+            `canal ${channelId} ficou para trás, apague manualmente.`,
+        },
+        { status: 500 },
+      );
+    }
+    return Response.json({ error: "Falha ao criar a instância no gateway." }, { status: 502 });
   }
 
   // A partir daqui a instância EXISTE no gateway — qualquer falha precisa
@@ -134,33 +172,38 @@ export async function POST(request: Request) {
     .eq("id", channelId);
 
   if (saveTokenError) {
-    return await compensarECancelar(
-      supabase,
-      channelId,
-      instancia,
-      `Falha ao salvar as credenciais do canal (${saveTokenError.message}).`,
+    console.error(
+      `[whatsapp/evolution/conectar] falha ao salvar credenciais do canal ${channelId}:`,
+      saveTokenError,
     );
+    return await compensarECancelar(supabase, channelId, instancia, "Falha ao salvar as credenciais do canal.");
   }
 
   try {
     const { qrBase64, state } = await connectInstance(instancia);
-    await supabase.from("whatsapp_channels").update({ connection_state: state }).eq("id", channelId);
+    const { error: syncError } = await supabase
+      .from("whatsapp_channels")
+      .update({ connection_state: state })
+      .eq("id", channelId);
+    if (syncError) {
+      console.error(
+        `[whatsapp/evolution/conectar] falha ao gravar connection_state do canal ${channelId}:`,
+        syncError,
+      );
+    }
     return Response.json({ channelId, instancia, qrBase64, state });
   } catch (e) {
-    return await compensarECancelar(
-      supabase,
-      channelId,
-      instancia,
-      `Falha ao pedir o QR (${e instanceof Error ? e.message : "erro desconhecido"}).`,
-    );
+    console.error(`[whatsapp/evolution/conectar] falha ao pedir QR de "${instancia}":`, e);
+    return await compensarECancelar(supabase, channelId, instancia, "Falha ao pedir o QR no gateway.");
   }
 }
 
 /**
  * Desfaz uma criação que já tem instância no gateway mas não terminou de
- * gravar no banco: apaga a instância e o canal. Se a exclusão da instância
- * também falhar, a resposta PRECISA dizer isso com o nome da instância —
- * afirmar que ficou tudo limpo sem ter confirmado é pior que a falha em si.
+ * gravar no banco: apaga a instância e o canal. Nenhuma das duas exclusões
+ * pode ser assumida como sucesso sem checar o erro — afirmar limpeza que não
+ * aconteceu é pior que a falha em si. Se sobrar alguma coisa (instância,
+ * canal, ou as duas), a resposta cita exatamente o que ficou, com id/nome.
  */
 async function compensarECancelar(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -171,16 +214,25 @@ async function compensarECancelar(
   let deleteInstanceFailed = false;
   try {
     await deleteInstance(instancia);
-  } catch {
+  } catch (e) {
     deleteInstanceFailed = true;
+    console.error(`[whatsapp/evolution/conectar] falha ao apagar instância "${instancia}" no gateway:`, e);
   }
-  await supabase.from("whatsapp_channels").delete().eq("id", channelId);
+
+  const { error: deleteChannelError } = await supabase.from("whatsapp_channels").delete().eq("id", channelId);
+  if (deleteChannelError) {
+    console.error(`[whatsapp/evolution/conectar] falha ao apagar canal ${channelId}:`, deleteChannelError);
+  }
+
+  const pendencias: string[] = [];
+  if (deleteInstanceFailed) pendencias.push(`a instância "${instancia}" ficou órfã no gateway`);
+  if (deleteChannelError) pendencias.push(`o canal ${channelId} não foi removido`);
 
   return Response.json(
     {
-      error: deleteInstanceFailed
-        ? `${motivo} A limpeza automática da instância "${instancia}" também falhou — ela ficou órfã no gateway, apague manualmente.`
-        : `${motivo} A instância foi desfeita automaticamente.`,
+      error: pendencias.length
+        ? `${motivo} A limpeza automática falhou: ${pendencias.join(" e ")} — trate manualmente.`
+        : `${motivo} A instância e o canal foram desfeitos automaticamente.`,
     },
     { status: 500 },
   );
