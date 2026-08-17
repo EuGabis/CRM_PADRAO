@@ -94,19 +94,42 @@ export async function createInstance(
   const token = created?.hash;
   if (!token) throw new Error(`Evolution não devolveu token (hash) ao criar ${nome}`);
 
-  await evo(`/webhook/set/${encodeURIComponent(nome)}`, globalKey(), {
-    method: "POST",
-    body: JSON.stringify({
-      webhook: {
-        url: webhookUrl,
-        headers: { apikey: webhookSecret },
-        enabled: true,
-        events: ["MESSAGES_UPSERT"],
-        webhookByEvents: false,
-        webhookBase64: false,
-      },
-    }),
-  });
+  // A limpeza fica AQUI, não no chamador: se o /webhook/set falhar, o
+  // chamador nunca chegou a receber o token nem soube que a instância foi
+  // criada — ele não tem com o que compensar. Sem isso a instância fica
+  // órfã no gateway (sem webhook, nome ocupado), e como o gateway é
+  // compartilhado com outro projeto do dono, lixo ali é problema real.
+  try {
+    await evo(`/webhook/set/${encodeURIComponent(nome)}`, globalKey(), {
+      method: "POST",
+      body: JSON.stringify({
+        webhook: {
+          url: webhookUrl,
+          headers: { apikey: webhookSecret },
+          enabled: true,
+          events: ["MESSAGES_UPSERT"],
+          webhookByEvents: false,
+          webhookBase64: false,
+        },
+      }),
+    });
+  } catch (webhookErr) {
+    try {
+      await deleteInstance(nome);
+    } catch (deleteErr) {
+      // Não afirme que foi limpo sem ter confirmado: o dono precisa saber
+      // exatamente o que restou para apagar à mão no gateway.
+      throw new Error(
+        `Falha ao configurar webhook de "${nome}" (${(webhookErr as Error).message}) ` +
+          `e a limpeza automática também falhou (${(deleteErr as Error).message}). ` +
+          `A instância "${nome}" ficou órfã no gateway — apague manualmente.`,
+      );
+    }
+    throw new Error(
+      `Falha ao configurar webhook de "${nome}": ${(webhookErr as Error).message}. ` +
+        `A instância foi desfeita automaticamente.`,
+    );
+  }
 
   return { token };
 }
@@ -123,8 +146,20 @@ export async function connectInstance(
   const json = await evo(`/instance/connect/${encodeURIComponent(nome)}`, globalKey(), {
     method: "GET",
   });
-  const state = await connectionState(nome);
-  return { qrBase64: json?.base64 ?? null, state };
+  // json?.qrcode?.base64 é fallback defensivo: a rota sondada (v2.3.7) devolve
+  // o base64 plano (json.base64), mas o /instance/create aninha em "qrcode" —
+  // um upgrade do gateway pode um dia uniformizar os dois formatos.
+  const qrBase64 = json?.base64 ?? json?.qrcode?.base64 ?? null;
+
+  let state = "connecting";
+  try {
+    state = await connectionState(nome);
+  } catch {
+    // Não perder o QR que já temos em mãos por causa de uma segunda chamada
+    // que falhou — "connecting" é um fallback razoável logo após pedir o QR.
+  }
+
+  return { qrBase64, state };
 }
 
 /** Devolve o estado da conexão: "open" | "close" | "connecting" etc. */
