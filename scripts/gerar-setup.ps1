@@ -58,7 +58,8 @@ $partes = [ordered]@{
     # 0055 por ULTIMO: concede em "all tables in schema public" para
     # authenticated, entao precisa rodar depois que todas ja existem.
     "0055_grants_authenticated.sql",
-    "0056_whatsapp_liberado_por_padrao.sql"
+    "0056_whatsapp_liberado_por_padrao.sql",
+    "0057_canal_evolution.sql"
   )
 }
 
