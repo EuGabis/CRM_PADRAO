@@ -160,6 +160,22 @@ reconectar traz o QR de novo, reusando a instância existente.
 
 Nenhum cron novo. A reconciliação é sob demanda.
 
+## O módulo deixa de nascer bloqueado
+
+A `0046` fazia empresa nova nascer com `whatsapp` bloqueado, junto de `ai-studio`,
+`agentes-ia` e `marketing` — todos por consumirem credencial global do dono.
+
+O WhatsApp saiu dessa categoria com a Evolution: o custo passa a ser o gateway
+próprio, que é **fixo**. Um cliente a mais conectando usa capacidade já paga. Manter
+bloqueado seria atrito sem economia. Migração `0056`.
+
+⚠️ O módulo cobre os **dois** provedores. Empresa com `whatsapp_provider = 'meta'` e
+o módulo liberado volta a consumir `WHATSAPP_TOKEN`, que é medido. Se isso incomodar,
+o caminho é separar o gate por provedor — não voltar a bloquear o módulo inteiro.
+
+Empresas existentes não são tocadas: cada uma já teve os módulos ajustados à mão no
+painel, e reescrever desfaria essa configuração em silêncio.
+
 ## Fora de escopo
 
 Mídia, áudio e documento; auto-resposta com IA; mensagens agendadas pelo caminho
