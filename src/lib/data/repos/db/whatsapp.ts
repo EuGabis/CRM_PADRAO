@@ -60,7 +60,11 @@ const useChannelsStore = create<ChannelsState>((setState, get) => ({
   patch: (id, patch) =>
     setState({ channels: get().channels.map((c) => (c.id === id ? { ...c, ...patch } : c)) }),
   load: async (force = false) => {
-    if (!force && (get().loaded || get().loading)) return;
+    // `force` ignora o cache (`loaded`), nunca o guard de `loading` — senão um
+    // refresh durante um load em voo dispara query concorrente e duas
+    // reconciliações do Evolution em paralelo.
+    if (get().loading) return;
+    if (!force && get().loaded) return;
     setState({ loading: true });
     await useDbStore.getState().load();
     const locationId = useDbStore.getState().locationId;
@@ -73,7 +77,9 @@ const useChannelsStore = create<ChannelsState>((setState, get) => ({
     const supabase = createClient();
     const { data, error } = await supabase
       .from("whatsapp_channels")
-      .select("*")
+      .select(
+        "id, name, meta_name, phone_e164, phone_number_id, waba_id, sector, daily_limit, active, created_at, provider, connection_state, disconnected_at",
+      )
       .eq("location_id", locationId)
       .order("created_at", { ascending: false });
     if (error) {
@@ -87,7 +93,7 @@ const useChannelsStore = create<ChannelsState>((setState, get) => ({
       return;
     }
     const channels = (data ?? []).map(mapRow);
-    setState({ loaded: true, loading: false, channels });
+    setState({ loaded: true, loading: false, channels, retries: 0 });
     void reconciliarEvolution(channels);
   },
 }));
@@ -172,11 +178,6 @@ export const whatsappActions = {
   /** Recarrega a lista de canais ignorando o cache (`loaded`). */
   refresh(): void {
     void useChannelsStore.getState().load(true);
-  },
-
-  /** Grava localmente o estado de conexão sem esperar o próximo `load`. */
-  setConnectionState(id: string, connectionState: string, disconnectedAt: string | null): void {
-    useChannelsStore.getState().patch(id, { connectionState, disconnectedAt });
   },
 
   /**

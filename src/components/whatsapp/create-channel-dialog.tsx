@@ -20,16 +20,27 @@ import { ConectarEvolution } from "@/components/whatsapp/conectar-evolution";
 export function CreateChannelDialog() {
   const { whatsappProvider } = useLimits();
   const [open, setOpen] = useState(false);
+  // `EvolutionDialogContent` é filho permanente do <Dialog> — ao fechar, só o
+  // <DialogContent> desmonta, então o `useState conectando` dele sobreviveria
+  // entre aberturas (reabrir cairia direto em "conectando" com o nome zerado
+  // e chamaria conectarEvolution sem channelId, criando canal+instância
+  // duplicados). O `key` muda a cada abertura e força remontagem completa.
+  const [sessao, setSessao] = useState(0);
+
+  const onOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (next) setSessao((n) => n + 1);
+  };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger render={<Button size="sm" className="h-8 text-xs" />}>
         Criar canal
       </DialogTrigger>
       {whatsappProvider === "evolution" ? (
-        <EvolutionDialogContent onClose={() => setOpen(false)} />
+        <EvolutionDialogContent key={sessao} onClose={() => setOpen(false)} />
       ) : (
-        <MetaDialogContent onClose={() => setOpen(false)} />
+        <MetaDialogContent key={sessao} onClose={() => setOpen(false)} />
       )}
     </Dialog>
   );

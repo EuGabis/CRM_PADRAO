@@ -38,9 +38,11 @@ export async function POST(request: Request) {
   const bloqueio = await assertModuleEnabled(conv.location_id, "whatsapp");
   if (bloqueio) return Response.json({ error: bloqueio }, { status: 403 });
 
+  // Só mídia via Meta Cloud API — não usa segredo nenhum, então nenhuma coluna
+  // secreta entra na lista (cliente é a sessão do usuário, não service role).
   const { data: channel } = await supabase
     .from("whatsapp_channels")
-    .select("*")
+    .select("id, phone_number_id, active, daily_limit")
     .eq("id", channelId ?? conv.channel_id)
     .maybeSingle();
   if (!channel || !channel.active) {

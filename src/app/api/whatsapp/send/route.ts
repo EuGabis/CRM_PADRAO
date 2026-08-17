@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { assertModuleEnabled } from "@/lib/plan/guard";
 import { sendText, sendTemplate } from "@/lib/whatsapp/client";
-import { sendText as sendEvolutionText } from "@/lib/evolution/client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -51,9 +50,17 @@ export async function POST(request: Request) {
   const bloqueio = await assertModuleEnabled(conv.location_id, "whatsapp");
   if (bloqueio) return Response.json({ error: bloqueio }, { status: 403 });
 
+  // ⚠️ PROBLEMA DE ARQUITETURA (não resolvido aqui — reportado na revisão da
+  // Task 6): esta rota roda com a sessão do usuário (RLS), e depois da 0058
+  // `evolution_token` deixou de ser uma coluna legível por `authenticated`.
+  // O envio pelo provedor `evolution` (abaixo, `sendEvolutionText`) precisa
+  // desse token e portanto está quebrado até essa decisão de arquitetura ser
+  // tomada — ex.: replicar o padrão de `google-ads/overview/route.ts`
+  // (colunas públicas pela sessão do usuário + segredo buscado à parte com
+  // `createAdminClient()`, usando o `channel.id` já validado pela RLS acima).
   const { data: channel } = await supabase
     .from("whatsapp_channels")
-    .select("*")
+    .select("id, provider, phone_number_id, evolution_instance, connection_state, active, daily_limit")
     .eq("id", channelId ?? conv.channel_id)
     .maybeSingle();
   if (!channel || !channel.active) {
@@ -98,31 +105,20 @@ export async function POST(request: Request) {
     }
     if (!text?.trim()) return Response.json({ error: "Mensagem vazia" }, { status: 400 });
 
-    let waResp: { id: string };
-    try {
-      waResp = await sendEvolutionText(
-        channel.evolution_instance,
-        channel.evolution_token,
-        to,
-        text.trim(),
-      );
-    } catch (e) {
-      return Response.json(
-        { error: e instanceof Error ? e.message : "Falha ao enviar pela Evolution" },
-        { status: 502 },
-      );
-    }
-    bodyText = text.trim();
-    // Rota json?.key?.id nunca foi confirmada por sondagem (o teste de envio
-    // só retornou erro, sem número conectado). Se vier vazio, não inventa id
-    // — grava em branco e loga alto, porque isso quebra a idempotência do
-    // webhook (que casa por wa_message_id) para esta mensagem.
-    if (!waResp.id) {
-      console.error(
-        "[whatsapp/send] Evolution não devolveu id da mensagem (key.id vazio) — confirme o caminho real do id na resposta do gateway.",
-      );
-    }
-    waMessageId = waResp.id || null;
+    // `evolution_token` é segredo e, desde a 0058, não é mais lido pela
+    // sessão do usuário (só a service role lê essa coluna) — ver comentário
+    // acima da query do canal. Esta rota roda com a sessão do usuário, então
+    // não tem mais como chamar `sendEvolutionText`: falha explícita em vez
+    // de mandar `undefined` pro gateway em silêncio, até a decisão de
+    // arquitetura (ex.: buscar o token à parte com `createAdminClient()`,
+    // como `google-ads/overview/route.ts` já faz para `refresh_token`).
+    return Response.json(
+      {
+        error:
+          "Envio pela Evolution API está temporariamente indisponível nesta rota — pendente de decisão de arquitetura (evolution_token é segredo e não pode mais ser lido pela sessão do usuário).",
+      },
+      { status: 501 },
+    );
   } else {
     // caminho `meta` (Cloud API oficial) — comportamento original, intocado.
 

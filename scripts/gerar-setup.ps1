@@ -59,7 +59,10 @@ $partes = [ordered]@{
     # authenticated, entao precisa rodar depois que todas ja existem.
     "0055_grants_authenticated.sql",
     "0056_whatsapp_liberado_por_padrao.sql",
-    "0057_canal_evolution.sql"
+    "0057_canal_evolution.sql",
+    # 0058 depende da 0055 (grant de tabela) e da 0057 (colunas da
+    # evolution) ja terem rodado.
+    "0058_colunas_secretas.sql"
   )
 }
 
