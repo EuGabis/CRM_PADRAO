@@ -112,10 +112,15 @@ export function ConectarEvolution({ channelId, nome, onConectado }: Props) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-xl border bg-white p-6 text-center">
       {qr ? (
+        /* Sem `rounded` e com padding branco de propósito: os três quadrados
+           dos cantos são o que a câmera usa pra achar o código, e canto
+           arredondado corta justamente eles. A margem branca é a "zona
+           silenciosa" que o padrão QR exige. `pixelated` evita que o browser
+           borre os módulos ao redimensionar — QR borrado não lê. */
         <img
           src={qrSrc(qr)}
           alt="QR code do WhatsApp"
-          className="size-48 rounded-lg border"
+          className="size-56 border bg-white p-3 [image-rendering:pixelated]"
         />
       ) : (
         <div className="flex size-48 items-center justify-center rounded-lg border bg-slate-50">
