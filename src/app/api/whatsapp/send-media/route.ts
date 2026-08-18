@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { assertModuleEnabled } from "@/lib/plan/guard";
 import { uploadMedia, sendMediaMessage } from "@/lib/whatsapp/client";
 import { sendMedia as sendEvolutionMedia, sendWhatsAppAudio } from "@/lib/evolution/client";
-import { tipoPorMime, limiteExcedido, rotuloLimite } from "@/lib/whatsapp/media-limits";
+import { tipoPorMime, limiteExcedido, rotuloLimite, type TipoMidia } from "@/lib/whatsapp/media-limits";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export const dynamic = "force-dynamic";
@@ -24,7 +24,13 @@ export async function POST(request: Request) {
   }
   const { conversationId, channelId, messageId, mediaPath, mime, caption } = body ?? {};
   const kind = body?.kind as "image" | "audio" | "video";
-  if (!conversationId || !messageId || !mediaPath || !["image", "audio", "video"].includes(kind)) {
+  if (
+    !conversationId ||
+    !messageId ||
+    !mediaPath ||
+    typeof mediaPath !== "string" ||
+    !["image", "audio", "video"].includes(kind)
+  ) {
     return Response.json({ error: "parâmetros ausentes" }, { status: 400 });
   }
 
@@ -34,6 +40,34 @@ export async function POST(request: Request) {
     .eq("id", conversationId)
     .maybeSingle();
   if (!conv) return Response.json({ error: "Conversa não encontrada" }, { status: 404 });
+
+  // FURO DE SEGURANÇA (pré-existente, herdado do caminho Meta): `mediaPath`
+  // vem do corpo do request e mais abaixo é usado com o cliente service
+  // role, que passa por cima das policies do Storage. Sem esta checagem, um
+  // usuário autenticado da empresa A poderia mandar o caminho de um objeto
+  // da empresa B no bucket `conversation-media` e fazer o CRM entregá-lo a
+  // um contato seu — vazamento entre inquilinos.
+  //
+  // A defesa: carregar a MENSAGEM `messageId` com o cliente da SESSÃO (não
+  // o admin) — a RLS já garante que ela pertence à empresa do usuário — e
+  // confirmar que o `media_path` gravado nela é exatamente igual ao
+  // `mediaPath` recebido. Só depois disso o `mediaPath` pode ser usado com
+  // o cliente admin. Isso vale para os dois ramos (`evolution` e `meta`).
+  const { data: msgOwner } = await supabase
+    .from("messages")
+    .select("media_path")
+    .eq("id", messageId)
+    .eq("conversation_id", conversationId)
+    .maybeSingle();
+  if (!msgOwner || msgOwner.media_path !== mediaPath) {
+    // Nunca logar os caminhos aqui — o log serve pra detectar tentativa de
+    // acesso indevido, não pra virar ele mesmo um vazamento entre empresas.
+    console.error(
+      "[whatsapp/send-media] mediaPath não confere com a mensagem — messageId:",
+      messageId,
+    );
+    return Response.json({ error: "Mídia não encontrada." }, { status: 403 });
+  }
 
   // Módulo bloqueado no plano não gasta o WHATSAPP_TOKEN global. A location vem
   // da conversa (validada pela RLS), nunca do corpo do request.
@@ -99,7 +133,13 @@ export async function POST(request: Request) {
       return Response.json({ error: "Mídia não encontrada." }, { status: 400 });
     }
 
-    const tipo = tipoPorMime(mime ?? "");
+    // O tier do limite vem do `kind` (já validado contra image/audio/video no
+    // início da rota), não do mime que o cliente declara no corpo — declarar
+    // "application/pdf" num vídeo não pode cair no teto de documento (100 MB)
+    // em vez do de vídeo (16 MB). O mime só serve de fallback se o `kind` por
+    // algum motivo não resolver.
+    const tipoPorKind: Partial<Record<string, TipoMidia>> = { image: "image", audio: "audio", video: "video" };
+    const tipo = tipoPorKind[kind] ?? tipoPorMime(mime ?? "");
     if (!tipo) return Response.json({ error: "Tipo de arquivo não reconhecido" }, { status: 400 });
     if (limiteExcedido(tipo, tamanhoEmBytes)) {
       return Response.json(
@@ -151,10 +191,22 @@ export async function POST(request: Request) {
           caption,
         );
       }
-    } catch {
+    } catch (e) {
       // Mensagem genérica de propósito: o erro cru do gateway ecoa o nome da
       // instância no path. Nunca logue a URL assinada, o token, o conteúdo ou
-      // o nome do arquivo do cliente.
+      // o nome do arquivo do cliente — só o status HTTP (extraído da
+      // mensagem formatada por `evoError` em evolution/client.ts, que sempre
+      // traz "HTTP <status>") e o nome da instância. Importa em especial
+      // para `sendWhatsAppAudio`: é o caminho mais provável de quebrar no
+      // primeiro envio real (webm/opus gravado pelo navegador — ver
+      // sonda.md), e hoje falhava sem deixar rastro nenhum.
+      const httpStatus = /HTTP (\d+)/.exec((e as Error)?.message ?? "")?.[1] ?? "desconhecido";
+      console.error(
+        "[whatsapp/send-media] falha no gateway Evolution — instância:",
+        segredo.evolution_instance,
+        "HTTP:",
+        httpStatus,
+      );
       await supabase.from("messages").update({ status: "failed" }).eq("id", messageId);
       return Response.json({ error: "Falha no gateway do WhatsApp" }, { status: 502 });
     }

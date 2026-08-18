@@ -269,7 +269,11 @@ async function handleMessage(db: any, channel: any, item: any) {
 
     if (tamanho !== null && limiteExcedido(tipo, tamanho)) {
       // Estourou o limite: pula o download de propósito — não gasta banda
-      // nem Storage com arquivo que seria recusado.
+      // nem Storage com arquivo que seria recusado. Essa checagem prévia é
+      // só uma economia (evita download inútil); quem garante de verdade é
+      // a re-checagem depois do download, mais abaixo — payload sem
+      // `fileLength`, ou num formato que `bytesDoPayload` não reconheça, não
+      // pode furar o limite.
       console.error(
         "[whatsapp/evolution/webhook] mídia acima do limite — tipo:",
         tipo,
@@ -277,28 +281,51 @@ async function handleMessage(db: any, channel: any, item: any) {
         tamanho,
       );
       if (!body) body = rotuloFalha;
+      msgType = "text";
     } else if (!channel.evolution_instance || !channel.evolution_token) {
       console.error(
         "[whatsapp/evolution/webhook] canal sem evolution_instance/evolution_token — tipo:",
         tipo,
       );
       if (!body) body = rotuloFalha;
+      msgType = "text";
     } else {
       try {
         const baixado = await baixarMidia(channel.evolution_instance, channel.evolution_token, waId);
-        const mimeFinal = (baixado.mime || mimeDeclarado).split(";")[0].trim() || "application/octet-stream";
-        const extFinal = (mimeFinal.split("/")[1] || extDeclarada || "bin").trim();
-        const path = `${channel.location_id}/${contact.id}/${crypto.randomUUID()}.${extFinal}`;
-        const { error: upErr } = await db.storage
-          .from("conversation-media")
-          .upload(path, new Uint8Array(baixado.bytes), { contentType: mimeFinal, upsert: false });
-        if (upErr) throw upErr;
-        // Só documentMessage traz fileName de verdade; nos outros três,
-        // sintetiza tipo + extensão (como o webhook da Meta já faz).
-        media.media_path = path;
-        media.media_name = tipo === "file" && node.fileName ? node.fileName : `${tipo}.${extFinal}`;
-        media.media_mime = mimeFinal;
-        media.media_size = baixado.bytes.byteLength;
+        // Re-checagem pelo tamanho REAL dos bytes baixados — a checagem
+        // acima só vale quando `fileLength` existe e `bytesDoPayload`
+        // reconhece o formato; sem isso qualquer tamanho subiria pro
+        // Storage do dono da plataforma, que não tem cota.
+        if (limiteExcedido(tipo, baixado.bytes.byteLength)) {
+          console.error(
+            "[whatsapp/evolution/webhook] mídia acima do limite após download — tipo:",
+            tipo,
+            "bytes:",
+            baixado.bytes.byteLength,
+          );
+          if (!body) body = rotuloFalha;
+          msgType = "text";
+        } else {
+          const mimeFinal = (baixado.mime || mimeDeclarado).split(";")[0].trim() || "application/octet-stream";
+          // Só documentMessage traz fileName de verdade. Quando existir,
+          // prioriza a extensão do próprio nome — o mime de documento pode
+          // ser gigante (ex.: application/vnd.openxmlformats-officedocument.
+          // wordprocessingml.document). Se não der pra extrair do nome, cai
+          // no comportamento atual (extensão do mime).
+          const extDoNome = tipo === "file" && node.fileName ? extensaoDoNome(node.fileName) : null;
+          const extFinal = extDoNome || (mimeFinal.split("/")[1] || extDeclarada || "bin").trim();
+          const path = `${channel.location_id}/${contact.id}/${crypto.randomUUID()}.${extFinal}`;
+          const { error: upErr } = await db.storage
+            .from("conversation-media")
+            .upload(path, new Uint8Array(baixado.bytes), { contentType: mimeFinal, upsert: false });
+          if (upErr) throw upErr;
+          // Só documentMessage traz fileName de verdade; nos outros três,
+          // sintetiza tipo + extensão (como o webhook da Meta já faz).
+          media.media_path = path;
+          media.media_name = tipo === "file" && node.fileName ? node.fileName : `${tipo}.${extFinal}`;
+          media.media_mime = mimeFinal;
+          media.media_size = baixado.bytes.byteLength;
+        }
       } catch (e) {
         // Nunca logar o objeto de erro inteiro nem sua mensagem — pode ecoar
         // conteúdo, nome de arquivo, token ou URL. Só o código, quando houver.
@@ -309,6 +336,7 @@ async function handleMessage(db: any, channel: any, item: any) {
           (e as any)?.code ?? "desconhecido",
         );
         if (!body) body = rotuloFalha;
+        msgType = "text";
       }
     }
   } else {
@@ -405,6 +433,19 @@ function extrairEnvelopeDeMidia(msg: any): { tipo: TipoMidia; node: any } | null
   if (msg?.videoMessage) return { tipo: "video", node: msg.videoMessage };
   if (msg?.documentMessage) return { tipo: "file", node: msg.documentMessage };
   return null;
+}
+
+/**
+ * Extrai a extensão do nome de arquivo de um `documentMessage` (único
+ * envelope que traz `fileName` de verdade). Usada para não depender do mime
+ * do documento, que pode ser um mime "de aplicativo" longo demais para virar
+ * extensão de arquivo (ex.: application/vnd.openxmlformats-officedocument.
+ * wordprocessingml.document). Se não der pra extrair (sem ponto, extensão
+ * absurda), devolve `null` e quem chama cai no comportamento atual (mime).
+ */
+function extensaoDoNome(nome: string): string | null {
+  const m = /\.([a-zA-Z0-9]{1,10})$/.exec(nome);
+  return m ? m[1].toLowerCase() : null;
 }
 
 function rotuloTipo(tipo: TipoMidia): string {
