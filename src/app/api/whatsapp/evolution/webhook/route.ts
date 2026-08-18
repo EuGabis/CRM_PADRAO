@@ -327,13 +327,22 @@ async function handleMessage(db: any, channel: any, item: any) {
           media.media_size = baixado.bytes.byteLength;
         }
       } catch (e) {
-        // Nunca logar o objeto de erro inteiro nem sua mensagem — pode ecoar
-        // conteúdo, nome de arquivo, token ou URL. Só o código, quando houver.
+        // Nunca logar o objeto de erro inteiro — pode ecoar conteúdo, nome de
+        // arquivo, token ou URL (é o que faria um erro do Postgres vindo do
+        // `upErr` acima, por exemplo). A MENSAGEM, porém, é logada de
+        // propósito: quando o erro vem de `baixarMidia` (client.ts), ela foi
+        // escrita para carregar só `Object.keys` da resposta do gateway —
+        // é o mecanismo para descobrir o nome real do campo do base64, que a
+        // sonda não confirmou. Sem isso, um palpite errado faz toda mídia
+        // recebida virar "[não disponível]" sem nenhuma linha de log dizendo
+        // por quê.
         console.error(
           "[whatsapp/evolution/webhook] falha ao baixar/subir mídia — tipo:",
           tipo,
           "código:",
           (e as any)?.code ?? "desconhecido",
+          "mensagem:",
+          (e as Error)?.message ?? "desconhecida",
         );
         if (!body) body = rotuloFalha;
         msgType = "text";

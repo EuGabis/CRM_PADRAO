@@ -184,17 +184,30 @@ export async function uploadMedia(
   return json.id as string;
 }
 
+/**
+ * `kind` usa nosso vocabulário interno (o mesmo de `TipoMidia` em
+ * media-limits.ts). Só "file" diverge do tipo da Cloud API: ela chama
+ * documento de "document", não "file" — `tipoMeta` faz essa tradução. Para
+ * os três tipos que já funcionavam (image/audio/video), `tipoMeta === kind`
+ * e `filename` nunca é usado — comportamento idêntico ao de antes desta
+ * função ganhar suporte a documento.
+ */
 export function sendMediaMessage(
   phoneNumberId: string,
   to: string,
-  kind: "image" | "audio" | "video",
+  kind: "image" | "audio" | "video" | "file",
   mediaId: string,
   caption?: string,
+  filename?: string,
 ) {
+  const tipoMeta = kind === "file" ? "document" : kind;
   const media: Record<string, unknown> = { id: mediaId };
   if (caption && kind !== "audio") media.caption = caption; // áudio não leva caption
+  // Documento é o único tipo cujo nome de arquivo é exibido ao contato —
+  // sem isso a Cloud API usa um nome genérico.
+  if (kind === "file" && filename) media.filename = filename;
   return graph(`${phoneNumberId}/messages`, {
     method: "POST",
-    body: JSON.stringify({ messaging_product: "whatsapp", to, type: kind, [kind]: media }),
+    body: JSON.stringify({ messaging_product: "whatsapp", to, type: tipoMeta, [tipoMeta]: media }),
   });
 }

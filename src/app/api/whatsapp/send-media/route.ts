@@ -23,13 +23,13 @@ export async function POST(request: Request) {
     return Response.json({ error: "payload inválido" }, { status: 400 });
   }
   const { conversationId, channelId, messageId, mediaPath, mime, caption } = body ?? {};
-  const kind = body?.kind as "image" | "audio" | "video";
+  const kind = body?.kind as "image" | "audio" | "video" | "file";
   if (
     !conversationId ||
     !messageId ||
     !mediaPath ||
     typeof mediaPath !== "string" ||
-    !["image", "audio", "video"].includes(kind)
+    !["image", "audio", "video", "file"].includes(kind)
   ) {
     return Response.json({ error: "parâmetros ausentes" }, { status: 400 });
   }
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
   // o cliente admin. Isso vale para os dois ramos (`evolution` e `meta`).
   const { data: msgOwner } = await supabase
     .from("messages")
-    .select("media_path")
+    .select("media_path, media_name")
     .eq("id", messageId)
     .eq("conversation_id", conversationId)
     .maybeSingle();
@@ -138,10 +138,25 @@ export async function POST(request: Request) {
     // "application/pdf" num vídeo não pode cair no teto de documento (100 MB)
     // em vez do de vídeo (16 MB). O mime só serve de fallback se o `kind` por
     // algum motivo não resolver.
-    const tipoPorKind: Partial<Record<string, TipoMidia>> = { image: "image", audio: "audio", video: "video" };
+    const tipoPorKind: Partial<Record<string, TipoMidia>> = {
+      image: "image",
+      audio: "audio",
+      video: "video",
+      file: "file",
+    };
     const tipo = tipoPorKind[kind] ?? tipoPorMime(mime ?? "");
     if (!tipo) return Response.json({ error: "Tipo de arquivo não reconhecido" }, { status: 400 });
     if (limiteExcedido(tipo, tamanhoEmBytes)) {
+      // O objeto já subiu pro Storage (gate client-side só barra 15 MB
+      // uniforme, não o teto por tipo) — sem remover aqui, fica lixo pago
+      // no Storage do dono da plataforma para sempre.
+      const { error: rmErr } = await admin.storage.from("conversation-media").remove([mediaPath]);
+      if (rmErr) {
+        console.error(
+          "[whatsapp/send-media] falha ao remover objeto órfão após limite excedido — tipo:",
+          tipo,
+        );
+      }
       return Response.json(
         { error: `Arquivo maior que o limite de ${rotuloLimite(tipo)} para ${tipo}.` },
         { status: 400 },
@@ -181,13 +196,16 @@ export async function POST(request: Request) {
           assinada.signedUrl,
         );
       } else {
+        // Manda o nome ORIGINAL do arquivo, não o nome do objeto no bucket
+        // (um UUID) — senão o contato recebe "a1b2c3.pdf" em vez do nome que
+        // ele reconhece.
         waResp = await sendEvolutionMedia(
           segredo.evolution_instance,
           segredo.evolution_token,
           to,
           tipo,
           assinada.signedUrl,
-          nomeNoBucket,
+          msgOwner.media_name || nomeNoBucket,
           caption,
         );
       }
@@ -259,7 +277,17 @@ export async function POST(request: Request) {
     try {
       const ext = (String(sendMime || "application/octet-stream").split("/")[1] || "bin").split(";")[0];
       const mediaId = await uploadMedia(channel.phone_number_id, sendBytes, sendMime, `media.${ext}`);
-      waResp = await sendMediaMessage(channel.phone_number_id, to, kind, mediaId, caption);
+      // Nome exibido ao contato só existe para documento (`filename` do
+      // media object da Cloud API) — para os demais tipos o parâmetro é
+      // ignorado por `sendMediaMessage`, então nada muda para eles.
+      waResp = await sendMediaMessage(
+        channel.phone_number_id,
+        to,
+        kind,
+        mediaId,
+        caption,
+        kind === "file" ? msgOwner.media_name ?? undefined : undefined,
+      );
     } catch (e) {
       await supabase.from("messages").update({ status: "failed" }).eq("id", messageId);
       return Response.json(

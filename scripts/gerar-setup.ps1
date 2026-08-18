@@ -62,7 +62,8 @@ $partes = [ordered]@{
     "0057_canal_evolution.sql",
     # 0058 depende da 0055 (grant de tabela) e da 0057 (colunas da
     # evolution) ja terem rodado.
-    "0058_colunas_secretas.sql"
+    "0058_colunas_secretas.sql",
+    "0059_limite_tamanho_bucket.sql"
   )
 }
 

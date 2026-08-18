@@ -120,7 +120,7 @@ export function Composer({ conversationId }: { conversationId: string }) {
         isWhatsapp &&
         res.messageId &&
         res.mediaPath &&
-        (kind === "image" || kind === "video")
+        (kind === "image" || kind === "video" || kind === "file")
       ) {
         const wa = await whatsappActions.sendMedia({
           conversationId,

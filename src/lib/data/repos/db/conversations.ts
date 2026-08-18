@@ -13,6 +13,14 @@ import type {
   Message,
 } from "@/lib/data/types";
 import { useDbStore } from "./contacts";
+import { limiteExcedido, rotuloLimite, type TipoMidia } from "@/lib/whatsapp/media-limits";
+
+const ROTULO_TIPO: Record<TipoMidia, string> = {
+  image: "imagem",
+  audio: "áudio",
+  video: "vídeo",
+  file: "documento",
+};
 
 export type { ConversationFilter } from "@/lib/data/types";
 
@@ -77,7 +85,6 @@ const mapView = (r: any): InboxView => ({
 });
 
 export const MEDIA_BUCKET = "conversation-media";
-export const MAX_MEDIA_BYTES = 15 * 1024 * 1024; // 15 MB
 
 interface ConvState {
   loaded: boolean;
@@ -366,7 +373,17 @@ export const conversationActions = {
     const location = loc();
     if (!location) return { ok: false, error: "Empresa não encontrada" };
     const { file, kind, channel, duration } = opts;
-    if (file.size > MAX_MEDIA_BYTES) return { ok: false, error: "Arquivo maior que 15 MB" };
+    // `kind` já usa o mesmo vocabulário de `TipoMidia` — mesmos tetos por
+    // tipo que o servidor aplica (5/16/16/100 MB), não mais um teto único de
+    // 15 MB. Um teto uniforme deixava passar imagem de 10 MB que sobe pro
+    // Storage e só é recusada depois, na rota — objeto órfão, pago.
+    const tipo: TipoMidia = kind;
+    if (limiteExcedido(tipo, file.size)) {
+      return {
+        ok: false,
+        error: `Arquivo maior que o limite de ${rotuloLimite(tipo)} para ${ROTULO_TIPO[tipo]}.`,
+      };
+    }
 
     const supabase = createClient();
     const ext =
