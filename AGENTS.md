@@ -115,7 +115,7 @@ deny-by-default, políticas `TO authenticated` checando membership. `admin.ts`
 
 - Migrações em `supabase/migrations/000N_nome.sql`, aplicadas **à mão no SQL Editor**.
 - Sempre **idempotentes** (`create ... if not exists`, `drop policy if exists`).
-- **Próximo número livre: `0055`.**
+- **Próximo número livre: `0059`.**
 - ⚠️ **Há números duplicados no histórico** — `0014`, `0015`, `0016` e `0019`
   aparecem duas vezes cada (colisão de trabalho paralelo no projeto anterior).
   Não dá pra confiar no número como ordem real; confira o conteúdo. **Não repita
@@ -181,6 +181,37 @@ do dono da plataforma em silêncio. Isso só foi possível depois que as migraç
 `0046`–`0049` foram aplicadas no banco; antes disso o helper falhava aberto de
 propósito. Não reverta para `data?.disabled_modules ?? []` sem checar `error`.
 
+### WhatsApp não oficial (Evolution)
+
+A empresa **escolhe o provedor** em `location_limits.whatsapp_provider`
+(`'meta'` por padrão, ou `'evolution'`) — quem decide é o dono da plataforma
+ao configurar o cliente, não o cliente sozinho, porque cada provedor tem
+implicação de custo e suporte diferente.
+
+`whatsapp_channels.provider` (`0057`) é quem de fato **bifurca envio e
+recebimento** por canal: `meta` fala com a Cloud API oficial (número
+verificado, janela de 24h, template); `evolution` é WhatsApp não oficial via
+gateway próprio, conectado por QR code, sem essas regras. Um `check` na
+`0057` impede canal pela metade: `meta` exige `phone_number_id`, `evolution`
+exige `evolution_instance` — nunca os dois.
+
+**Nunca toque em instância que o CRM não criou.** O gateway Evolution hospeda
+instâncias de outros projetos do dono da plataforma. O nome da instância é
+sempre `crmon-{channel_id}`, **derivado no servidor** a partir do id do canal
+(`src/app/api/whatsapp/evolution/conectar/route.ts`) — nunca aceite nome de
+instância vindo do cliente ou da UI.
+
+`EVOLUTION_API_KEY` (`src/lib/evolution/client.ts`) é a chave **GLOBAL** do
+gateway: com ela dá para listar, ler e apagar **qualquer** instância —
+inclusive as de outros projetos que não são deste CRM. Trate como as chaves
+mais sensíveis do `.env` — nunca logar, nunca expor em resposta de API,
+nunca chamar o gateway fora de rota server-side.
+
+`evolution_token` e `webhook_secret` são segredos por canal, no mesmo padrão
+do `refresh_token` da `0023`: `select` de coluna revogado, nunca exposto ao
+browser. Ver a armadilha do `revoke` de coluna abaixo antes de mexer em
+segredo novo nessas tabelas.
+
 ## Armadilhas verificadas neste código
 
 1. **Base UI ≠ Radix.** `PopoverTrigger`/`DropdownMenuTrigger`/`TooltipTrigger`
@@ -207,6 +238,20 @@ propósito. Não reverta para `data?.disabled_modules ?? []` sem checar `error`.
    credencial — senão o middleware responde 307 para `/login`. Já estão fora:
    `api/automations`, `api/whatsapp`, `api/forms`, `api/webhooks`,
    `api/integrations`, `api/marketing`.
+9. **`revoke select (coluna)` no Postgres NÃO subtrai de um `grant select`
+   de TABELA.** Ele emite `WARNING: no privileges could be revoked` e não faz
+   nada. Como a `0055` concede `select` em todas as tabelas do schema para
+   `authenticated`, os revokes de coluna da `0055` e da `0057` eram no-op —
+   `evolution_token`, `webhook_secret` e `google_ads_connections.refresh_token`
+   ficaram legíveis pelo browser. A correção está na `0058`: revoga o `select`
+   da TABELA inteira e concede de volta a lista explícita de colunas
+   não-secretas. Ao criar coluna secreta nova, siga o padrão da `0058`, nunca
+   o padrão antigo (`revoke select (coluna)` sozinho). Consequência prática:
+   nessas tabelas **`select("*")` não funciona mais** pela sessão do usuário —
+   sempre lista explícita de colunas. Segredo que uma rota autenticada
+   precise usar se busca à parte com `createAdminClient()`, escopado por um
+   id que a RLS já validou (ver `api/whatsapp/send/route.ts` e
+   `api/google-ads/overview/route.ts`).
 
 ## Convenções
 

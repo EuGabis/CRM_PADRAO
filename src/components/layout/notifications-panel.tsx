@@ -11,6 +11,7 @@ import {
   Check,
   MessageSquare,
   Undo2,
+  WifiOff,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { createClient } from "@/lib/supabase/client";
@@ -25,9 +26,10 @@ import { cn } from "@/lib/utils";
  *
  * **Não existe tabela de notificações.** Os avisos são DERIVADOS do que já
  * está no banco — conversa não lida, compromisso próximo, agendamento que
- * falhou. Uma tabela exigiria alguém escrevendo nela em todo lugar (webhook,
- * motor de automações, cron do marketing) e qualquer caminho esquecido viraria
- * um aviso que nunca chega. Derivar não tem como ficar dessincronizado.
+ * falhou, canal de WhatsApp desconectado. Uma tabela exigiria alguém
+ * escrevendo nela em todo lugar (webhook, motor de automações, cron do
+ * marketing) e qualquer caminho esquecido viraria um aviso que nunca chega.
+ * Derivar não tem como ficar dessincronizado.
  *
  * **Consultas próprias e enxutas**, não os stores dos módulos: o store de
  * Conversas carrega TODAS as mensagens da empresa, e o sino vive no shell —
@@ -46,7 +48,7 @@ const READ_LIMIT = 300;
 const REFRESH_MS = 60_000;
 const UPCOMING_HOURS = 24;
 
-type NotificationKind = "conversa" | "compromisso" | "agendamento";
+type NotificationKind = "conversa" | "compromisso" | "agendamento" | "whatsapp";
 
 interface NotificationItem {
   id: string;
@@ -62,12 +64,14 @@ const ICON: Record<NotificationKind, typeof Bell> = {
   conversa: MessageSquare,
   compromisso: CalendarClock,
   agendamento: AlertTriangle,
+  whatsapp: WifiOff,
 };
 
 const ICON_CLASS: Record<NotificationKind, string> = {
   conversa: "bg-indigo-50 text-indigo-600",
   compromisso: "bg-emerald-50 text-emerald-600",
   agendamento: "bg-rose-50 text-rose-600",
+  whatsapp: "bg-rose-50 text-rose-600",
 };
 
 function loadRead(): string[] {
@@ -139,6 +143,20 @@ export function NotificationsPanel() {
       .order("scheduled_for", { ascending: false })
       .limit(10);
 
+    // 4) Canais WhatsApp (Evolution) caídos — sem conexão a empresa não
+    // recebe mensagem nenhuma e, sem este aviso, ninguém percebe até o
+    // cliente reclamar. `select` sem `*`: a tabela tem colunas secretas
+    // (evolution_token, webhook_secret) com select revogado por coluna
+    // desde a 0058 — buscar só o que a sessão do usuário pode ler.
+    const { data: canaisCaidos } = await supabase
+      .from("whatsapp_channels")
+      .select("id, name, connection_state, disconnected_at")
+      .eq("location_id", loc)
+      .eq("provider", "evolution")
+      .neq("connection_state", "open")
+      .order("disconnected_at", { ascending: false })
+      .limit(10);
+
     // 3) Compromissos das próximas 24h (a store já está carregada pelo
     // lembrete, que vive no mesmo shell).
     const appointments = useApptStore.getState().appointments.filter((a) => {
@@ -173,6 +191,14 @@ export function NotificationsPanel() {
         // Ordena pelo início: um compromisso "novo" é o que está mais perto.
         at: a.start,
         href: "/calendarios",
+      })),
+      ...(canaisCaidos ?? []).map((c: any) => ({
+        id: `wa-${c.id}`,
+        kind: "whatsapp" as const,
+        title: `WhatsApp desconectado — ${c.name}`,
+        description: "Este canal parou de receber mensagens. Reconecte pelo QR code.",
+        at: c.disconnected_at ?? new Date(now).toISOString(),
+        href: "/whatsapp",
       })),
     ].sort((x, y) => y.at.localeCompare(x.at));
 
@@ -288,7 +314,7 @@ export function NotificationsPanel() {
             <p className="px-3 py-8 text-center text-[11px] leading-relaxed text-slate-400">
               {tab === "lidas"
                 ? "Nenhuma notificação lida ainda."
-                : "Nada por aqui. Aparecem avisos de conversas não lidas, compromissos das próximas 24 horas e mensagens agendadas que falharam."}
+                : "Nada por aqui. Aparecem avisos de conversas não lidas, compromissos das próximas 24 horas, mensagens agendadas que falharam e canais de WhatsApp desconectados."}
             </p>
           )}
           {visible.map((item) => {
