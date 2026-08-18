@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { MessageCircle } from "lucide-react";
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -50,6 +52,21 @@ function ConnectionBadge({ c }: { c: WhatsappChannel }) {
 export function ChannelsTable() {
   const { channels, ready } = useWhatsappChannels();
   const [reconectando, setReconectando] = useState<WhatsappChannel | null>(null);
+  const [excluindo, setExcluindo] = useState<WhatsappChannel | null>(null);
+  const [apagando, setApagando] = useState(false);
+
+  const confirmarExclusao = async () => {
+    if (!excluindo) return;
+    setApagando(true);
+    const res = await whatsappActions.excluirEvolution(excluindo.id);
+    setApagando(false);
+    if (res.ok) {
+      toast.success("Conexão excluída");
+      setExcluindo(null);
+    } else {
+      toast.error(res.error ?? "Não foi possível excluir");
+    }
+  };
 
   if (ready && channels.length === 0) {
     return (
@@ -107,6 +124,16 @@ export function ChannelsTable() {
                         Reconectar
                       </Button>
                     )}
+                    {c.provider === "evolution" && (
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        className="h-6 text-[10px] text-red-600"
+                        onClick={() => setExcluindo(c)}
+                      >
+                        Excluir
+                      </Button>
+                    )}
                   </div>
                 </td>
                 <td className="px-3 py-2 text-slate-600">{c.sector || "—"}</td>
@@ -133,6 +160,39 @@ export function ChannelsTable() {
               onConectado={() => setReconectando(null)}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmação explícita: excluir derruba a conexão no gateway e some
+          com o canal. Sem volta — o número precisa escanear o QR de novo. */}
+      <Dialog open={excluindo !== null} onOpenChange={(v) => !v && setExcluindo(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Excluir {excluindo?.name}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs leading-relaxed text-slate-500">
+            A conexão será removida do gateway e o canal sai da lista. Para voltar a atender por
+            esse número, será preciso criar um canal novo e escanear o QR de novo. As conversas já
+            recebidas não são apagadas.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setExcluindo(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 bg-red-600 text-xs hover:bg-red-700"
+              onClick={confirmarExclusao}
+              disabled={apagando}
+            >
+              {apagando ? "Excluindo..." : "Excluir conexão"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

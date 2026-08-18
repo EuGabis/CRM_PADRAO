@@ -181,6 +181,28 @@ export const whatsappActions = {
   },
 
   /**
+   * Chama `POST /api/whatsapp/evolution/excluir`: apaga a instância no
+   * gateway e o canal no banco. A rota é quem valida dono e prefixo — aqui
+   * só mandamos o id.
+   */
+  async excluirEvolution(channelId: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const res = await fetch("/api/whatsapp/evolution/excluir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: json?.error ?? "Não foi possível excluir" };
+      const s = useChannelsStore.getState();
+      s.set(s.channels.filter((c) => c.id !== channelId));
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Falha de conexão ao excluir" };
+    }
+  },
+
+  /**
    * Chama `POST /api/whatsapp/evolution/conectar`. Sem `channelId` cria um
    * canal novo; com `channelId` reconecta o existente (mesma instância).
    */
