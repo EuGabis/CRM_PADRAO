@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { assertModuleEnabled } from "@/lib/plan/guard";
 import { sendText, sendTemplate } from "@/lib/whatsapp/client";
+import { sendText as sendEvolutionText } from "@/lib/evolution/client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -50,14 +52,10 @@ export async function POST(request: Request) {
   const bloqueio = await assertModuleEnabled(conv.location_id, "whatsapp");
   if (bloqueio) return Response.json({ error: bloqueio }, { status: 403 });
 
-  // ⚠️ PROBLEMA DE ARQUITETURA (não resolvido aqui — reportado na revisão da
-  // Task 6): esta rota roda com a sessão do usuário (RLS), e depois da 0058
-  // `evolution_token` deixou de ser uma coluna legível por `authenticated`.
-  // O envio pelo provedor `evolution` (abaixo, `sendEvolutionText`) precisa
-  // desse token e portanto está quebrado até essa decisão de arquitetura ser
-  // tomada — ex.: replicar o padrão de `google-ads/overview/route.ts`
-  // (colunas públicas pela sessão do usuário + segredo buscado à parte com
-  // `createAdminClient()`, usando o `channel.id` já validado pela RLS acima).
+  // Depois da 0058, `evolution_token` não é mais legível por `authenticated`.
+  // Esta query pede só colunas públicas; o token é buscado à parte com a
+  // service role, já escopado pelo `channel.id` que a RLS validou aqui —
+  // mesmo padrão de `google-ads/overview/route.ts` para o `refresh_token`.
   const { data: channel } = await supabase
     .from("whatsapp_channels")
     .select("id, provider, phone_number_id, evolution_instance, connection_state, active, daily_limit")
@@ -105,20 +103,43 @@ export async function POST(request: Request) {
     }
     if (!text?.trim()) return Response.json({ error: "Mensagem vazia" }, { status: 400 });
 
-    // `evolution_token` é segredo e, desde a 0058, não é mais lido pela
-    // sessão do usuário (só a service role lê essa coluna) — ver comentário
-    // acima da query do canal. Esta rota roda com a sessão do usuário, então
-    // não tem mais como chamar `sendEvolutionText`: falha explícita em vez
-    // de mandar `undefined` pro gateway em silêncio, até a decisão de
-    // arquitetura (ex.: buscar o token à parte com `createAdminClient()`,
-    // como `google-ads/overview/route.ts` já faz para `refresh_token`).
-    return Response.json(
-      {
-        error:
-          "Envio pela Evolution API está temporariamente indisponível nesta rota — pendente de decisão de arquitetura (evolution_token é segredo e não pode mais ser lido pela sessão do usuário).",
-      },
-      { status: 501 },
-    );
+    // Segredo do canal: só a service role lê. O `eq("id", channel.id)` usa o
+    // id que a query anterior já validou pela RLS — a service role não amplia
+    // o alcance, só devolve a coluna que a sessão do usuário não enxerga.
+    const admin = createAdminClient();
+    const { data: segredo } = await admin
+      .from("whatsapp_channels")
+      .select("evolution_instance, evolution_token")
+      .eq("id", channel.id)
+      .maybeSingle();
+    if (!segredo?.evolution_instance || !segredo?.evolution_token) {
+      return Response.json(
+        { error: "Canal sem instância provisionada — reconecte o canal." },
+        { status: 409 },
+      );
+    }
+
+    let waResp: { id: string };
+    try {
+      waResp = await sendEvolutionText(
+        segredo.evolution_instance,
+        segredo.evolution_token,
+        to,
+        text.trim(),
+      );
+    } catch {
+      // Mensagem genérica de propósito: o erro cru do gateway ecoa o nome da
+      // instância no path.
+      return Response.json({ error: "Falha no gateway do WhatsApp" }, { status: 502 });
+    }
+    // O caminho `key.id` da resposta nunca foi confirmado por sonda real. Sem
+    // id, o webhook perde a idempotência da mensagem enviada — registra em vez
+    // de falhar em silêncio. Não loga texto nem token.
+    if (!waResp.id) {
+      console.error("[evolution] envio sem id de mensagem na resposta do gateway");
+    }
+    waMessageId = waResp.id || null;
+    bodyText = text.trim();
   } else {
     // caminho `meta` (Cloud API oficial) — comportamento original, intocado.
 
