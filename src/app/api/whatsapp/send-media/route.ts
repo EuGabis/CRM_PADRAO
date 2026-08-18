@@ -157,6 +157,10 @@ export async function POST(request: Request) {
           tipo,
         );
       }
+      // Mesmo padrão dos outros ramos de erro da rota: marca a mensagem como
+      // falha. Sem isso, a linha ficava com `media_path` apontando para um
+      // objeto que acabou de ser removido do bucket — mídia quebrada no inbox.
+      await supabase.from("messages").update({ status: "failed" }).eq("id", messageId);
       return Response.json(
         { error: `Arquivo maior que o limite de ${rotuloLimite(tipo)} para ${tipo}.` },
         { status: 400 },

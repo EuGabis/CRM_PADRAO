@@ -373,15 +373,24 @@ export const conversationActions = {
     const location = loc();
     if (!location) return { ok: false, error: "Empresa não encontrada" };
     const { file, kind, channel, duration } = opts;
-    // `kind` já usa o mesmo vocabulário de `TipoMidia` — mesmos tetos por
-    // tipo que o servidor aplica (5/16/16/100 MB), não mais um teto único de
-    // 15 MB. Um teto uniforme deixava passar imagem de 10 MB que sobe pro
-    // Storage e só é recusada depois, na rota — objeto órfão, pago.
-    const tipo: TipoMidia = kind;
-    if (limiteExcedido(tipo, file.size)) {
+    // Os tetos por tipo (`media-limits.ts`) são os do WhatsApp — só fazem
+    // sentido nesse canal. Nos demais (e-mail, Instagram, ...) o gate rodava
+    // antes de qualquer bifurcação e recusava, por exemplo, imagem de e-mail
+    // em 5 MB, um limite que não é do provedor. Mantém um teto genérico de
+    // 15 MB (comportamento anterior) para quem não é WhatsApp.
+    const TETO_GENERICO = 15 * 1024 * 1024;
+    if (channel === "whatsapp") {
+      const tipo: TipoMidia = kind;
+      if (limiteExcedido(tipo, file.size)) {
+        return {
+          ok: false,
+          error: `O WhatsApp aceita no máximo ${rotuloLimite(tipo)} para ${ROTULO_TIPO[tipo]}.`,
+        };
+      }
+    } else if (file.size > TETO_GENERICO) {
       return {
         ok: false,
-        error: `Arquivo maior que o limite de ${rotuloLimite(tipo)} para ${ROTULO_TIPO[tipo]}.`,
+        error: `Arquivo maior que o limite de ${Math.round(TETO_GENERICO / (1024 * 1024))} MB.`,
       };
     }
 
