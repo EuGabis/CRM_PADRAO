@@ -23,10 +23,20 @@
  *   - GET    /webhook/find/{nome}
  *   - DELETE /instance/delete/{nome}
  *   - GET    /instance/fetchInstances
+ *   - POST   /message/sendMedia/{nome}       body { number, mediatype, media, fileName?,
+ *                                            caption?, mimetype? }, apikey = token da instância.
+ *                                            mediatype é enum: image | document | video | audio.
+ *                                            media aceita URL ou base64.
+ *   - POST   /message/sendWhatsAppAudio/{nome} body { number, audio }, apikey = token da
+ *                                            instância. audio aceita URL ou base64.
+ *   - POST   /chat/getBase64FromMediaMessage/{nome} body { message: { key: { id } } },
+ *                                            apikey = token da instância.
  * Detalhe: no `/instance/create`, o token da instância recém-criada vem no
  * campo `hash` da raiz da resposta (não dentro de `instance`).
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+import type { TipoMidia } from "@/lib/whatsapp/media-limits";
 
 function baseUrl(): string {
   const u = process.env.EVOLUTION_API_URL;
@@ -203,6 +213,109 @@ export async function sendText(
     body: JSON.stringify({ number: paraE164, text: texto }),
   });
   return { id: json?.key?.id ?? "" };
+}
+
+/**
+ * Mapa de `TipoMidia` (nosso vocabulário interno, usado também em
+ * `media-limits.ts`) para o enum `mediatype` do `/message/sendMedia`
+ * confirmado na sondagem: `image | document | video | audio`. Só diverge em
+ * "file" -> "document" — o resto é 1:1.
+ */
+function mediatypeDoTipo(tipo: TipoMidia): "image" | "document" | "video" | "audio" {
+  return tipo === "file" ? "document" : tipo;
+}
+
+/**
+ * Envia imagem, vídeo, documento ou áudio (como anexo, não voz) usando o
+ * TOKEN DA INSTÂNCIA, não a chave global — ver aviso no topo do arquivo.
+ * `url` pode ser uma URL pública/assinada ou uma string base64 — o gateway
+ * aceita os dois (confirmado no sonda.md pelo erro
+ * "Owned media must be a url or base64").
+ */
+export async function sendMedia(
+  nome: string,
+  token: string,
+  paraE164: string,
+  tipo: TipoMidia,
+  url: string,
+  nomeArquivo?: string,
+  legenda?: string,
+): Promise<{ id: string }> {
+  const json = await evo(`/message/sendMedia/${encodeURIComponent(nome)}`, token, {
+    method: "POST",
+    body: JSON.stringify({
+      number: paraE164,
+      mediatype: mediatypeDoTipo(tipo),
+      media: url,
+      ...(nomeArquivo ? { fileName: nomeArquivo } : {}),
+      ...(legenda ? { caption: legenda } : {}),
+    }),
+  });
+  // Mesma suposição já feita em sendText: o id da mensagem vem em
+  // `key.id`. Não confirmado especificamente para sendMedia na sondagem
+  // (só o schema do corpo foi sondado, não o da resposta) — se o formato
+  // da resposta divergir do sendText, isso devolve "" em vez de quebrar,
+  // mas o CRM perde o id pra rastrear a mensagem enviada.
+  return { id: json?.key?.id ?? "" };
+}
+
+/**
+ * Envia áudio como MENSAGEM DE VOZ (ptt) usando o TOKEN DA INSTÂNCIA.
+ * `url` aceita URL ou base64 (confirmado no sonda.md).
+ *
+ * NÃO CONFIRMADO: se o gateway converte sozinho o webm/opus que o navegador
+ * grava. Se não converter, o áudio pode chegar mudo ou nem chegar no
+ * WhatsApp — precisa ser confirmado no primeiro envio real (ver sonda.md).
+ * Se isso quebrar, o desenho muda: precisaria converter pra ogg/opus antes
+ * de mandar pra cá.
+ */
+export async function sendWhatsAppAudio(
+  nome: string,
+  token: string,
+  paraE164: string,
+  url: string,
+): Promise<{ id: string }> {
+  const json = await evo(`/message/sendWhatsAppAudio/${encodeURIComponent(nome)}`, token, {
+    method: "POST",
+    body: JSON.stringify({ number: paraE164, audio: url }),
+  });
+  // Mesma suposição do sendText/sendMedia sobre `key.id` — não confirmado
+  // especificamente para esta rota.
+  return { id: json?.key?.id ?? "" };
+}
+
+/**
+ * Baixa uma mídia recebida a partir do id da mensagem no WhatsApp (`wa_message_id`),
+ * usando o TOKEN DA INSTÂNCIA. O formato do CORPO da requisição foi confirmado
+ * na sondagem (`{ message: { key: { id } } }`), mas o formato da RESPOSTA não —
+ * não havia mídia real recebida para inspecionar (ver sonda.md).
+ *
+ * NÃO CONFIRMADO: os nomes dos campos da resposta onde vêm o base64 e o mime.
+ * As chaves abaixo (`base64`, `mimetype`/`mimeType`) são um palpite baseado em
+ * convenções comuns da Evolution API, NÃO confirmado por sondagem real. Se o
+ * gateway usar nomes diferentes, `json?.base64` vem `undefined`, `atob`
+ * recebe string vazia e o `ArrayBuffer` resultante fica vazio — a mídia
+ * "baixa" sem erro, mas o arquivo salvo fica corrompido/vazio. Precisa ser
+ * confirmado com uma mídia real recebida antes de confiar nesta função em
+ * produção (Task 4 depende disso).
+ */
+export async function baixarMidia(
+  nome: string,
+  token: string,
+  chave: string,
+): Promise<{ bytes: ArrayBuffer; mime: string }> {
+  const json = await evo(`/chat/getBase64FromMediaMessage/${encodeURIComponent(nome)}`, token, {
+    method: "POST",
+    body: JSON.stringify({ message: { key: { id: chave } } }),
+  });
+  const base64: string = json?.base64 ?? "";
+  const mime: string = json?.mimetype ?? json?.mimeType ?? "";
+  const binario = Buffer.from(base64, "base64");
+  const bytes = binario.buffer.slice(
+    binario.byteOffset,
+    binario.byteOffset + binario.byteLength,
+  ) as ArrayBuffer;
+  return { bytes, mime };
 }
 
 /**
