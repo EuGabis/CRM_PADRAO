@@ -28,6 +28,39 @@ const WEBHOOK_URL = "https://crm-padrao.vercel.app/api/whatsapp/evolution/webhoo
  * derivada dele no mesmo insert. Continua sendo o servidor quem decide o
  * nome; o cliente nunca escolhe.
  */
+/**
+ * Monta o nome que a instância terá no gateway: `crmon-empresa-canal-a3f9c1`.
+ *
+ * Legível de propósito — o dono da plataforma abre o manager da Evolution e
+ * precisa saber de quem é cada instância. Antes era `crmon-{uuid}`, que era
+ * seguro mas ilegível.
+ *
+ * O que NÃO pode mudar:
+ * - o prefixo `crmon-` é a garantia de que nunca encostamos numa instância de
+ *   outro projeto hospedado no mesmo gateway;
+ * - nenhum byte vem do cliente sem passar por aqui: só [a-z0-9-], sem acento,
+ *   com tamanho limitado — nome de canal é digitado pelo usuário e viraria
+ *   path da URL do gateway;
+ * - o sufixo hexadecimal vem do id do canal (que é um uuid), então duas
+ *   empresas com o mesmo nome de canal não colidem.
+ */
+function nomeDeInstancia(empresa: string | null | undefined, canal: string, channelId: string) {
+  const limpar = (s: string, max: number) =>
+    s
+      .normalize("NFD")
+      // Escapado, não o caractere literal: a faixa de acentos combinantes é
+      // invisível no editor e não sobrevive a um salvamento em ANSI.
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, max);
+
+  const partes = [limpar(empresa ?? "", 20), limpar(canal, 20)].filter(Boolean);
+  const sufixo = channelId.replace(/-/g, "").slice(0, 6);
+  return ["crmon", ...partes, sufixo].join("-");
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const {
@@ -102,8 +135,16 @@ export async function POST(request: Request) {
   const nome = typeof body?.nome === "string" ? body.nome.trim() : "";
   if (!nome) return Response.json({ error: "Informe o nome do canal" }, { status: 400 });
 
+  // Nome da empresa só para compor o nome da instância — se a consulta falhar,
+  // segue sem ele em vez de abortar a conexão por causa de um rótulo.
+  const { data: empresa } = await supabase
+    .from("locations")
+    .select("name")
+    .eq("id", locationId)
+    .maybeSingle();
+
   const channelId = randomUUID();
-  const instancia = `crmon-${channelId}`;
+  const instancia = nomeDeInstancia(empresa?.name, nome, channelId);
 
   const { error: createChannelError } = await supabase.from("whatsapp_channels").insert({
     id: channelId,
