@@ -1,5 +1,11 @@
 import crypto from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { baixarMidia } from "@/lib/evolution/client";
+import {
+  bytesDoPayload,
+  limiteExcedido,
+  type TipoMidia,
+} from "@/lib/whatsapp/media-limits";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -69,7 +75,9 @@ export async function POST(request: Request) {
 
     const { data: channel } = await db
       .from("whatsapp_channels")
-      .select("id, location_id, daily_limit, webhook_secret, connection_state")
+      .select(
+        "id, location_id, daily_limit, webhook_secret, connection_state, evolution_instance, evolution_token",
+      )
       .eq("provider", "evolution")
       .eq("evolution_instance", instancia)
       .maybeSingle();
@@ -179,7 +187,14 @@ async function handleMessage(db: any, channel: any, item: any) {
   // Grupo: não tem um "contato" único por trás — fora do escopo desta tarefa.
   if (remoteJid.endsWith("@g.us")) return;
 
-  const phone = remoteJid.split("@")[0];
+  // `remoteJid` pode vir como LID (identificador opaco, "@lid") em vez de
+  // telefone — achado da sonda (não confirmado em produção, defesa mesmo
+  // assim). Quando isso acontece o telefone real vem em `remoteJidAlt`.
+  const remoteJidAlt: string | undefined = key.remoteJidAlt;
+  const phone =
+    remoteJid.endsWith("@lid") && remoteJidAlt
+      ? remoteJidAlt.split("@")[0]
+      : remoteJid.split("@")[0];
   if (!phone) return;
 
   // idempotência: mesma mensagem chega mais de uma vez (reentrega do gateway)
@@ -219,19 +234,92 @@ async function handleMessage(db: any, channel: any, item: any) {
   }
   if (!contact) return;
 
-  // Conteúdo: só texto por enquanto — o formato de mídia não foi confirmado
-  // por sonda real (não havia número conectado), então não inventa download.
-  const msgType = "text";
+  // Conteúdo: texto, ou mídia (imagem/áudio/vídeo/documento) baixada da
+  // Evolution. Classificação SEMPRE pelo envelope (`imageMessage`,
+  // `audioMessage`, `videoMessage`, `documentMessage`), NUNCA pelo mime — o
+  // documento sondado chegou com `mimetype: image/jpeg` (foto mandada "como
+  // documento"); classificar por mime perderia o `fileName`, que só o
+  // envelope de documento carrega. `tipoPorMime` é do caminho de ENVIO, não
+  // vale aqui.
   const msg = item?.message ?? {};
-  let body =
-    msg.conversation ??
-    msg.extendedTextMessage?.text ??
-    msg.imageMessage?.caption ??
-    msg.videoMessage?.caption ??
-    undefined;
-  if (body === undefined) {
-    const tipo = item?.messageType || Object.keys(msg)[0] || "mensagem";
-    body = `[${tipo}]`;
+  let msgType = "text";
+  let body: string | undefined;
+  const media: {
+    media_path?: string;
+    media_name?: string;
+    media_mime?: string;
+    media_size?: number;
+  } = {};
+
+  const envelope = extrairEnvelopeDeMidia(msg);
+  if (envelope) {
+    const { tipo, node } = envelope;
+    msgType = tipo;
+    body = node.caption ?? "";
+    const rotuloFalha = `[${rotuloTipo(tipo)} não disponível]`;
+
+    // mime vem com sufixo (ex.: "audio/ogg; codecs=opus") — a extensão sai
+    // só da parte antes do ";".
+    const mimeDeclarado = String(node.mimetype ?? "").split(";")[0].trim();
+    const extDeclarada = (mimeDeclarado.split("/")[1] || "bin").trim();
+
+    // fileLength é objeto protobuf ({low, high, unsigned}), não número —
+    // sempre passar por bytesDoPayload.
+    const tamanho = bytesDoPayload(node.fileLength);
+
+    if (tamanho !== null && limiteExcedido(tipo, tamanho)) {
+      // Estourou o limite: pula o download de propósito — não gasta banda
+      // nem Storage com arquivo que seria recusado.
+      console.error(
+        "[whatsapp/evolution/webhook] mídia acima do limite — tipo:",
+        tipo,
+        "bytes:",
+        tamanho,
+      );
+      if (!body) body = rotuloFalha;
+    } else if (!channel.evolution_instance || !channel.evolution_token) {
+      console.error(
+        "[whatsapp/evolution/webhook] canal sem evolution_instance/evolution_token — tipo:",
+        tipo,
+      );
+      if (!body) body = rotuloFalha;
+    } else {
+      try {
+        const baixado = await baixarMidia(channel.evolution_instance, channel.evolution_token, waId);
+        const mimeFinal = (baixado.mime || mimeDeclarado).split(";")[0].trim() || "application/octet-stream";
+        const extFinal = (mimeFinal.split("/")[1] || extDeclarada || "bin").trim();
+        const path = `${channel.location_id}/${contact.id}/${crypto.randomUUID()}.${extFinal}`;
+        const { error: upErr } = await db.storage
+          .from("conversation-media")
+          .upload(path, new Uint8Array(baixado.bytes), { contentType: mimeFinal, upsert: false });
+        if (upErr) throw upErr;
+        // Só documentMessage traz fileName de verdade; nos outros três,
+        // sintetiza tipo + extensão (como o webhook da Meta já faz).
+        media.media_path = path;
+        media.media_name = tipo === "file" && node.fileName ? node.fileName : `${tipo}.${extFinal}`;
+        media.media_mime = mimeFinal;
+        media.media_size = baixado.bytes.byteLength;
+      } catch (e) {
+        // Nunca logar o objeto de erro inteiro nem sua mensagem — pode ecoar
+        // conteúdo, nome de arquivo, token ou URL. Só o código, quando houver.
+        console.error(
+          "[whatsapp/evolution/webhook] falha ao baixar/subir mídia — tipo:",
+          tipo,
+          "código:",
+          (e as any)?.code ?? "desconhecido",
+        );
+        if (!body) body = rotuloFalha;
+      }
+    }
+  } else {
+    body =
+      msg.conversation ??
+      msg.extendedTextMessage?.text ??
+      undefined;
+    if (body === undefined) {
+      const tipo = item?.messageType || Object.keys(msg)[0] || "mensagem";
+      body = `[${tipo}]`;
+    }
   }
 
   // conversa de whatsapp desse contato
@@ -287,11 +375,48 @@ async function handleMessage(db: any, channel: any, item: any) {
     channel_id: channel.id,
     wa_message_id: waId,
     status: "delivered",
+    ...media,
   });
   if (insErr) {
     // corrida: reentrega do gateway — o índice único parcial (0022) barra o
     // 2º insert. Nesse caso NÃO reprocessa.
     if ((insErr as any).code !== "23505") throw insErr;
+  }
+}
+
+/**
+ * Reconhece o envelope de mídia dentro de `body.data.message` e devolve o
+ * `TipoMidia` interno + o nó com os campos (mimetype, fileLength, fileName
+ * quando existir). Classifica SEMPRE pelo envelope, nunca pelo mime — ver
+ * comentário em `handleMessage`.
+ *
+ * `documentWithCaptionMessage` (documento com legenda) não apareceu na
+ * sonda; tratado defensivamente aqui, desembrulhando `.message.documentMessage`
+ * antes de ler os campos. Envelope não reconhecido (ex.: `secretEncryptedMessage`,
+ * visto no gateway) devolve `null` e é ignorado sem quebrar.
+ */
+function extrairEnvelopeDeMidia(msg: any): { tipo: TipoMidia; node: any } | null {
+  if (msg?.documentWithCaptionMessage) {
+    const inner = msg.documentWithCaptionMessage?.message?.documentMessage;
+    if (inner) return { tipo: "file", node: inner };
+  }
+  if (msg?.imageMessage) return { tipo: "image", node: msg.imageMessage };
+  if (msg?.audioMessage) return { tipo: "audio", node: msg.audioMessage };
+  if (msg?.videoMessage) return { tipo: "video", node: msg.videoMessage };
+  if (msg?.documentMessage) return { tipo: "file", node: msg.documentMessage };
+  return null;
+}
+
+function rotuloTipo(tipo: TipoMidia): string {
+  switch (tipo) {
+    case "image":
+      return "imagem";
+    case "audio":
+      return "áudio";
+    case "video":
+      return "vídeo";
+    case "file":
+      return "documento";
   }
 }
 

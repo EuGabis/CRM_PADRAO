@@ -212,6 +212,34 @@ do `refresh_token` da `0023`: `select` de coluna revogado, nunca exposto ao
 browser. Ver a armadilha do `revoke` de coluna abaixo antes de mexer em
 segredo novo nessas tabelas.
 
+**Mídia (imagem, áudio, vídeo, documento):** os limites de tamanho por tipo
+ficam em `src/lib/whatsapp/media-limits.ts` (`LIMITES`, os mesmos tetos do
+WhatsApp — aceitar acima disso seria guardar no Storage do dono da plataforma
+um arquivo que o WhatsApp recusaria adiante). Documento é o tipo `file` no
+banco — não existe `document` no `messages_type_check`.
+
+No **envio**, o gateway baixa o arquivo por URL assinada (`sendMedia`/
+`sendWhatsAppAudio` em `src/lib/evolution/client.ts` mandam a URL, não os
+bytes). No **recebimento**, é o inverso: os bytes passam pela nossa função
+(`baixarMidia`, mesmo arquivo) e sobem para o bucket `conversation-media`.
+
+No recebimento, o webhook (`evolution/webhook/route.ts`) classifica a mídia
+pelo **envelope** da mensagem (`imageMessage`, `audioMessage`,
+`videoMessage`, `documentMessage`), **nunca pelo `mimetype`**: um documento
+sondado chegou com `mimetype: image/jpeg` (foto mandada "como documento") —
+classificar por mime perderia o `fileName`, que só o envelope de documento
+carrega (os outros três tipos não trazem nome de arquivo; o nome é
+sintetizado como `${tipo}.${ext}`). `tipoPorMime` só vale no caminho de
+envio, onde não existe envelope, só o mime que o composer informa. O
+`fileLength` do payload da Evolution vem como objeto protobuf
+(`{low, high, unsigned}`), nunca compare direto com o limite — sempre passe
+por `bytesDoPayload`.
+
+Mensagem com mídia que falha (limite estourado, download ou upload com erro)
+**é gravada mesmo assim**, com corpo rotulado (ex.: `[imagem não disponível]`)
+e sem as colunas de mídia — perder a mensagem do cliente é pior que mostrá-la
+incompleta. O webhook sempre responde 200, mesmo nesses casos.
+
 ## Armadilhas verificadas neste código
 
 1. **Base UI ≠ Radix.** `PopoverTrigger`/`DropdownMenuTrigger`/`TooltipTrigger`
