@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
+import { autenticarRealtime, statusRealtime } from "@/lib/supabase/realtime";
 import type {
   Channel,
   Conversation,
@@ -121,7 +122,9 @@ export const useConvStore = create<ConvState>((set, get) => ({
       views: (views.data ?? []).map(mapView),
     });
 
-    // Realtime: mensagens e conversas chegam ao vivo (RLS filtra por tenant)
+    // Realtime: mensagens e conversas chegam ao vivo (RLS filtra por tenant).
+    // O setAuth ANTES do subscribe não é opcional — ver src/lib/supabase/realtime.ts.
+    await autenticarRealtime(supabase);
     supabase
       .channel("crm-inbox")
       .on(
@@ -164,9 +167,7 @@ export const useConvStore = create<ConvState>((set, get) => ({
           });
         }
       )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") set({ realtime: "on" });
-      });
+      .subscribe(statusRealtime("inbox", (ligado) => set({ realtime: ligado ? "on" : "off" })));
   },
 
   patch: (p) => set(p),

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
+import { autenticarRealtime, statusRealtime } from "@/lib/supabase/realtime";
 import { useDbStore } from "./contacts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -377,6 +378,9 @@ export function useTemplateLogs(channelId: string | null) {
       setReady(true);
     });
 
+    // Sem o setAuth o socket entra anônimo e a RLS zera os eventos — mesmo
+    // motivo da inbox. Aqui não dá pra `await` (estamos num useEffect), então
+    // o subscribe só acontece depois que o token foi aplicado.
     const channel = supabase
       .channel(`tmpl-logs-${channelId}`)
       .on(
@@ -387,8 +391,11 @@ export function useTemplateLogs(channelId: string | null) {
             if (active) setLogs((data ?? []).map(mapLog));
           });
         },
-      )
-      .subscribe();
+      );
+
+    void autenticarRealtime(supabase).then(() => {
+      if (active) channel.subscribe(statusRealtime(`tmpl-logs-${channelId}`, () => {}));
+    });
 
     return () => {
       active = false;

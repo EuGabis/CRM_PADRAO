@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
+import { autenticarRealtime, statusRealtime } from "@/lib/supabase/realtime";
 import { classifyGuruStatus } from "@/lib/data/guru";
 import { useDbStore } from "./contacts";
 
@@ -244,12 +245,13 @@ export const usePaymentsStore = create<PaymentsState>((set, get) => ({
       }, 800);
     };
 
+    // Mesmo motivo da inbox: sem o setAuth antes do subscribe o socket entra
+    // anônimo, a inscrição é aceita e nenhum evento chega.
+    await autenticarRealtime(supabase);
     supabase
       .channel("crm-pagamentos")
       .on("postgres_changes", { event: "*", schema: "public", table: "payment_subscriptions" }, refetch)
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") set({ realtime: "on" });
-      });
+      .subscribe(statusRealtime("pagamentos", (ligado) => set({ realtime: ligado ? "on" : "off" })));
   },
 
   patch: (p) => set(p),
