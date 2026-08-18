@@ -212,7 +212,13 @@ export async function sendText(
     method: "POST",
     body: JSON.stringify({ number: paraE164, text: texto }),
   });
-  return { id: json?.key?.id ?? "" };
+  const id: string = json?.key?.id ?? "";
+  if (!id) {
+    // Mensagem foi entregue (a chamada não lançou) — id vazio não deve
+    // abortar o envio, mas precisa deixar rastro pra investigar depois.
+    console.error(`sendText: Evolution não devolveu key.id para "${nome}"`);
+  }
+  return { id };
 }
 
 /**
@@ -254,9 +260,14 @@ export async function sendMedia(
   // Mesma suposição já feita em sendText: o id da mensagem vem em
   // `key.id`. Não confirmado especificamente para sendMedia na sondagem
   // (só o schema do corpo foi sondado, não o da resposta) — se o formato
-  // da resposta divergir do sendText, isso devolve "" em vez de quebrar,
-  // mas o CRM perde o id pra rastrear a mensagem enviada.
-  return { id: json?.key?.id ?? "" };
+  // da resposta divergir do sendText, isso devolve "" em vez de quebrar
+  // (a mídia já foi entregue, não há por que abortar), mas deixa rastro
+  // com console.error pra não perder o id pra rastrear a mensagem em silêncio.
+  const id: string = json?.key?.id ?? "";
+  if (!id) {
+    console.error(`sendMedia: Evolution não devolveu key.id para "${nome}"`);
+  }
+  return { id };
 }
 
 /**
@@ -280,8 +291,13 @@ export async function sendWhatsAppAudio(
     body: JSON.stringify({ number: paraE164, audio: url }),
   });
   // Mesma suposição do sendText/sendMedia sobre `key.id` — não confirmado
-  // especificamente para esta rota.
-  return { id: json?.key?.id ?? "" };
+  // especificamente para esta rota. Id vazio não aborta (o áudio já foi
+  // entregue), mas deixa rastro com console.error.
+  const id: string = json?.key?.id ?? "";
+  if (!id) {
+    console.error(`sendWhatsAppAudio: Evolution não devolveu key.id para "${nome}"`);
+  }
+  return { id };
 }
 
 /**
@@ -293,11 +309,14 @@ export async function sendWhatsAppAudio(
  * NÃO CONFIRMADO: os nomes dos campos da resposta onde vêm o base64 e o mime.
  * As chaves abaixo (`base64`, `mimetype`/`mimeType`) são um palpite baseado em
  * convenções comuns da Evolution API, NÃO confirmado por sondagem real. Se o
- * gateway usar nomes diferentes, `json?.base64` vem `undefined`, `atob`
- * recebe string vazia e o `ArrayBuffer` resultante fica vazio — a mídia
- * "baixa" sem erro, mas o arquivo salvo fica corrompido/vazio. Precisa ser
- * confirmado com uma mídia real recebida antes de confiar nesta função em
- * produção (Task 4 depende disso).
+ * gateway usar nomes diferentes, `json?.base64` vem `undefined` — e falhar em
+ * silêncio aqui (devolvendo buffer vazio) faria a Task 4 gravar anexo vazio
+ * no Storage do dono da plataforma, mensagem após mensagem, sem ninguém
+ * perceber. Por isso, se o campo do base64 não vier, a função lança erro em
+ * vez de devolver buffer vazio — falhar alto é o comportamento certo aqui; a
+ * Task 4 já trata falha de mídia gravando a mensagem sem o anexo. Precisa
+ * ser confirmado com uma mídia real recebida antes de confiar nesta função
+ * em produção (Task 4 depende disso).
  */
 export async function baixarMidia(
   nome: string,
@@ -308,8 +327,18 @@ export async function baixarMidia(
     method: "POST",
     body: JSON.stringify({ message: { key: { id: chave } } }),
   });
-  const base64: string = json?.base64 ?? "";
+  const base64: string | undefined = json?.base64;
+  if (!base64) {
+    // Nunca inclua conteúdo de arquivo, nome de arquivo do cliente, token ou
+    // URL no erro/log — só as chaves do objeto de resposta, que é o que
+    // permite descobrir o nome certo do campo na primeira mídia real.
+    throw new Error(
+      `Evolution não devolveu o base64 da mídia em getBase64FromMediaMessage. ` +
+        `Chaves da resposta: ${Object.keys(json ?? {}).join(", ") || "(vazio)"}`,
+    );
+  }
   const mime: string = json?.mimetype ?? json?.mimeType ?? "";
+  // Decodifica com Buffer.from(base64, "base64") (Node) — não atob (browser).
   const binario = Buffer.from(base64, "base64");
   const bytes = binario.buffer.slice(
     binario.byteOffset,

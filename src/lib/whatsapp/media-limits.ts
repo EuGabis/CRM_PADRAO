@@ -31,3 +31,28 @@ export function limiteExcedido(tipo: TipoMidia, bytes: number): boolean {
 export function rotuloLimite(tipo: TipoMidia): string {
   return `${Math.round(LIMITES[tipo] / MB)} MB`;
 }
+
+/**
+ * O tamanho que a Evolution manda no payload não é número: vem como objeto
+ * protobuf Long ({low, high, unsigned}) — confirmado em payload real. Comparar
+ * esse objeto com um limite numérico é sempre `false`, então o limite nunca
+ * pegaria. `high > 0` significa acima de 4 GB: devolve Infinity para que
+ * qualquer teto seja estourado, em vez de arriscar um número errado.
+ */
+export function bytesDoPayload(valor: unknown): number | null {
+  if (typeof valor === "number") return valor;
+  if (typeof valor === "string" && valor.trim() !== "" && !Number.isNaN(Number(valor))) {
+    return Number(valor);
+  }
+  if (
+    typeof valor === "object" &&
+    valor !== null &&
+    "low" in valor &&
+    "high" in valor
+  ) {
+    const { low, high } = valor as { low: unknown; high: unknown };
+    if (typeof high === "number" && high > 0) return Infinity;
+    return Number(low);
+  }
+  return null;
+}
