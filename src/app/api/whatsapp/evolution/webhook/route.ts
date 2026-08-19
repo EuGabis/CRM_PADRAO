@@ -258,6 +258,11 @@ async function handleMessage(db: any, channel: any, item: any) {
     media_mime?: string;
     media_size?: number;
   } = {};
+  // Duração do áudio (`audioMessage.seconds`), só existe quando o envelope é
+  // de áudio. Propagada até `maybeAutoReply` para o teto de transcrição (Task
+  // 5) funcionar — sem isso o teto de duração fica inerte e só o tamanho em
+  // bytes protege.
+  let audioSeconds: number | undefined;
 
   // Só fica `true` no ramo que extrai texto de verdade (`conversation` /
   // `extendedTextMessage`), antes do fallback `[${tipo}]`. Não dá pra inferir
@@ -274,6 +279,10 @@ async function handleMessage(db: any, channel: any, item: any) {
     msgType = tipo;
     body = node.caption ?? "";
     const rotuloFalha = `[${rotuloTipo(tipo)} não disponível]`;
+
+    if (tipo === "audio" && typeof node.seconds === "number") {
+      audioSeconds = node.seconds;
+    }
 
     // mime vem com sufixo (ex.: "audio/ogg; codecs=opus") — a extensão sai
     // só da parte antes do ";".
@@ -454,6 +463,7 @@ async function handleMessage(db: any, channel: any, item: any) {
       channelId: channel.id,
       toPhone: phone,
       dailyLimit: channel.daily_limit ?? 1000,
+      audioSeconds,
     });
   }
 }

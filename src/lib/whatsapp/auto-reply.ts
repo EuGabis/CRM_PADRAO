@@ -47,8 +47,8 @@ export async function maybeAutoReply(
     toPhone: string;
     dailyLimit: number;
     // Duração do áudio em segundos, quando o payload do gateway trouxer
-    // (ex.: `audioMessage.seconds`). Nenhum chamador passa ainda — quando
-    // ausente, o teto usa só `media_size`.
+    // (ex.: `audioMessage.seconds`) — propagado pelo webhook da Evolution.
+    // Quando ausente, o teto usa só `media_size`.
     audioSeconds?: number;
   },
 ): Promise<void> {
@@ -127,8 +127,10 @@ export async function maybeAutoReply(
 
         if (tetoEstourado || !incoming.media_path) {
           // Acima do teto: nem baixa — o download é o gasto, checar depois
-          // não adianta.
-          sair(p.locationId, "transcricao-falhou");
+          // não adianta. Motivo distinto de "transcricao-falhou": aqui não
+          // houve tentativa de download/Whisper, é decisão de custo — as duas
+          // situações pedem ações opostas (ajustar teto x investigar erro).
+          sair(p.locationId, "audio-acima-do-teto");
           incoming.body = AUDIO_NAO_INTERPRETADO;
         } else {
           try {
