@@ -44,7 +44,16 @@ export function parseAtendimento(bruto: string): RespostaAtendimento | null {
     const bruto2 = j?.dados;
     if (bruto2 && typeof bruto2 === "object" && !Array.isArray(bruto2)) {
       for (const [k, v] of Object.entries(bruto2)) {
-        if (typeof v === "string" && v.trim()) dados[k] = v.trim();
+        // Número e booleano também viram string (ex.: "passageiros": 2 —
+        // exatamente um dos campos que INSTRUCAO_ATENDIMENTO manda coletar).
+        // `null`, objeto e array continuam rejeitados, e string vazia
+        // continua ignorada: a regra "campo vazio não sobrescreve" em
+        // `acumularDados` (oportunidade-ia.ts) depende disso.
+        if (typeof v === "string") {
+          if (v.trim()) dados[k] = v.trim();
+        } else if (typeof v === "number" || typeof v === "boolean") {
+          dados[k] = String(v);
+        }
       }
     }
     const etapa =

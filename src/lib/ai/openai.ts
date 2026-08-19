@@ -60,7 +60,15 @@ type MensagemChat = {
 export async function chat(
   messages: MensagemChat[],
   opts?: { model?: string; temperature?: number; maxTokens?: number; json?: boolean },
-): Promise<{ text: string; usage: { promptTokens: number; completionTokens: number } }> {
+): Promise<{
+  text: string;
+  usage: { promptTokens: number; completionTokens: number };
+  // `finish_reason` da OpenAI ("stop", "length", "content_filter", ...), cru.
+  // Campo adicional — nenhum chamador existente olha para ele, então nada
+  // quebra. Quem precisa (auto-reply.ts, para distinguir saída truncada de
+  // JSON malformado) lê explicitamente.
+  finishReason: string | null;
+}> {
   const res = await fetch(OPENAI_URL, {
     method: "POST",
     headers: {
@@ -83,11 +91,13 @@ export async function chat(
   }
   const text: string = json?.choices?.[0]?.message?.content ?? "";
   const usage = json?.usage ?? {};
+  const finishReason: string | null = json?.choices?.[0]?.finish_reason ?? null;
   return {
     text,
     usage: {
       promptTokens: usage.prompt_tokens ?? 0,
       completionTokens: usage.completion_tokens ?? 0,
     },
+    finishReason,
   };
 }

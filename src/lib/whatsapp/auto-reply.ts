@@ -32,8 +32,19 @@ const AUDIO_NAO_INTERPRETADO = "[áudio recebido, não foi possível transcrever
  */
 const TETO_BODY_CARACTERES = 2000;
 
-/** Teto de saída do modelo, pelo mesmo motivo do teto de entrada. */
-const MAX_TOKENS_RESPOSTA = 600;
+/**
+ * Teto de saída do modelo, pelo mesmo motivo do teto de entrada. Desde que a
+ * resposta passou a ser JSON (INSTRUCAO_ATENDIMENTO + `json: true`), este
+ * teto não cobre só o texto: cobre o envelope inteiro
+ * (`{"resposta":"...","dados":{...},"etapa_sugerida":"..."}`), e "dados" pode
+ * acumular vários campos (origem, destino, data_ida, data_volta,
+ * passageiros...) na mesma rodada. Com 600 o modelo cortava no meio do
+ * objeto com alguma frequência — JSON inválido, retry com o mesmo prompt
+ * cortando de novo, cliente sem resposta. 900 dá folga de sobra pro
+ * envelope: o texto útil de uma resposta de atendimento continua curto,
+ * quem cresce é só a moldura em volta dele.
+ */
+const MAX_TOKENS_RESPOSTA = 900;
 
 /** Duração da URL assinada da imagem enviada à OpenAI: só o tempo de uma
  * chamada de chat, para reduzir a janela de exposição do bucket privado. */
@@ -368,7 +379,8 @@ export async function maybeAutoReply(
     // texto cru de um JSON malformado é chave-e-chave de campo, nunca fala de
     // atendente, e isso iria para o WhatsApp de um cliente final da agência.
     async function chamarModelo(): Promise<
-      { text: string; usage: { promptTokens: number; completionTokens: number } } | null
+      | { text: string; usage: { promptTokens: number; completionTokens: number }; finishReason: string | null }
+      | null
     > {
       try {
         // O modelo passa pela allowlist do servidor dentro de `chat` — o
@@ -387,13 +399,28 @@ export async function maybeAutoReply(
 
     let result = await chamarModelo();
     if (!result) return; // motivo já logado em `chamarModelo`
+    // Soma o consumo das DUAS tentativas: `ai_logs` é a única contabilidade
+    // de consumo por empresa, e uma rodada com parse falho gasta duas
+    // chamadas de verdade — registrar só a última deixaria invisível
+    // exatamente a rodada mais cara (a que gastou o dobro).
+    let promptTokens = result.usage.promptTokens;
+    let completionTokens = result.usage.completionTokens;
     let resposta = parseAtendimento(result.text ?? "");
     if (!resposta) {
       result = await chamarModelo();
       if (!result) return; // motivo já logado em `chamarModelo`
+      promptTokens += result.usage.promptTokens;
+      completionTokens += result.usage.completionTokens;
       resposta = parseAtendimento(result.text ?? "");
     }
-    if (!resposta) return sair(p.locationId, "resposta-json-invalida");
+    if (!resposta) {
+      // `finish_reason === "length"` é o modelo cortado pelo teto de
+      // tokens ANTES de fechar o objeto JSON — motivo distinto de JSON
+      // malformado por outro motivo: um pede aumentar o teto, o outro pede
+      // investigar o prompt/modelo. Ambos terminam do mesmo jeito (silêncio,
+      // sem enviar o cru ao cliente), só o log muda.
+      return sair(p.locationId, result.finishReason === "length" ? "resposta-truncada" : "resposta-json-invalida");
+    }
 
     // Só `resposta.resposta` vai para o cliente e para o que é gravado.
     // `dados` e `etapaSugerida` nunca aparecem na mensagem — eles só entram
@@ -457,8 +484,9 @@ export async function maybeAutoReply(
       model: modeloPermitido(agent.model),
       prompt: String(lastUser?.body ?? "").slice(0, TETO_BODY_CARACTERES),
       response: reply,
-      prompt_tokens: result.usage.promptTokens,
-      completion_tokens: result.usage.completionTokens,
+      // Soma das duas tentativas quando houve retry — ver comentário acima.
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
       created_by: null,
     });
     // O ai_logs é a única contabilidade de consumo por empresa: falhar aqui em
