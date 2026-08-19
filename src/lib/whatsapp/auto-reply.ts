@@ -1,9 +1,20 @@
 import { chat } from "@/lib/ai/openai";
+import { transcreverAudio } from "@/lib/ai/transcrever";
 import { assertModuleEnabled } from "@/lib/plan/guard";
 import { isLocationSuspended } from "@/lib/plan/suspensao";
 import { enviarTexto } from "@/lib/whatsapp/enviar";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+/**
+ * Teto de áudio recebido: acima disso não transcreve, trata como mídia não
+ * interpretada. Sem teto, um áudio longo de um cliente final vira custo
+ * aberto (Whisper) na conta do dono da plataforma. Checa duração quando o
+ * payload trouxer `seconds`; na ausência dele, só o tamanho em bytes.
+ */
+const TETO_AUDIO_SEGUNDOS = 5 * 60;
+const TETO_AUDIO_BYTES = 20 * 1024 * 1024;
+const AUDIO_NAO_INTERPRETADO = "[áudio recebido, não foi possível transcrever]";
 
 /**
  * Registra o motivo de cada saída da auto-resposta. Este é o caminho mais
@@ -35,6 +46,10 @@ export async function maybeAutoReply(
     channelId: string;
     toPhone: string;
     dailyLimit: number;
+    // Duração do áudio em segundos, quando o payload do gateway trouxer
+    // (ex.: `audioMessage.seconds`). Nenhum chamador passa ainda — quando
+    // ausente, o teto usa só `media_size`.
+    audioSeconds?: number;
   },
 ): Promise<void> {
   try {
@@ -88,11 +103,66 @@ export async function maybeAutoReply(
     // histórico (últimas 10, ordem cronológica)
     const { data: rows } = await db
       .from("messages")
-      .select("direction, body, created_at")
+      .select("id, direction, type, body, media_path, media_mime, media_size, media_transcript, created_at")
       .eq("conversation_id", p.conversationId)
       .order("created_at", { ascending: false })
       .limit(10);
     const history: any[] = (rows ?? []).slice().reverse();
+
+    // Áudio de entrada: transcreve só agora, DEPOIS de todas as guardas acima
+    // (chave, módulo, suspensão, bot_paused, agente, limite diário) — nesta
+    // ordem porque é aqui que se gasta Whisper, crédito global do dono da
+    // plataforma. A mensagem mais recente do histórico é a que disparou esta
+    // chamada.
+    const incoming = history[history.length - 1];
+    if (incoming && incoming.direction === "in" && incoming.type === "audio") {
+      if (incoming.media_transcript) {
+        // Reentrega do gateway: já transcrita, não paga o Whisper de novo.
+        incoming.body = incoming.media_transcript;
+      } else {
+        const duracao = p.audioSeconds;
+        const tetoEstourado =
+          (typeof duracao === "number" && duracao > TETO_AUDIO_SEGUNDOS) ||
+          (typeof incoming.media_size === "number" && incoming.media_size > TETO_AUDIO_BYTES);
+
+        if (tetoEstourado || !incoming.media_path) {
+          // Acima do teto: nem baixa — o download é o gasto, checar depois
+          // não adianta.
+          sair(p.locationId, "transcricao-falhou");
+          incoming.body = AUDIO_NAO_INTERPRETADO;
+        } else {
+          try {
+            const { data: file, error: dlErr } = await db.storage
+              .from("conversation-media")
+              .download(incoming.media_path);
+            if (dlErr || !file) throw dlErr || new Error("download vazio");
+            const bytes = await file.arrayBuffer();
+            const ext = String(incoming.media_mime ?? "")
+              .split(";")[0]
+              .split("/")[1]
+              ?.trim() || "ogg";
+            const texto = await transcreverAudio(bytes, `audio.${ext}`);
+            incoming.body = texto;
+            // Grava para não pagar de novo numa reentrega. Best-effort: se a
+            // escrita falhar, a resposta desta rodada já usa o texto certo.
+            await db
+              .from("messages")
+              .update({ media_transcript: texto })
+              .eq("id", incoming.id)
+              .then(
+                () => {},
+                () => {},
+              );
+          } catch {
+            // Download ou Whisper falharam: nunca emudece a IA — responde
+            // como mídia não interpretada. Sem conteúdo do áudio nem nome de
+            // arquivo do cliente no log.
+            sair(p.locationId, "transcricao-falhou");
+            incoming.body = AUDIO_NAO_INTERPRETADO;
+          }
+        }
+      }
+    }
 
     const parts = [
       agent.personality,
