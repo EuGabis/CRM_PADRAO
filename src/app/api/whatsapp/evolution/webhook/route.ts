@@ -173,7 +173,14 @@ async function handleMessage(db: any, channel: any, item: any) {
   // em algum tipo de evento, é melhor logar a suposição furada do que
   // duplicar a conversa do cliente com o eco da própria mensagem.
   if (key.fromMe === true || key.fromMe === "true") return;
-  if (key.fromMe === undefined) {
+  // `fromMe` ausente: grava a mensagem (não perder o dado do cliente), mas
+  // nunca aciona a IA por ela. Sem essa cautela, um eco da própria resposta
+  // da IA (se `sendText` devolver id vazio nesse mesmo evento — caminho
+  // nunca confirmado por sonda) entraria como `direction = "in"` e disparava
+  // uma nova auto-resposta: laço sem fim gastando OPENAI_API_KEY e a chave
+  // global do gateway Evolution.
+  const fromMeIndefinido = key.fromMe === undefined;
+  if (fromMeIndefinido) {
     console.error(
       "[whatsapp/evolution/webhook] mensagem sem key.fromMe — assumindo recebida (chaves):",
       Object.keys(key),
@@ -251,6 +258,15 @@ async function handleMessage(db: any, channel: any, item: any) {
     media_mime?: string;
     media_size?: number;
   } = {};
+
+  // Só fica `true` no ramo que extrai texto de verdade (`conversation` /
+  // `extendedTextMessage`), antes do fallback `[${tipo}]`. Não dá pra inferir
+  // "é texto" a partir de `msgType`: todo caminho de falha de mídia (limite
+  // estourado, canal sem instância, erro de download/upload) reescreve
+  // `msgType` para `"text"` e preenche `body` com um rótulo de falha — isso
+  // NÃO é a fala do cliente e não pode acionar a IA (o webhook da Meta é
+  // estrito com `m.text?.body`; este precisa da mesma disciplina).
+  let ehTextoReal = false;
 
   const envelope = extrairEnvelopeDeMidia(msg);
   if (envelope) {
@@ -355,8 +371,13 @@ async function handleMessage(db: any, channel: any, item: any) {
       msg.extendedTextMessage?.text ??
       undefined;
     if (body === undefined) {
+      // Envelope não reconhecido (sticker, reação, localização, contato,
+      // enquete, ...): vira um rótulo pra não perder o registro, mas não é
+      // texto real do cliente — `ehTextoReal` fica false.
       const tipo = item?.messageType || Object.keys(msg)[0] || "mensagem";
       body = `[${tipo}]`;
+    } else {
+      ehTextoReal = true;
     }
   }
 
@@ -423,8 +444,10 @@ async function handleMessage(db: any, channel: any, item: any) {
   }
 
   // Auto-responder: só para mensagens de texto de verdade, best-effort. Mídia
-  // fica para as Tasks 5/6 (transcrição e visão).
-  if (msgType === "text" && body) {
+  // (inclusive rótulo de falha de mídia) fica para as Tasks 5/6 (transcrição
+  // e visão). E nunca aciona a IA quando `fromMe` veio ausente — ver
+  // comentário acima, é a proteção contra loop na chave global.
+  if (ehTextoReal && body && !fromMeIndefinido) {
     await maybeAutoReply(db, {
       locationId: channel.location_id,
       conversationId: conv.id,
