@@ -63,7 +63,8 @@ $partes = [ordered]@{
     # 0058 depende da 0055 (grant de tabela) e da 0057 (colunas da
     # evolution) ja terem rodado.
     "0058_colunas_secretas.sql",
-    "0059_limite_tamanho_bucket.sql"
+    "0059_limite_tamanho_bucket.sql",
+    "0060_transcricao_audio.sql"
   )
 }
 
