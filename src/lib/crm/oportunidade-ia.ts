@@ -15,6 +15,10 @@ const ETAPAS_DA_IA: Record<string, string> = {
   "em-negociacao": "Em Negociação",
 };
 
+/** Nomes de etapa que a IA tem permissão de tocar — usado para saber se um
+ * card ainda está no "território" dela (ver `sincronizarOportunidade`). */
+const NOMES_DA_IA = new Set(Object.values(ETAPAS_DA_IA));
+
 interface RegistrarAtendimentoParams {
   locationId: string;
   conversationId: string;
@@ -49,6 +53,7 @@ export async function registrarAtendimento(
       .from("contacts")
       .select("first_name, last_name, custom_fields")
       .eq("id", p.contactId)
+      .eq("location_id", p.locationId)
       .maybeSingle();
     if (error) throw error;
     contato = data;
@@ -59,7 +64,7 @@ export async function registrarAtendimento(
   if (!contato) return;
 
   try {
-    await acumularDados(db, p.contactId, contato.custom_fields ?? {}, p.dados);
+    await acumularDados(db, p.contactId, p.locationId, contato.custom_fields ?? {}, p.dados);
   } catch (err) {
     logFalha(p.locationId, err);
   }
@@ -90,6 +95,7 @@ function logFalha(locationId: string, err: unknown): void {
 async function acumularDados(
   db: any,
   contactId: string,
+  locationId: string,
   atual: Record<string, string>,
   dados: Record<string, string>
 ): Promise<void> {
@@ -106,7 +112,8 @@ async function acumularDados(
   const { error } = await db
     .from("contacts")
     .update({ custom_fields: mesclado })
-    .eq("id", contactId);
+    .eq("id", contactId)
+    .eq("location_id", locationId);
   if (error) throw error;
 }
 
@@ -119,21 +126,28 @@ async function acumularDados(
  * Etapa desconhecida no funil da empresa (empresa nascida pelo cadastro
  * público, com o funil antigo) também não faz nada: nunca cria etapa nova,
  * só registra e segue.
+ *
+ * A allowlist restringe o destino, não a origem: um card que já saiu do
+ * território da IA (etapa fora de `ETAPAS_DA_IA` — humano avançou na mão, ou
+ * é um card manual em outra etapa qualquer) não é mais tocado por ela. E
+ * dentro do território ela só avança (`stages.position` maior), nunca
+ * retrocede um card que já foi movido para a frente — sem isso vira
+ * ping-pong entre o humano e a IA a cada mensagem.
  */
 async function sincronizarOportunidade(
   db: any,
   p: RegistrarAtendimentoParams,
   nomeContato: string
 ): Promise<void> {
-  if (!p.etapaSugerida) return;
-
-  const nomeEtapa = ETAPAS_DA_IA[p.etapaSugerida];
-  if (!nomeEtapa) {
-    console.info("[registrarAtendimento] etapa sugerida fora da allowlist, ignorada", {
-      locationId: p.locationId,
-    });
+  if (!p.etapaSugerida || !Object.hasOwn(ETAPAS_DA_IA, p.etapaSugerida)) {
+    if (p.etapaSugerida) {
+      console.info("[registrarAtendimento] etapa sugerida fora da allowlist, ignorada", {
+        locationId: p.locationId,
+      });
+    }
     return;
   }
+  const nomeEtapa = ETAPAS_DA_IA[p.etapaSugerida];
 
   const { data: pipeline, error: pipelineError } = await db
     .from("pipelines")
@@ -151,14 +165,20 @@ async function sincronizarOportunidade(
     return;
   }
 
-  const { data: etapa, error: etapaError } = await db
+  // `.order().limit(1)` em vez de `.maybeSingle()`: se o dono duplicar o nome
+  // de uma etapa, `.maybeSingle()` recebe duas linhas e lança (`PGRST116`),
+  // parando a sincronização em silêncio a cada mensagem. Pega a primeira e
+  // segue.
+  const { data: etapasAlvo, error: etapaError } = await db
     .from("stages")
-    .select("id, name")
+    .select("id, name, position")
     .eq("location_id", p.locationId)
     .eq("pipeline_id", pipeline.id)
     .eq("name", nomeEtapa)
-    .maybeSingle();
+    .order("position", { ascending: true })
+    .limit(1);
   if (etapaError) throw etapaError;
+  const etapa = etapasAlvo?.[0] ?? null;
   if (!etapa) {
     // Divergência conhecida (AGENTS.md): empresa criada pelo cadastro público
     // nasce com o funil antigo, sem estes nomes. Nunca cria etapa nova aqui.
@@ -168,17 +188,18 @@ async function sincronizarOportunidade(
     return;
   }
 
-  // Uma oportunidade por conversa: procura a oportunidade aberta que a IA já
-  // criou para este contato neste pipeline. Não há coluna de conversa em
-  // `opportunities` — o contato com oportunidade aberta de origem IA é o
-  // proxy disponível no schema atual.
+  // Uma oportunidade por conversa: procura a oportunidade aberta já ligada a
+  // este contato neste pipeline, não importa quem criou — se o atendente já
+  // abriu o card na mão, a IA reaproveita em vez de duplicar. `source: 'IA'`
+  // só marca quem criou o card quando ele nasce aqui embaixo. Não há coluna
+  // de conversa em `opportunities`; contato + pipeline + aberta é o proxy
+  // disponível no schema atual.
   const { data: existentes, error: existenteError } = await db
     .from("opportunities")
     .select("id, stage_id")
     .eq("location_id", p.locationId)
     .eq("contact_id", p.contactId)
     .eq("pipeline_id", pipeline.id)
-    .eq("source", "IA")
     .eq("status", "open")
     .order("created_at", { ascending: false })
     .limit(1);
@@ -188,12 +209,19 @@ async function sincronizarOportunidade(
   if (existente) {
     if (existente.stage_id === etapa.id) return; // nada mudou — não polui a conversa
 
-    const { data: etapaAnterior, error: etapaAnteriorError } = await db
+    const { data: etapaAtual, error: etapaAtualError } = await db
       .from("stages")
-      .select("name")
+      .select("name, position")
       .eq("id", existente.stage_id)
       .maybeSingle();
-    if (etapaAnteriorError) throw etapaAnteriorError;
+    if (etapaAtualError) throw etapaAtualError;
+
+    // Fora do território da IA: o card já saiu da allowlist (humano avançou
+    // na mão, por exemplo). A IA não puxa de volta.
+    if (!etapaAtual || !NOMES_DA_IA.has(etapaAtual.name)) return;
+
+    // Dentro do território, só avança — nunca retrocede.
+    if (etapa.position <= etapaAtual.position) return;
 
     const { error: moverError } = await db
       .from("opportunities")
@@ -205,7 +233,7 @@ async function sincronizarOportunidade(
       db,
       p.locationId,
       p.conversationId,
-      `Oportunidade movida de ${etapaAnterior?.name ?? "etapa anterior"} → ${etapa.name} pela IA`
+      `Oportunidade movida de ${etapaAtual.name} → ${etapa.name} pela IA`
     );
     return;
   }
@@ -234,10 +262,17 @@ async function registrarEvento(
   conversationId: string,
   body: string
 ): Promise<void> {
+  // `direction: "out"`, não "in": o trigger `messages_automation` ->
+  // `private.on_message_in` (supabase/migrations/0007_automations.sql) só
+  // reage a `direction = 'in'`, enfileirando a automação "cliente-respondeu"
+  // com o body da mensagem. Um evento interno gravado como "in" faria as
+  // automações do dono da agência disparar achando que o cliente falou. O
+  // `PipelineEvent` (thread.tsx) decide a renderização por `type === 'event'`,
+  // antes de olhar `direction` — a pílula continua igual.
   const { error } = await db.from("messages").insert({
     location_id: locationId,
     conversation_id: conversationId,
-    direction: "in",
+    direction: "out",
     type: "event",
     channel: "whatsapp",
     body,
