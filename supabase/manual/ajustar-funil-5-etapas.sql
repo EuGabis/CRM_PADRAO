@@ -28,9 +28,9 @@
 --      apaga a oportunidade junto (FK on delete cascade em
 --      opportunities.stage_id), silenciosamente. O dono precisa mover
 --      essas oportunidades e rodar de novo.
---   3. Emite um `raise notice` com o mapa de-para completo (etapa
---      antiga -> etapa nova, incluindo criações e remoções) ANTES de
---      aplicar qualquer mudança — o remapeamento é por posição, então
+--   3. Mostra o mapa de-para completo (etapa antiga -> etapa nova,
+--      incluindo criações e remoções) ANTES de aplicar qualquer
+--      mudança — o remapeamento é por posição, então
 --      oportunidades de uma etapa antiga passam a contar como
 --      "Fechado/Ganho" ou "Perdido" sem a etapa em si sumir, e é
 --      exatamente esse número que a agência olha para saber quanto
@@ -39,6 +39,15 @@
 --      sobreviventes, cria as que faltarem e apaga as que sobraram
 --      (agora comprovadamente vazias).
 --
+-- ⚠️ RODA EM SIMULAÇÃO POR PADRÃO (`v_aplicar := false`). Nesse modo o
+-- script mostra o mapa de-para com `raise exception` e NÃO altera nada
+-- (a exceção também desfaz o bloco inteiro, então é seguro por
+-- construção). É `raise exception` de propósito, e não `raise notice`:
+-- o SQL Editor do Supabase normalmente NÃO exibe notices, e o mapa —
+-- que existe justamente para o dono conferir o remapeamento antes de
+-- aplicar — não apareceria na tela. Confira o mapa e só então troque
+-- para `v_aplicar := true` e rode de novo.
+--
 -- Idempotente: pode ser rodado de novo sem efeito adicional depois que
 -- o funil já está nas cinco etapas.
 -- ============================================================
@@ -46,6 +55,10 @@
 do $$
 declare
   v_location_id   uuid := '00000000-0000-0000-0000-000000000000'; -- <<< TROQUE AQUI antes de rodar
+  -- false = simulação: mostra o de-para (via raise exception, que o SQL
+  -- Editor exibe) e não altera nada. Troque para true só depois de
+  -- conferir o mapa.
+  v_aplicar       boolean := false;
   v_pipeline_id   uuid;
   v_nomes         text[] := array['Novo Lead', 'Proposta Enviada', 'Em Negociação', 'Fechado/Ganho', 'Perdido'];
   v_cores         text[] := array['#3b82f6', '#f97316', '#a855f7', '#22c55e', '#ef4444'];
@@ -118,6 +131,12 @@ begin
        where st.id = any (v_ids_ordenados[v_qtd_alvo + 1 : v_qtd_existente])
     );
   end if;
+  -- Em simulação, o mapa sai como exceção (o SQL Editor mostra) e nada é
+  -- alterado. Em modo de aplicação, fica o notice de sempre.
+  if not v_aplicar then
+    raise exception 'SIMULAÇÃO (v_aplicar = false), nada foi alterado. Mapa de-para do funil (pipeline %): % --- Confira o mapa acima e, se estiver certo, troque v_aplicar para true e rode de novo.', v_pipeline_id, v_mapa;
+  end if;
+
   raise notice 'Mapa de-para do funil (pipeline %): %', v_pipeline_id, v_mapa;
 
   -- Comprovadamente seguro a partir daqui: nenhuma etapa a apagar tem

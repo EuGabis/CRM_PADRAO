@@ -160,9 +160,15 @@ migração — pode ter oportunidades nas etapas antigas, e reescrever em
 massa apagaria trabalho de vendas em silêncio. Ajustar uma empresa
 existente é manual: `supabase/manual/ajustar-funil-5-etapas.sql`, com
 trava que recusa (`raise exception`) se houver oportunidade em etapa
-que seria removida, e que sempre mostra (`raise notice`) o mapa de-para
-completo antes de aplicar — o remapeamento é por posição, e uma etapa
-antiga pode virar `Fechado/Ganho`/`Perdido` sem a etapa em si sumir.
+que seria removida, e que mostra o mapa de-para completo antes de
+aplicar — o remapeamento é por posição, e uma etapa antiga pode virar
+`Fechado/Ganho`/`Perdido` sem a etapa em si sumir. O script **roda em
+simulação por padrão** (`v_aplicar := false`): nesse modo ele emite o
+de-para com `raise exception` (que também desfaz o bloco, então nada é
+alterado) em vez de `raise notice` — o SQL Editor do Supabase
+normalmente **não exibe notices**, e o mecanismo feito para o dono
+conferir não apareceria na tela. Conferido o mapa, troca-se para
+`v_aplicar := true` e roda de novo.
 Scripts em `supabase/manual/` não entram no `gerar-setup.ps1`.
 
 ⚠️ **Existem dois caminhos de criação de empresa, e só um foi
@@ -416,6 +422,55 @@ atualiza, mas campo vazio (ou repetido) nunca sobrescreve o que já foi
 coletado antes. O cliente informa aos poucos — origem numa mensagem, data
 três mensagens depois — e a IA pode não repetir o que já sabe numa resposta
 seguinte; sobrescrever com vazio apagaria dado já coletado.
+
+As **chaves** aceitas em `custom_fields` também são allowlist no código
+(`CAMPOS_DA_IA`, em `oportunidade-ia.ts`): hoje `origem`, `destino`,
+`data_ida`, `data_volta` e `passageiros` — exatamente as que
+`INSTRUCAO_ATENDIMENTO` enumera. Chave fora da lista é descartada com
+`console.info` (só o nome, nunca o valor). Sem isso o modelo inventa grafia
+(`data_ida`, `dataIda` e `ida` viram três campos diferentes e o relatório do
+dono não fecha) e, pior, envenena as automações: `templateVars`
+(`src/lib/automations/actions.ts`) mescla `custom_fields` **depois** das
+variáveis embutidas, então uma chave `email` ou `telefone` vinda do modelo
+sobrescreveria o `{{email}}` dos templates do dono. Ampliar a lista é ampliar
+os dois lados — mexa em `INSTRUCAO_ATENDIMENTO` e em `CAMPOS_DA_IA` juntos.
+
+A oportunidade criada pela IA nasce com o **`owner_id` do contato** (mesmo
+que a ação `criar-oportunidade` das automações faz). Sem isso a RLS de
+`opportunities` (`0039`: `sees_all(location_id) or owner_id = auth.uid()`)
+esconde o card de qualquer membro com `only_assigned = true` — ele não lê nem
+edita. Passava despercebido só porque o default é `only_assigned = false`.
+
+**O histórico mandado ao modelo exclui `type = 'event'` e `internal = true`.**
+Os dois são gravados com `direction = 'out'`, então entrariam no prompt como
+turno do *assistant* ("Oportunidade movida de Novo Lead → Em Negociação pela
+IA", "Conversa encerrada por Fulano"): contradiz a própria
+`INSTRUCAO_ATENDIMENTO` (que proíbe mencionar o funil ao cliente), vaza nome
+de funcionário e nome de etapa para o modelo — que pode devolvê-los ao cliente
+final da agência — e ainda consome as 10 vagas do contexto, empurrando a
+conversa real para fora dele.
+
+**A IA nunca deixa o cliente sem resposta.** Se o JSON vier inutilizável nas
+duas tentativas (a segunda leva um turno curto de correção, nunca o mesmo
+prompt repetido — falha determinística repetiria igual e cobraria em dobro), o
+cliente recebe o `TEXTO_FALLBACK` (avisa que um atendente responde em
+instantes, sem inventar dado e sem mencionar erro técnico), gravado como
+mensagem normal para o histórico e o limite diário enxergarem. E `ai_logs` é
+gravado **também** nesses caminhos (`resposta-json-invalida`,
+`resposta-truncada`, `envio-falhou`), com `response` vazio: é a única
+contabilidade de consumo por empresa, e a rodada que gastou duas chamadas e
+falhou era justamente a única que não deixava linha nenhuma.
+
+⚠️ **O alcance das automações mudou com a IA.** Criar ou mover card dispara os
+gatilhos `oportunidade-criada` e `fase-alterada`
+(`supabase/migrations/0007_automations.sql`), que antes só disparavam por ação
+humana — agora a IA os aciona sozinha, a cada mensagem de cliente final.
+Consequência prática: um workflow do dono do tipo "quando oportunidade criada
+→ mover para Fechado/Ganho" passa a ser acionado pela IA, e o `status` vira
+`won` por um caminho que a allowlist `ETAPAS_DA_IA` **não cobre** (ela
+restringe o que a IA move, não o que a automação do dono move depois). A
+decisão continua sendo do dono — é ele quem configura o workflow —, mas ao
+mexer nos gatilhos ou na allowlist tenha isso em conta.
 
 **Eventos na conversa** (`type = 'event'`, `direction = 'out'`) registram a
 linha do tempo do funil dentro da própria inbox — a `PipelineEvent` em

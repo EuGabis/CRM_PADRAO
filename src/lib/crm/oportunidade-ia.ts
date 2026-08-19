@@ -19,6 +19,24 @@ const ETAPAS_DA_IA: Record<string, string> = {
  * card ainda está no "território" dela (ver `sincronizarOportunidade`). */
 const NOMES_DA_IA = new Set(Object.values(ETAPAS_DA_IA));
 
+/**
+ * Chaves que a IA pode gravar em `contacts.custom_fields` — exatamente as que
+ * `INSTRUCAO_ATENDIMENTO` (`src/lib/ai/atendimento.ts`) enumera. Sem allowlist
+ * o modelo inventa grafia (`data_ida`, `dataIda` e `ida` viram três campos
+ * diferentes ao longo das conversas e o dono não consegue relatório) e, pior,
+ * pode envenenar as automações do dono: `templateVars`
+ * (`src/lib/automations/actions.ts`) mescla `custom_fields` DEPOIS das
+ * variáveis embutidas, então uma chave `email` ou `telefone` vinda do modelo
+ * sobrescreveria o `{{email}}` dos templates.
+ */
+const CAMPOS_DA_IA = new Set([
+  "origem",
+  "destino",
+  "data_ida",
+  "data_volta",
+  "passageiros",
+]);
+
 interface RegistrarAtendimentoParams {
   locationId: string;
   conversationId: string;
@@ -46,12 +64,13 @@ export async function registrarAtendimento(
     first_name: string;
     last_name: string;
     custom_fields: Record<string, string> | null;
+    owner_id: string | null;
   } | null = null;
 
   try {
     const { data, error } = await db
       .from("contacts")
-      .select("first_name, last_name, custom_fields")
+      .select("first_name, last_name, custom_fields, owner_id")
       .eq("id", p.contactId)
       .eq("location_id", p.locationId)
       .maybeSingle();
@@ -71,7 +90,7 @@ export async function registrarAtendimento(
 
   try {
     const nomeContato = `${contato.first_name} ${contato.last_name}`.trim() || "Contato";
-    await sincronizarOportunidade(db, p, nomeContato);
+    await sincronizarOportunidade(db, p, nomeContato, contato.owner_id ?? null);
   } catch (err) {
     logFalha(p.locationId, err);
   }
@@ -102,6 +121,14 @@ async function acumularDados(
   const mesclado = { ...atual };
   let mudou = false;
   for (const [chave, valor] of Object.entries(dados)) {
+    if (!CAMPOS_DA_IA.has(chave)) {
+      // Só o nome da chave no log — NUNCA o valor, que é dado do cliente final.
+      console.info("[registrarAtendimento] campo fora da allowlist, descartado", {
+        locationId,
+        chave,
+      });
+      continue;
+    }
     if (typeof valor !== "string" || valor.trim() === "") continue;
     if (mesclado[chave] === valor) continue;
     mesclado[chave] = valor;
@@ -137,7 +164,8 @@ async function acumularDados(
 async function sincronizarOportunidade(
   db: any,
   p: RegistrarAtendimentoParams,
-  nomeContato: string
+  nomeContato: string,
+  ownerId: string | null
 ): Promise<void> {
   if (!p.etapaSugerida || !Object.hasOwn(ETAPAS_DA_IA, p.etapaSugerida)) {
     if (p.etapaSugerida) {
@@ -238,6 +266,12 @@ async function sincronizarOportunidade(
     return;
   }
 
+  // `owner_id` vem do contato, igual à ação `criar-oportunidade` das
+  // automações (`src/lib/automations/actions.ts`). Sem ele a RLS de
+  // `opportunities` (0039: `sees_all(location_id) or owner_id = auth.uid()`)
+  // esconde o card da IA de qualquer membro com `only_assigned = true` — ele
+  // não lê nem edita. Hoje passa porque o default é `only_assigned = false`,
+  // mas some no dia em que a agência restringir um vendedor.
   const { error: criarError } = await db.from("opportunities").insert({
     location_id: p.locationId,
     contact_id: p.contactId,
@@ -245,6 +279,7 @@ async function sincronizarOportunidade(
     stage_id: etapa.id,
     name: nomeContato,
     source: "IA",
+    owner_id: ownerId,
   });
   if (criarError) throw criarError;
 

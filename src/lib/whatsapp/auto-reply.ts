@@ -69,6 +69,27 @@ const TRAVA_IMAGEM =
   "humano vai conferir e não afirme nada sobre o conteúdo.";
 
 /**
+ * Texto enviado ao cliente final quando o modelo não devolveu JSON utilizável
+ * nas duas tentativas. Antes do atendimento em JSON, qualquer texto não vazio
+ * do modelo era enviado; sair em silêncio aqui é regressão — a pessoa mandou
+ * mensagem no WhatsApp e não recebe nada, e se a falha for determinística não
+ * recebe nunca. Não inventa dado nenhum e não menciona erro técnico: só avisa,
+ * em pt-BR, que um humano responde em seguida.
+ */
+const TEXTO_FALLBACK =
+  "Recebi sua mensagem! Um atendente já vai responder por aqui, é rapidinho.";
+
+/**
+ * Turno de correção acrescentado à SEGUNDA tentativa. Repetir o `messages`
+ * idêntico faz uma falha determinística repetir igual e dobra o custo à toa —
+ * a retentativa continua sendo UMA só, sem laço.
+ */
+const CORRECAO_JSON =
+  "Sua resposta anterior não era um JSON válido. Responda de novo APENAS com o " +
+  'objeto JSON, com as chaves "resposta", "dados" e "etapa_sugerida" — nada de ' +
+  "texto, explicação ou markdown fora do objeto.";
+
+/**
  * Registra o motivo de cada saída da auto-resposta. Este é o caminho mais
  * caro do produto (gasta OPENAI_API_KEY e a credencial global do provedor a
  * cada mensagem recebida); sem este log não sobra nenhum rastro de que a IA
@@ -208,11 +229,21 @@ export async function maybeAutoReply(
       .gte("created_at", startOfDay.toISOString());
     if ((count ?? 0) >= p.dailyLimit) return sair(p.locationId, "limite-diario");
 
-    // histórico (últimas 10, ordem cronológica)
+    // Histórico (últimas 10, ordem cronológica) — SEM evento interno e SEM
+    // anotação interna. Os dois são gravados em `messages` com
+    // `direction = 'out'`, então entrariam no prompt como turno do
+    // *assistant*: "Oportunidade movida de Novo Lead → Em Negociação pela IA",
+    // "Conversa encerrada por Fulano". Três estragos de uma vez: contradiz a
+    // INSTRUCAO_ATENDIMENTO (que proíbe mencionar o funil ao cliente), vaza
+    // nome de funcionário e nome de etapa para o modelo — que pode devolvê-los
+    // ao cliente final da agência — e ainda consome as 10 vagas do contexto,
+    // empurrando a conversa real para fora dele.
     const { data: rows } = await db
       .from("messages")
       .select("id, direction, type, body, media_path, media_mime, media_size, media_transcript, created_at")
       .eq("conversation_id", p.conversationId)
+      .neq("type", "event")
+      .eq("internal", false)
       .order("created_at", { ascending: false })
       .limit(10);
     const history: any[] = (rows ?? []).slice().reverse();
@@ -375,17 +406,20 @@ export async function maybeAutoReply(
     // `json: true` pede response_format json_object (INSTRUCAO_ATENDIMENTO
     // exige que a resposta venha como JSON com "resposta"/"dados"/
     // "etapa_sugerida"). `parseAtendimento` nunca lança; se o JSON vier
-    // quebrado, tenta mais UMA vez — se falhar de novo, sai em silêncio: o
-    // texto cru de um JSON malformado é chave-e-chave de campo, nunca fala de
+    // quebrado, tenta mais UMA vez (com o turno de correção CORRECAO_JSON) —
+    // se falhar de novo, o cliente recebe o TEXTO_FALLBACK, nunca o cru: o
+    // texto de um JSON malformado é chave-e-chave de campo, nunca fala de
     // atendente, e isso iria para o WhatsApp de um cliente final da agência.
-    async function chamarModelo(): Promise<
+    async function chamarModelo(
+      msgs: typeof messages,
+    ): Promise<
       | { text: string; usage: { promptTokens: number; completionTokens: number }; finishReason: string | null }
       | null
     > {
       try {
         // O modelo passa pela allowlist do servidor dentro de `chat` — o
         // valor de `ai_agents.model` é digitado pelo cliente em campo livre.
-        return await chat(messages, { model: agent.model, maxTokens: MAX_TOKENS_RESPOSTA, json: true });
+        return await chat(msgs, { model: agent.model, maxTokens: MAX_TOKENS_RESPOSTA, json: true });
       } catch (e) {
         // Separado por status HTTP: 429 (cota estourada) derruba TODAS as
         // empresas ao mesmo tempo, porque a chave é única e global; 401 é
@@ -397,7 +431,7 @@ export async function maybeAutoReply(
       }
     }
 
-    let result = await chamarModelo();
+    let result = await chamarModelo(messages);
     if (!result) return; // motivo já logado em `chamarModelo`
     // Soma o consumo das DUAS tentativas: `ai_logs` é a única contabilidade
     // de consumo por empresa, e uma rodada com parse falho gasta duas
@@ -407,19 +441,88 @@ export async function maybeAutoReply(
     let completionTokens = result.usage.completionTokens;
     let resposta = parseAtendimento(result.text ?? "");
     if (!resposta) {
-      result = await chamarModelo();
+      // Segunda (e única) tentativa: o mesmo prompt MAIS um turno curto de
+      // correção. Mandar `messages` idêntico fazia a falha determinística se
+      // repetir igual, cobrando duas chamadas pelo mesmo erro.
+      result = await chamarModelo([...messages, { role: "user" as const, content: CORRECAO_JSON }]);
       if (!result) return; // motivo já logado em `chamarModelo`
       promptTokens += result.usage.promptTokens;
       completionTokens += result.usage.completionTokens;
       resposta = parseAtendimento(result.text ?? "");
     }
+
+    // Grava o consumo em `ai_logs` — única contabilidade de consumo por
+    // empresa. Precisa rodar TAMBÉM nos caminhos de falha (JSON inválido,
+    // resposta truncada, envio falhou): são justamente as rodadas mais caras
+    // (duas chamadas), e eram as únicas que não deixavam linha nenhuma.
+    // `response` vai vazio nesses casos.
+    const lastUser = [...history].reverse().find((m: any) => m.direction === "in");
+    async function gravarLog(response: string): Promise<void> {
+      const { error: logErr } = await db.from("ai_logs").insert({
+        location_id: p.locationId,
+        feature: "whatsapp-auto",
+        model: modeloPermitido(agent.model),
+        prompt: String(lastUser?.body ?? "").slice(0, TETO_BODY_CARACTERES),
+        response,
+        // Soma das duas tentativas quando houve retry — ver comentário acima.
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        created_by: null,
+      });
+      // Falhar aqui em silêncio significa gasto real da chave global sem
+      // registro nenhum.
+      if (logErr) falha(p.locationId, "ai-log-nao-gravado", logErr);
+    }
+
+    /** Grava a saída enviada + atualiza a conversa (mesma forma do
+     * /api/whatsapp/send). Serve tanto para a resposta do modelo quanto para o
+     * TEXTO_FALLBACK: o fallback também precisa aparecer no histórico e contar
+     * no limite diário. */
+    async function gravarSaida(texto: string, waMessageId: string | null | undefined): Promise<void> {
+      const { data: msg, error: insErr } = await db
+        .from("messages")
+        .insert({
+          location_id: p.locationId,
+          conversation_id: p.conversationId,
+          direction: "out",
+          type: "text",
+          channel: "whatsapp",
+          body: texto,
+          channel_id: p.channelId,
+          wa_message_id: waMessageId,
+          status: "sent",
+        })
+        .select("created_at")
+        .single();
+      // A mensagem JÁ foi entregue ao cliente final neste ponto: falhar aqui
+      // significa resposta enviada e não registrada (o inbox some com ela e o
+      // limite diário não conta). É exatamente o tipo de coisa que sumia sem
+      // log nenhum.
+      if (insErr) falha(p.locationId, "saida-nao-gravada", insErr);
+      await db
+        .from("conversations")
+        .update({
+          last_message_at: msg?.created_at ?? new Date().toISOString(),
+          last_message_preview: texto,
+        })
+        .eq("id", p.conversationId);
+    }
+
     if (!resposta) {
       // `finish_reason === "length"` é o modelo cortado pelo teto de
       // tokens ANTES de fechar o objeto JSON — motivo distinto de JSON
       // malformado por outro motivo: um pede aumentar o teto, o outro pede
-      // investigar o prompt/modelo. Ambos terminam do mesmo jeito (silêncio,
-      // sem enviar o cru ao cliente), só o log muda.
-      return sair(p.locationId, result.finishReason === "length" ? "resposta-truncada" : "resposta-json-invalida");
+      // investigar o prompt/modelo. Só o log muda; nos dois o cliente recebe
+      // o fallback humano, nunca o JSON cru.
+      sair(p.locationId, result.finishReason === "length" ? "resposta-truncada" : "resposta-json-invalida");
+      const envioFallback = await enviarTexto(db, p.channelId, p.toPhone, TEXTO_FALLBACK);
+      if (envioFallback.ok) {
+        await gravarSaida(TEXTO_FALLBACK, envioFallback.waMessageId);
+      } else {
+        sair(p.locationId, `fallback-envio-falhou:${envioFallback.motivo}`);
+      }
+      await gravarLog("");
+      return;
     }
 
     // Só `resposta.resposta` vai para o cliente e para o que é gravado.
@@ -431,37 +534,14 @@ export async function maybeAutoReply(
     // envia pelo helper único (resolve provedor, checa connection_state e
     // busca o token da instância — ver src/lib/whatsapp/enviar.ts)
     const envio = await enviarTexto(db, p.channelId, p.toPhone, reply);
-    if (!envio.ok) return sair(p.locationId, `envio-falhou:${envio.motivo}`);
-    const waMessageId = envio.waMessageId;
+    if (!envio.ok) {
+      // O gasto já aconteceu mesmo sem entrega: registra antes de sair.
+      sair(p.locationId, `envio-falhou:${envio.motivo}`);
+      await gravarLog("");
+      return;
+    }
 
-    // grava a saída + atualiza a conversa (mesma forma do /api/whatsapp/send)
-    const { data: msg, error: insErr } = await db
-      .from("messages")
-      .insert({
-        location_id: p.locationId,
-        conversation_id: p.conversationId,
-        direction: "out",
-        type: "text",
-        channel: "whatsapp",
-        body: reply,
-        channel_id: p.channelId,
-        wa_message_id: waMessageId,
-        status: "sent",
-      })
-      .select("created_at")
-      .single();
-    // A mensagem JÁ foi entregue ao cliente final neste ponto: falhar aqui
-    // significa resposta enviada e não registrada (o inbox some com ela e o
-    // limite diário não conta). É exatamente o tipo de coisa que sumia sem
-    // log nenhum.
-    if (insErr) falha(p.locationId, "saida-nao-gravada", insErr);
-    await db
-      .from("conversations")
-      .update({
-        last_message_at: msg?.created_at ?? new Date().toISOString(),
-        last_message_preview: reply,
-      })
-      .eq("id", p.conversationId);
+    await gravarSaida(reply, envio.waMessageId);
 
     // Registra no funil DEPOIS de a resposta já ter sido enviada e gravada:
     // `registrarAtendimento` é best-effort e nunca lança, mas mesmo assim a
@@ -477,21 +557,7 @@ export async function maybeAutoReply(
     });
 
     // log (best-effort; created_by null = máquina)
-    const lastUser = [...history].reverse().find((m) => m.direction === "in");
-    const { error: logErr } = await db.from("ai_logs").insert({
-      location_id: p.locationId,
-      feature: "whatsapp-auto",
-      model: modeloPermitido(agent.model),
-      prompt: String(lastUser?.body ?? "").slice(0, TETO_BODY_CARACTERES),
-      response: reply,
-      // Soma das duas tentativas quando houve retry — ver comentário acima.
-      prompt_tokens: promptTokens,
-      completion_tokens: completionTokens,
-      created_by: null,
-    });
-    // O ai_logs é a única contabilidade de consumo por empresa: falhar aqui em
-    // silêncio significa gasto real da chave global sem registro nenhum.
-    if (logErr) falha(p.locationId, "ai-log-nao-gravado", logErr);
+    await gravarLog(reply);
   } catch (e) {
     // Best-effort absoluto: nunca propaga pro webhook. Mas nunca silencioso —
     // um throw inesperado aqui (createAdminClient, insert, storage) matava a
