@@ -108,6 +108,8 @@ export interface Conversation {
   closedBy?: string | null;
   archivedAt?: string | null;
   archivedBy?: string | null;
+  /** true = humano assumiu e a IA parou de responder (migração 0032). Só volta a false via `despausarBot`. */
+  botPaused?: boolean;
 }
 
 /** Abas de filtro da caixa de entrada. */

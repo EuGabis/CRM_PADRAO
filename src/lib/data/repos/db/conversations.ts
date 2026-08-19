@@ -47,6 +47,7 @@ const mapConversation = (r: any): Conversation => ({
   closedBy: r.closed_by ?? null,
   archivedAt: r.archived_at ?? null,
   archivedBy: r.archived_by ?? null,
+  botPaused: !!r.bot_paused,
 });
 
 const mapMessage = (r: any): Message => ({
@@ -552,6 +553,29 @@ export const conversationActions = {
       ),
     });
     return true;
+  },
+
+  /**
+   * Religa a IA numa conversa que foi pausada quando um humano respondeu.
+   * Sem isso a pausa é permanente: `bot_paused` só era escrito como true, em
+   * `api/whatsapp/send/route.ts`, e nunca voltava.
+   */
+  async despausarBot(conversationId: string): Promise<{ ok: boolean; error?: string }> {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("conversations")
+      .update({ bot_paused: false })
+      .eq("id", conversationId)
+      .select()
+      .single();
+    if (error || !data) return { ok: false, error: error?.message ?? "Não foi possível reativar a IA" };
+    const s = useConvStore.getState();
+    s.patch({
+      conversations: s.conversations.map((c) =>
+        c.id === conversationId ? mapConversation(data) : c
+      ),
+    });
+    return { ok: true };
   },
 
   /** Exclui a conversa e todas as mensagens dela. */

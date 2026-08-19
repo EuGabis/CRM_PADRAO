@@ -46,6 +46,12 @@ export function ConversationAiTab() {
     () => agents.find((a) => a.id === selectedId) ?? agents[0] ?? null,
     [agents, selectedId],
   );
+  // auto-reply.ts só responde pelo agente principal E ativo — se houver ativo
+  // sem nenhum marcado como principal, a auto-resposta simplesmente não dispara.
+  const semPrincipalAtivo = useMemo(
+    () => agents.some((a) => a.status === "ativo") && !agents.some((a) => a.isPrimary),
+    [agents],
+  );
 
   // form
   const [personality, setPersonality] = useState("");
@@ -138,6 +144,13 @@ export function ConversationAiTab() {
   return (
     <>
       <h1 className="mb-4 text-lg font-bold text-slate-900">Agentes de Conversation AI</h1>
+      {semPrincipalAtivo && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
+          <strong className="font-bold">Nenhum agente está respondendo automaticamente.</strong>{" "}
+          Existe um agente ativo, mas nenhum foi marcado como principal — a auto-resposta só
+          dispara para o agente principal e ativo. Marque um como principal na lista abaixo.
+        </div>
+      )}
       <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
         <div className="space-y-4">
           {/* Lista */}

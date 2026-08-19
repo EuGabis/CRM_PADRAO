@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Archive,
+  Bot,
   CalendarDays,
   Check,
   CheckCheck,
@@ -473,6 +474,24 @@ export function Thread({
           <SlaBadge days={conversation.slaDays} />
         </div>
         <div className="flex items-center gap-1.5">
+          {conversation.botPaused && (
+            <button
+              onClick={async () => {
+                const res = await conversationActions.despausarBot(conversation.id);
+                if (!res.ok) {
+                  toast.error(res.error ?? "Não foi possível reativar a IA");
+                  return;
+                }
+                toast.success("IA reativada nesta conversa");
+              }}
+              title="Um humano respondeu e a IA parou de responder automaticamente nesta conversa"
+              className="flex h-8 items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 text-xs font-medium text-amber-700 hover:bg-amber-100"
+            >
+              <Bot className="size-3.5" />
+              IA pausada
+              <span className="ml-1 font-semibold text-indigo-600">Reativar IA</span>
+            </button>
+          )}
           <AssignPicker conversation={conversation} />
           <button
             onClick={async () => {
