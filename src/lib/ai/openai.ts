@@ -16,8 +16,17 @@ function apiKey(): string {
   return k;
 }
 
+type ParteConteudo =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+type MensagemChat = {
+  role: "system" | "user" | "assistant";
+  content: string | ParteConteudo[];
+};
+
 export async function chat(
-  messages: { role: "system" | "user" | "assistant"; content: string }[],
+  messages: MensagemChat[],
   opts?: { model?: string; temperature?: number },
 ): Promise<{ text: string; usage: { promptTokens: number; completionTokens: number } }> {
   const res = await fetch(OPENAI_URL, {
