@@ -452,11 +452,17 @@ async function handleMessage(db: any, channel: any, item: any) {
     return;
   }
 
-  // Auto-responder: só para mensagens de texto de verdade, best-effort. Mídia
-  // (inclusive rótulo de falha de mídia) fica para as Tasks 5/6 (transcrição
-  // e visão). E nunca aciona a IA quando `fromMe` veio ausente — ver
-  // comentário acima, é a proteção contra loop na chave global.
-  if (ehTextoReal && body && !fromMeIndefinido) {
+  // Auto-responder: texto de verdade OU mídia gravada com sucesso
+  // (media_path preenchido — áudio/imagem/vídeo/documento, Tasks 5/6). Mídia
+  // cuja gravação FALHOU já foi reescrita para type="text" com um rótulo de
+  // erro (`[imagem não disponível]`) pelo bloco acima e cai fora daqui: essa
+  // é justamente a razão de existir `ehTextoReal` — sem essa flag, o rótulo
+  // de falha seria tratado como fala do cliente e a IA responderia a ele,
+  // gastando OPENAI_API_KEY e a chave global do gateway à toa. E nunca aciona
+  // a IA quando `fromMe` veio ausente — ver comentário acima, é a proteção
+  // contra loop na chave global.
+  const ehMidiaGravada = msgType !== "text" && !!media.media_path;
+  if ((ehMidiaGravada || (ehTextoReal && !!body)) && !fromMeIndefinido) {
     await maybeAutoReply(db, {
       locationId: channel.location_id,
       conversationId: conv.id,

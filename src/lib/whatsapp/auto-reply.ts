@@ -16,6 +16,28 @@ const TETO_AUDIO_SEGUNDOS = 5 * 60;
 const TETO_AUDIO_BYTES = 20 * 1024 * 1024;
 const AUDIO_NAO_INTERPRETADO = "[áudio recebido, não foi possível transcrever]";
 
+/** Duração da URL assinada da imagem enviada à OpenAI: só o tempo de uma
+ * chamada de chat, para reduzir a janela de exposição do bucket privado. */
+const URL_IMAGEM_TTL_SEGUNDOS = 120;
+const IMAGEM_NAO_INTERPRETADA = "[imagem recebida, não foi possível processar]";
+const VIDEO_RECEBIDO = "[vídeo recebido]";
+const DOCUMENTO_RECEBIDO = "[documento recebido]";
+
+/**
+ * Trava de imagem: acrescentada ao FIM do `system` (depois da personalidade,
+ * objetivo e informações que o cliente configura), nunca antes — uma
+ * personalidade mais assertiva escrita pelo cliente poderia atropelar uma
+ * instrução que viesse primeiro. Sem isso, o caso clássico e caro: cliente
+ * manda comprovante de PIX, a IA "lê" a imagem e responde "pagamento
+ * confirmado" sem ter consultado nada — o erro cai no cliente do dono da
+ * plataforma. Texto verbatim do brief da Task 6, não alterar.
+ */
+const TRAVA_IMAGEM =
+  "Você NUNCA confirma pagamento, valor, comprovante, documento ou identidade " +
+  "a partir de uma imagem. Se a imagem parecer comprovante, boleto, nota, " +
+  "documento ou algo que peça confirmação de valor, responda que um atendente " +
+  "humano vai conferir e não afirme nada sobre o conteúdo.";
+
 /**
  * Registra o motivo de cada saída da auto-resposta. Este é o caminho mais
  * caro do produto (gasta OPENAI_API_KEY e a credencial global do provedor a
@@ -109,12 +131,17 @@ export async function maybeAutoReply(
       .limit(10);
     const history: any[] = (rows ?? []).slice().reverse();
 
-    // Áudio de entrada: transcreve só agora, DEPOIS de todas as guardas acima
+    // Mídia de entrada: processada só agora, DEPOIS de todas as guardas acima
     // (chave, módulo, suspensão, bot_paused, agente, limite diário) — nesta
-    // ordem porque é aqui que se gasta Whisper, crédito global do dono da
-    // plataforma. A mensagem mais recente do histórico é a que disparou esta
-    // chamada.
+    // ordem porque é aqui que se gasta Whisper/Vision, crédito global do dono
+    // da plataforma. A mensagem mais recente do histórico é a que disparou
+    // esta chamada.
     const incoming = history[history.length - 1];
+    // URL assinada de curta duração da imagem de entrada, quando houver —
+    // NUNCA logar. Presença dela é o sinal de "há imagem nesta rodada", usado
+    // abaixo para acrescentar a TRAVA_IMAGEM ao fim do system e montar o
+    // conteúdo multimodal da mensagem do usuário.
+    let imagemUrlAssinada: string | undefined;
     if (incoming && incoming.direction === "in" && incoming.type === "audio") {
       if (incoming.media_transcript) {
         // Reentrega do gateway: já transcrita, não paga o Whisper de novo.
@@ -164,6 +191,37 @@ export async function maybeAutoReply(
           }
         }
       }
+    } else if (incoming && incoming.direction === "in" && incoming.type === "image") {
+      // Imagem de entrada: nenhum byte passa pela nossa função — geramos uma
+      // URL assinada de curta duração (120s) do bucket privado e mandamos só
+      // a URL pra OpenAI enxergar. Mídia sem media_path é mídia que falhou no
+      // webhook (já teria virado type="text" com rótulo lá, mas a checagem
+      // aqui é defensiva, não confia só nisso).
+      if (!incoming.media_path) {
+        incoming.body = incoming.body || IMAGEM_NAO_INTERPRETADA;
+      } else {
+        try {
+          const { data: signed, error: signErr } = await db.storage
+            .from("conversation-media")
+            .createSignedUrl(incoming.media_path, URL_IMAGEM_TTL_SEGUNDOS);
+          if (signErr || !signed?.signedUrl) throw signErr || new Error("sem signed url");
+          imagemUrlAssinada = signed.signedUrl;
+        } catch {
+          // Nunca logar a URL nem o erro do storage (pode ecoar caminho/token).
+          sair(p.locationId, "imagem-sem-url-assinada");
+          incoming.body = IMAGEM_NAO_INTERPRETADA;
+        }
+      }
+    } else if (
+      incoming &&
+      incoming.direction === "in" &&
+      (incoming.type === "video" || incoming.type === "file")
+    ) {
+      // Vídeo e documento NÃO são interpretados: a IA só reconhece o
+      // recebimento (o texto de fato vem do modelo, guiado por este rótulo) e
+      // o bot NÃO pausa — pausar deixaria a conversa muda pra sempre depois
+      // de um único anexo, hoje não existe como despausar.
+      incoming.body = incoming.type === "video" ? VIDEO_RECEBIDO : DOCUMENTO_RECEBIDO;
     }
 
     const parts = [
@@ -171,14 +229,33 @@ export async function maybeAutoReply(
       agent.goal ? `Objetivo: ${agent.goal}` : "",
       agent.extra_info ? `Informações: ${agent.extra_info}` : "",
     ].filter((s: string) => s && s.trim());
-    const system = parts.join("\n\n") || "Você é um assistente prestativo.";
+    let system = parts.join("\n\n") || "Você é um assistente prestativo.";
+    // A trava é acrescentada DEPOIS do texto do agente (personalidade,
+    // objetivo, informações — tudo configurado pelo cliente), nunca antes:
+    // uma personalidade mais assertiva escrita pelo cliente poderia atropelar
+    // uma instrução que viesse primeiro. Só entra quando há imagem nesta
+    // rodada.
+    if (imagemUrlAssinada) {
+      system = `${system}\n\n${TRAVA_IMAGEM}`;
+    }
 
-    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+    type ParteConteudo =
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string } };
+
+    const messages: { role: "system" | "user" | "assistant"; content: string | ParteConteudo[] }[] = [
       { role: "system", content: system },
-      ...history.map((m) => ({
-        role: m.direction === "out" ? ("assistant" as const) : ("user" as const),
-        content: String(m.body ?? ""),
-      })),
+      ...history.map((m) => {
+        const role = m.direction === "out" ? ("assistant" as const) : ("user" as const);
+        if (m === incoming && imagemUrlAssinada) {
+          const legenda = String(m.body ?? "").trim();
+          const partes: ParteConteudo[] = [];
+          if (legenda) partes.push({ type: "text", text: legenda });
+          partes.push({ type: "image_url", image_url: { url: imagemUrlAssinada } });
+          return { role, content: partes };
+        }
+        return { role, content: String(m.body ?? "") };
+      }),
     ];
 
     let result;
