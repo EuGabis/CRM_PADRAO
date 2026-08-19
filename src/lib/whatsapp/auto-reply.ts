@@ -1,5 +1,7 @@
 import { chat, modeloPermitido } from "@/lib/ai/openai";
+import { INSTRUCAO_ATENDIMENTO, parseAtendimento } from "@/lib/ai/atendimento";
 import { transcreverAudio } from "@/lib/ai/transcrever";
+import { registrarAtendimento } from "@/lib/crm/oportunidade-ia";
 import { assertModuleEnabled } from "@/lib/plan/guard";
 import { isLocationSuspended } from "@/lib/plan/suspensao";
 import { enviarTexto } from "@/lib/whatsapp/enviar";
@@ -105,6 +107,7 @@ export async function maybeAutoReply(
   p: {
     locationId: string;
     conversationId: string;
+    contactId: string;
     channelId: string;
     toPhone: string;
     dailyLimit: number;
@@ -311,6 +314,11 @@ export async function maybeAutoReply(
       agent.extra_info ? `Informações: ${agent.extra_info}` : "",
     ].filter((s: string) => s && s.trim());
     let system = parts.join("\n\n") || "Você é um assistente prestativo.";
+    // INSTRUCAO_ATENDIMENTO entra DEPOIS do texto do agente e ANTES da
+    // TRAVA_IMAGEM (que continua sendo a última, sempre): mesmo princípio dos
+    // dois — o cliente define a personalidade, mas nem o formato de resposta
+    // nem a trava de imagem podem ser atropelados por ela.
+    system = `${system}\n\n${INSTRUCAO_ATENDIMENTO}`;
     // A trava é acrescentada DEPOIS do texto do agente (personalidade,
     // objetivo, informações — tudo configurado pelo cliente), nunca antes:
     // uma personalidade mais assertiva escrita pelo cliente poderia atropelar
@@ -353,23 +361,44 @@ export async function maybeAutoReply(
       }),
     ];
 
-    let result;
-    try {
-      // O modelo passa pela allowlist do servidor dentro de `chat` — o valor
-      // de `ai_agents.model` é digitado pelo cliente em campo livre.
-      result = await chat(messages, { model: agent.model, maxTokens: MAX_TOKENS_RESPOSTA });
-    } catch (e) {
-      // Separado por status HTTP: 429 (cota estourada) derruba TODAS as
-      // empresas ao mesmo tempo, porque a chave é única e global; 401 é chave
-      // inválida; 400 costuma ser modelo/payload. Só o status vai pro log —
-      // nunca o corpo da resposta, que pode ecoar trecho do prompt.
-      const status = (e as any)?.status;
-      return sair(
-        p.locationId,
-        typeof status === "number" ? `openai-falhou:http-${status}` : "openai-falhou",
-      );
+    // `json: true` pede response_format json_object (INSTRUCAO_ATENDIMENTO
+    // exige que a resposta venha como JSON com "resposta"/"dados"/
+    // "etapa_sugerida"). `parseAtendimento` nunca lança; se o JSON vier
+    // quebrado, tenta mais UMA vez — se falhar de novo, sai em silêncio: o
+    // texto cru de um JSON malformado é chave-e-chave de campo, nunca fala de
+    // atendente, e isso iria para o WhatsApp de um cliente final da agência.
+    async function chamarModelo(): Promise<
+      { text: string; usage: { promptTokens: number; completionTokens: number } } | null
+    > {
+      try {
+        // O modelo passa pela allowlist do servidor dentro de `chat` — o
+        // valor de `ai_agents.model` é digitado pelo cliente em campo livre.
+        return await chat(messages, { model: agent.model, maxTokens: MAX_TOKENS_RESPOSTA, json: true });
+      } catch (e) {
+        // Separado por status HTTP: 429 (cota estourada) derruba TODAS as
+        // empresas ao mesmo tempo, porque a chave é única e global; 401 é
+        // chave inválida; 400 costuma ser modelo/payload. Só o status vai pro
+        // log — nunca o corpo da resposta, que pode ecoar trecho do prompt.
+        const status = (e as any)?.status;
+        sair(p.locationId, typeof status === "number" ? `openai-falhou:http-${status}` : "openai-falhou");
+        return null;
+      }
     }
-    const reply = (result.text ?? "").trim();
+
+    let result = await chamarModelo();
+    if (!result) return; // motivo já logado em `chamarModelo`
+    let resposta = parseAtendimento(result.text ?? "");
+    if (!resposta) {
+      result = await chamarModelo();
+      if (!result) return; // motivo já logado em `chamarModelo`
+      resposta = parseAtendimento(result.text ?? "");
+    }
+    if (!resposta) return sair(p.locationId, "resposta-json-invalida");
+
+    // Só `resposta.resposta` vai para o cliente e para o que é gravado.
+    // `dados` e `etapaSugerida` nunca aparecem na mensagem — eles só entram
+    // depois, via `registrarAtendimento`, no envio.
+    const reply = resposta.resposta;
     if (!reply) return sair(p.locationId, "resposta-vazia");
 
     // envia pelo helper único (resolve provedor, checa connection_state e
@@ -406,6 +435,19 @@ export async function maybeAutoReply(
         last_message_preview: reply,
       })
       .eq("id", p.conversationId);
+
+    // Registra no funil DEPOIS de a resposta já ter sido enviada e gravada:
+    // `registrarAtendimento` é best-effort e nunca lança, mas mesmo assim a
+    // ordem importa — o cliente já foi atendido antes de qualquer chance de
+    // falha aqui. O contrário (deixar o cliente sem resposta porque um insert
+    // do funil falhou) é pior para quem está do outro lado.
+    await registrarAtendimento(db, {
+      locationId: p.locationId,
+      conversationId: p.conversationId,
+      contactId: p.contactId,
+      dados: resposta.dados,
+      etapaSugerida: resposta.etapaSugerida,
+    });
 
     // log (best-effort; created_by null = máquina)
     const lastUser = [...history].reverse().find((m) => m.direction === "in");

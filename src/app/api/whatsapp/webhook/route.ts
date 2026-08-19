@@ -238,6 +238,7 @@ async function handleIncoming(db: any, channel: any, value: any, m: any) {
     await maybeAutoReply(db, {
       locationId: channel.location_id,
       conversationId: conv.id,
+      contactId: contact.id,
       channelId: channel.id,
       toPhone: phone,
       dailyLimit: channel.daily_limit ?? 1000,
