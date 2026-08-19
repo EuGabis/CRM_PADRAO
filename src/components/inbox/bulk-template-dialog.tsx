@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,7 +57,11 @@ export function BulkTemplateDialog({
   targets: BulkTarget[];
   onDone?: () => void;
 }) {
-  const { channels } = useWhatsappChannels();
+  const { channels: allChannels } = useWhatsappChannels();
+  // Template é conceito da Meta (WABA) — canal Evolution não tem, então nem
+  // entra na lista de "de onde vêm os templates". Selecione o array cru do
+  // Zustand e derive com useMemo (nunca .filter dentro do selector).
+  const channels = useMemo(() => allChannels.filter((c) => c.provider !== "evolution"), [allChannels]);
   const [channelId, setChannelId] = useState("");
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(false);
@@ -65,8 +69,9 @@ export function BulkTemplateDialog({
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState(0);
 
-  const eligible = targets.filter((t) => !!t.channelId);
-  const skipped = targets.filter((t) => !t.channelId);
+  const metaChannelIds = useMemo(() => new Set(channels.map((c) => c.id)), [channels]);
+  const eligible = targets.filter((t) => !!t.channelId && metaChannelIds.has(t.channelId));
+  const skipped = targets.filter((t) => !t.channelId || !metaChannelIds.has(t.channelId));
 
   // Canal padrão: o da primeira conversa selecionada — é a lista de templates
   // que quase sempre interessa.
@@ -146,7 +151,8 @@ export function BulkTemplateDialog({
           {skipped.length > 0 && (
             <p className="rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-700">
               {skipped.length} conversa{skipped.length > 1 ? "s" : ""} fora do envio: sem canal de
-              WhatsApp conectado ({skipped.slice(0, 3).map((s) => s.contactName).join(", ")}
+              WhatsApp conectado, ou canal WhatsApp não oficial (Evolution — não tem template)
+              ({skipped.slice(0, 3).map((s) => s.contactName).join(", ")}
               {skipped.length > 3 ? "…" : ""}).
             </p>
           )}

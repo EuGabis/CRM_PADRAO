@@ -240,6 +240,56 @@ Mensagem com mídia que falha (limite estourado, download ou upload com erro)
 e sem as colunas de mídia — perder a mensagem do cliente é pior que mostrá-la
 incompleta. O webhook sempre responde 200, mesmo nesses casos.
 
+**Envio de texto (`src/lib/whatsapp/enviar.ts`):** todo envio de texto do CRM
+— agendadas (`src/lib/messages/scheduled.ts`) e auto-resposta
+(`src/lib/whatsapp/auto-reply.ts`) — passa por `enviarTexto`, o helper único
+que bifurca Meta/Evolution por `channel.provider`. É a única forma de garantir
+que os dois caminhos não divirjam na próxima regra nova.
+
+**Auto-resposta funciona nos dois provedores.** `maybeAutoReply` não sabe (nem
+precisa saber) qual é o provedor do canal — quem decide isso é o `enviarTexto`
+que ela chama no fim. O que muda entre Meta e Evolution acontece só na entrega
+do texto, não na geração da resposta.
+
+A ordem das guardas em `maybeAutoReply` (chave OpenAI → módulo do plano →
+empresa suspensa → `bot_paused` → agente ativo → limite diário) **é proteção
+de custo, não estética**: cada guarda está antes do ponto em que a chamada
+gastaria `OPENAI_API_KEY` ou a credencial global do provedor de WhatsApp — a
+mais barata de checar vem primeiro, a mídia (que é o que de fato paga
+Whisper/Vision) só é processada depois de todas elas passarem. Adicionar uma
+guarda nova: decida a posição pelo custo que ela evita, não pelo fim da lista.
+
+**Tetos de áudio:** 5 minutos (`TETO_AUDIO_SEGUNDOS`) e 20 MB
+(`TETO_AUDIO_BYTES`) em `auto-reply.ts`. Acima de qualquer um dos dois, a
+função nem baixa o arquivo — o download já é o gasto que se quer evitar,
+checar o teto depois de baixar não adianta nada. Sem teto, um áudio longo de
+um cliente final vira custo aberto (Whisper) na conta do dono da plataforma.
+
+**Trava da imagem** (`TRAVA_IMAGEM`, texto verbatim da Task 6, não alterar) é
+acrescentada ao **fim** do `system`, depois da personalidade/objetivo/
+informações que o cliente configura para o agente — nunca antes. É nessa
+ordem porque uma personalidade mais assertiva escrita pelo cliente poderia
+atropelar uma instrução que viesse primeiro. Sem a trava no fim, o caso
+clássico e caro: cliente manda comprovante de PIX, a IA "lê" a imagem e
+responde "pagamento confirmado" sem checar nada — o erro cai no cliente do
+dono da plataforma.
+
+**Vídeo e documento não são interpretados** pela IA: o agente só reconhece o
+recebimento (`[vídeo recebido]` / `[documento recebido]`) e o bot **não
+pausa** — pausar deixaria a conversa muda para sempre depois de um único
+anexo, hoje não existe como despausar.
+
+**Janela de 24h e templates são só do canal Meta.** São regras da Cloud API
+oficial (número verificado, WABA) — canal Evolution não tem número verificado
+nem templates aprovados, então nem a checagem de janela nem a opção de
+template se aplicam a ele. `dispatchScheduledMessages` só aplica a janela
+quando `channel.provider !== "evolution"`; o composer e o disparo em lote
+escondem o atalho de template quando o canal da conversa é Evolution, em vez
+de deixar montar um template que o gateway devolveria como "Mensagem vazia".
+O **limite diário** do canal, ao contrário, vale nos dois provedores — é regra
+de produto (proteger o cliente de mandar demais num dia), não regra de
+provedor.
+
 ## Armadilhas verificadas neste código
 
 1. **Base UI ≠ Radix.** `PopoverTrigger`/`DropdownMenuTrigger`/`TooltipTrigger`

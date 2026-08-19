@@ -12,7 +12,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { assertModuleEnabled } from "@/lib/plan/guard";
 import { suspendedLocationIds } from "@/lib/plan/suspensao";
-import { sendText } from "@/lib/whatsapp/client";
+import { enviarTexto } from "@/lib/whatsapp/enviar";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -117,8 +117,9 @@ export async function dispatchScheduledMessages(): Promise<ScheduledResult> {
 type Delivery = { ok: true; waMessageId?: string | null } | { ok: false; error: string };
 
 /**
- * Entrega de fato. WhatsApp sai pela Cloud API; comentário interno não sai da
- * caixa; os demais canais ainda não têm integração de envio — nesses a
+ * Entrega de fato. WhatsApp sai pelo helper único `enviarTexto` (bifurca Meta
+ * Cloud API / Evolution por `channel.provider`); comentário interno não sai
+ * da caixa; os demais canais ainda não têm integração de envio — nesses a
  * "entrega" é publicar na conversa, que é exatamente o que o composer faz hoje.
  */
 async function deliver(db: any, msg: any): Promise<Delivery> {
@@ -144,7 +145,7 @@ async function deliver(db: any, msg: any): Promise<Delivery> {
 
   const { data: channel } = await db
     .from("whatsapp_channels")
-    .select("id, phone_number_id, active, daily_limit")
+    .select("id, phone_number_id, active, daily_limit, provider")
     .eq("id", conv.channel_id)
     .maybeSingle();
   if (!channel || !channel.active) {
@@ -172,28 +173,50 @@ async function deliver(db: any, msg: any): Promise<Delivery> {
     return { ok: false, error: "Limite diário do canal atingido" };
   }
 
-  // Janela de 24h da Meta: fora dela, texto livre é recusado e só template
-  // passa — e template agendado é escolha do usuário, não nossa.
-  const { data: lastIn } = await db
-    .from("messages")
-    .select("created_at")
-    .eq("conversation_id", msg.conversation_id)
-    .eq("direction", "in")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const within24h = !!lastIn && Date.now() - new Date(lastIn.created_at).getTime() < DAY_MS;
-  if (!within24h) {
-    return {
-      ok: false,
-      error: "Janela de 24h do WhatsApp fechada na hora do disparo — reenvie por template",
-    };
+  // Janela de 24h é regra da Cloud API oficial da Meta — fora dela, texto
+  // livre é recusado e só template passa. Canal Evolution não tem WABA, não
+  // tem template e não tem essa janela: aplicar a checagem lá recusaria todo
+  // agendamento com um erro sobre uma regra que não existe naquele provedor.
+  if (channel.provider !== "evolution") {
+    const { data: lastIn } = await db
+      .from("messages")
+      .select("created_at")
+      .eq("conversation_id", msg.conversation_id)
+      .eq("direction", "in")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const within24h = !!lastIn && Date.now() - new Date(lastIn.created_at).getTime() < DAY_MS;
+    if (!within24h) {
+      return {
+        ok: false,
+        error: "Janela de 24h do WhatsApp fechada na hora do disparo — reenvie por template",
+      };
+    }
   }
 
-  try {
-    const resp = await sendText(channel.phone_number_id, to, msg.body);
-    return { ok: true, waMessageId: resp?.messages?.[0]?.id ?? null };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Falha na Cloud API" };
+  const resultado = await enviarTexto(db, channel.id, to, msg.body);
+  if (resultado.ok) {
+    return { ok: true, waMessageId: resultado.waMessageId };
+  }
+  return { ok: false, error: motivoParaMensagem(resultado.motivo) };
+}
+
+/** Traduz o código de `motivo` do helper para o texto que o usuário vê na
+ * conversa (coluna `schedule_error`) — o código em si não diz o que fazer. */
+function motivoParaMensagem(motivo: string): string {
+  switch (motivo) {
+    case "canal-nao-encontrado":
+      return "Canal de WhatsApp não encontrado";
+    case "canal-inativo":
+      return "Canal de WhatsApp inativo";
+    case "desconectado":
+      return "WhatsApp desconectado na hora do disparo — reconecte o canal";
+    case "sem-instancia":
+      return "Canal de WhatsApp mal configurado — reconecte o canal";
+    case "falha-envio":
+      return "Falha ao enviar pelo WhatsApp";
+    default:
+      return "Falha ao enviar pelo WhatsApp";
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Clock,
   DollarSign,
@@ -36,7 +36,7 @@ import {
 import { ScheduleDialog } from "./schedule-dialog";
 import { channelLabel } from "@/components/shared/channel-icon";
 import { conversationActions, useConversation, useSnippets } from "@/lib/data/repos/db/conversations";
-import { whatsappActions } from "@/lib/data/repos/db/whatsapp";
+import { useWhatsappChannels, whatsappActions } from "@/lib/data/repos/db/whatsapp";
 import { TemplatePicker } from "@/components/whatsapp/template-picker";
 import { dbContactActions } from "@/lib/data/repos/db/contacts";
 import { Label } from "@/components/ui/label";
@@ -88,8 +88,16 @@ export function Composer({ conversationId }: { conversationId: string }) {
   const cancelRef = useRef(false);
   const snippets = useSnippets();
   const conversation = useConversation(conversationId);
+  const { channels } = useWhatsappChannels();
   const contactId = conversation?.contactId ?? null;
   const isWhatsapp = conversation?.channel === "whatsapp" && !!conversation?.channelId;
+  // Template é conceito da Meta (WABA) — canal Evolution não tem. Selecione o
+  // array cru do Zustand e derive com useMemo (nunca .find dentro do selector).
+  const channelProvider = useMemo(
+    () => channels.find((c) => c.id === conversation?.channelId)?.provider ?? "meta",
+    [channels, conversation?.channelId]
+  );
+  const canUseTemplate = isWhatsapp && channelProvider !== "evolution";
 
   const fmtSecs = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
@@ -507,32 +515,36 @@ export function Composer({ conversationId }: { conversationId: string }) {
           {/* Template aprovado — atalho direto. Antes o seletor só abria
               sozinho quando a janela de 24h já tinha fechado (erro 409 do
               envio); mandar template por escolha, dentro da janela, não tinha
-              caminho nenhum. */}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  onClick={() => {
-                    if (!isWhatsapp) {
-                      toast.info(
-                        "Templates são do WhatsApp — esta conversa não está num canal conectado."
-                      );
-                      return;
-                    }
-                    setTemplateForced(false);
-                    setTemplateOpen(true);
-                  }}
-                  className={cn(
-                    "flex size-7 items-center justify-center rounded-md hover:bg-slate-100 hover:text-slate-600",
-                    isWhatsapp ? "text-slate-400" : "text-slate-300"
-                  )}
-                />
-              }
-            >
-              <LayoutTemplate className="size-4" />
-            </TooltipTrigger>
-            <TooltipContent className="text-[10px]">Enviar template</TooltipContent>
-          </Tooltip>
+              caminho nenhum. Template é conceito da Meta (WABA) — em canal
+              Evolution não existe, e a opção some em vez de deixar montar um
+              template que volta com "Mensagem vazia". */}
+          {channelProvider !== "evolution" && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    onClick={() => {
+                      if (!isWhatsapp) {
+                        toast.info(
+                          "Templates são do WhatsApp — esta conversa não está num canal conectado."
+                        );
+                        return;
+                      }
+                      setTemplateForced(false);
+                      setTemplateOpen(true);
+                    }}
+                    className={cn(
+                      "flex size-7 items-center justify-center rounded-md hover:bg-slate-100 hover:text-slate-600",
+                      isWhatsapp ? "text-slate-400" : "text-slate-300"
+                    )}
+                  />
+                }
+              >
+                <LayoutTemplate className="size-4" />
+              </TooltipTrigger>
+              <TooltipContent className="text-[10px]">Enviar template</TooltipContent>
+            </Tooltip>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
