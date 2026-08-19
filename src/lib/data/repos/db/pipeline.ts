@@ -122,10 +122,68 @@ export function useDbPipeline(id: string): Pipeline | null {
   return pipelines[0] ?? null;
 }
 
+/**
+ * Registra na conversa do contato que o card foi movido a mão — a contraparte
+ * humana do evento que `registrarAtendimento` (oportunidade-ia.ts) grava para
+ * a IA. Mesmo formato de insert (`direction: "out"`, `type: "event"`); aqui a
+ * query roda com a sessão do usuário (RLS), não service role.
+ *
+ * Se o contato não tem conversa nenhuma, não registra — e não cria: um
+ * arrastar de card não pode encher a inbox de conversas vazias. Best-effort,
+ * nunca lança: falha ao registrar o evento não pode impedir a movimentação,
+ * que já aconteceu.
+ */
+async function registrarEventoMovimentacao(
+  supabase: ReturnType<typeof createClient>,
+  contactId: string,
+  origem: string,
+  destino: string
+): Promise<void> {
+  const location = loc();
+  if (!location) return;
+  try {
+    const { data: conversa } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("contact_id", contactId)
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+    if (!conversa) return; // sem conversa ligada — não cria uma só para o evento
+
+    let nome: string | null = null;
+    const { data: auth } = await supabase.auth.getUser();
+    if (auth.user?.id) {
+      const { data: perfil } = await supabase
+        .from("profiles")
+        .select("name")
+        .eq("id", auth.user.id)
+        .maybeSingle();
+      nome = perfil?.name ?? null;
+    }
+    const body = nome
+      ? `Oportunidade movida de ${origem} → ${destino} por ${nome}`
+      : `Oportunidade movida de ${origem} → ${destino}`;
+    await supabase.from("messages").insert({
+      location_id: location,
+      conversation_id: conversa.id,
+      direction: "out",
+      type: "event",
+      channel: "whatsapp",
+      body,
+    });
+  } catch {
+    // best-effort — nunca deve derrubar o fluxo de movimentação
+  }
+}
+
 export const oppActions = {
   async move(id: string, stageId: string): Promise<boolean> {
     const s = state();
-    const stage = s.pipelines.flatMap((p) => p.stages).find((st) => st.id === stageId);
+    const opp = s.opportunities.find((o) => o.id === id);
+    const allStages = s.pipelines.flatMap((p) => p.stages);
+    const origem = allStages.find((st) => st.id === opp?.stageId);
+    const stage = allStages.find((st) => st.id === stageId);
     const status = statusForStage(stage);
     const supabase = createClient();
     const { error } = await supabase
@@ -136,6 +194,9 @@ export const oppActions = {
     s.patch({
       opportunities: s.opportunities.map((o) => (o.id === id ? { ...o, stageId, status } : o)),
     });
+    if (opp && origem && stage && origem.id !== stage.id) {
+      void registrarEventoMovimentacao(supabase, opp.contactId, origem.name, stage.name);
+    }
     return true;
   },
 

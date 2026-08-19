@@ -293,6 +293,45 @@ export function useAutomatedConversationIds() {
 
 const loc = () => useDbStore.getState().locationId;
 
+/**
+ * Registra na conversa quem encerrou o atendimento — a contraparte humana
+ * do evento que `registrarAtendimento` (oportunidade-ia.ts) grava para a IA.
+ * Mesmo formato de insert (`direction: "out"`, `type: "event"`): ver o
+ * comentário lá para o porquê do `direction`. Aqui a query roda com a sessão
+ * do usuário (RLS), não service role — best-effort, nunca lança: falha ao
+ * registrar o evento não pode impedir o encerramento, que já aconteceu.
+ */
+async function registrarEventoEncerramento(
+  supabase: ReturnType<typeof createClient>,
+  conversationId: string,
+  userId: string | null
+): Promise<void> {
+  const location = loc();
+  if (!location) return;
+  try {
+    let nome: string | null = null;
+    if (userId) {
+      const { data: perfil } = await supabase
+        .from("profiles")
+        .select("name")
+        .eq("id", userId)
+        .maybeSingle();
+      nome = perfil?.name ?? null;
+    }
+    const body = nome ? `Conversa encerrada por ${nome}` : "Conversa encerrada";
+    await supabase.from("messages").insert({
+      location_id: location,
+      conversation_id: conversationId,
+      direction: "out",
+      type: "event",
+      channel: "whatsapp",
+      body,
+    });
+  } catch {
+    // best-effort — nunca deve derrubar o fluxo de encerramento
+  }
+}
+
 export const conversationActions = {
   async send(
     conversationId: string,
@@ -529,6 +568,9 @@ export const conversationActions = {
         c.id === conversationId ? mapConversation(data) : c
       ),
     });
+    if (done) {
+      void registrarEventoEncerramento(supabase, conversationId, auth.user?.id ?? null);
+    }
     return true;
   },
 

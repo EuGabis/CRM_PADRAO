@@ -391,6 +391,75 @@ O **limite diário** do canal, ao contrário, vale nos dois provedores — é re
 de produto (proteger o cliente de mandar demais num dia), não regra de
 provedor.
 
+### Atendimento natural pela IA (funil por WhatsApp)
+
+O agente principal do WhatsApp responde em **conversa natural** — sem menu
+numerado —, e por trás disso a cada mensagem do cliente `maybeAutoReply` pede
+ao modelo uma **única chamada** que devolve JSON com três chaves: `resposta`
+(o texto que vai ao cliente), `dados` (campos extraídos até agora, ex.:
+origem/destino/data/passageiros) e `etapa_sugerida` (para onde a conversa
+parece estar indo no funil). **O JSON cru nunca é mandado ao cliente** — só o
+campo `resposta` vira mensagem de WhatsApp; `dados` e `etapa_sugerida` são
+consumidos internamente por `registrarAtendimento`
+(`src/lib/crm/oportunidade-ia.ts`).
+
+A allowlist de etapas que a IA pode tocar (`ETAPAS_DA_IA`, no mesmo arquivo)
+vive **no código**, não no prompt. Pedir ao modelo "não mova para Ganho/
+Perdido" no texto da personalidade é um pedido, não uma garantia — uma
+conversa criativa o suficiente o faz desobedecer. Só o código decide se uma
+etapa sugerida é aplicada; hoje isso cobre só `Novo Lead` e `Em Negociação`.
+Ganho e Perdido são resultado de negócio (o cliente pagou ou não), nunca
+interpretação de intenção — "pode fechar então!" não move o card sozinho.
+
+`custom_fields` do contato **acumula**: um campo novo e não vazio sempre
+atualiza, mas campo vazio (ou repetido) nunca sobrescreve o que já foi
+coletado antes. O cliente informa aos poucos — origem numa mensagem, data
+três mensagens depois — e a IA pode não repetir o que já sabe numa resposta
+seguinte; sobrescrever com vazio apagaria dado já coletado.
+
+**Eventos na conversa** (`type = 'event'`, `direction = 'out'`) registram a
+linha do tempo do funil dentro da própria inbox — a `PipelineEvent` em
+`components/inbox/thread.tsx` já renderiza esse tipo como uma pílula
+centralizada, sem trabalho extra de tela. A IA grava (`oportunidade-ia.ts`)
+quando cria ou move um card; o humano grava (`conversations.ts`/`pipeline.ts`)
+quando encerra a conversa ou arrasta um card no funil. `direction` é sempre
+`"out"`, nunca `"in"`: o trigger `messages_automation`
+(`supabase/migrations/0007_automations.sql`) dispara a automação
+"cliente-respondeu" para toda mensagem `direction = 'in'` — gravar o evento
+como entrada faria a automação do dono da agência disparar achando que o
+cliente falou, com o texto do evento no corpo. Card movido sem conversa
+ligada àquele contato **não registra evento nenhum** — não cria conversa só
+para pendurar o evento, isso encheria a inbox de conversas vazias. A
+anotação interna (`messages.internal`, gravada pelo composer como mensagem
+comum com `internal: true`) já aparece na linha do tempo por conta própria —
+não duplica como evento.
+
+#### Exemplo de personalidade em conversa natural
+
+O texto abaixo é ponto de partida, não modelo obrigatório — **o tom é
+responsabilidade de quem escreve a personalidade do agente**; o código só
+garante que origem, destino, data e passageiros acabem coletados em
+`custom_fields` ao longo da conversa, não o jeito como a IA fala. Uma agência
+de viagem que recusou atendimento em menu numerado poderia escrever algo
+como:
+
+> Você é a Bia, da [Nome da Agência]. Atenda como uma consultora de viagem de
+> verdade atenderia no WhatsApp: converse, não interrogue. Nunca liste opções
+> numeradas nem peça tudo de uma vez — puxe o assunto como alguém que quer
+> ajudar a pessoa a viajar bem.
+>
+> Ao longo da conversa, sem soar como formulário, você precisa saber: de
+> onde a pessoa sai, para onde quer ir, quando (ida e, se houver, volta) e
+> quantos passageiros. Pergunte o que fizer sentido no momento — se ela já
+> disse "queria ir pro Nordeste em janeiro", não pergunte "para onde e
+> quando" de novo, pergunte o resto. Se faltar só um dado para fechar o
+> quadro, peça só esse.
+>
+> Nunca prometa preço, disponibilidade ou reserva — isso quem confirma é a
+> equipe. Se a pessoa disser algo como "pode fechar então", explique com
+> simpatia que um consultor humano vai confirmar os detalhes e fechar com
+> ela, e siga a conversa normalmente.
+
 ## Armadilhas verificadas neste código
 
 1. **Base UI ≠ Radix.** `PopoverTrigger`/`DropdownMenuTrigger`/`TooltipTrigger`
