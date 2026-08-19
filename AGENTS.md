@@ -160,8 +160,23 @@ migração — pode ter oportunidades nas etapas antigas, e reescrever em
 massa apagaria trabalho de vendas em silêncio. Ajustar uma empresa
 existente é manual: `supabase/manual/ajustar-funil-5-etapas.sql`, com
 trava que recusa (`raise exception`) se houver oportunidade em etapa
-que seria removida. Scripts em `supabase/manual/` não entram no
-`gerar-setup.ps1`.
+que seria removida, e que sempre mostra (`raise notice`) o mapa de-para
+completo antes de aplicar — o remapeamento é por posição, e uma etapa
+antiga pode virar `Fechado/Ganho`/`Perdido` sem a etapa em si sumir.
+Scripts em `supabase/manual/` não entram no `gerar-setup.ps1`.
+
+⚠️ **Existem dois caminhos de criação de empresa, e só um foi
+atualizado.** `private.prepare_client_company` (0053/0061, chamada pelo
+painel de plataforma) semeia as cinco etapas novas. `private.handle_new_user`
+(0006, ramo de cadastro público — o caminho que `supabase/setup/README.md`
+manda usar para criar a primeira conta num banco novo) **continua**
+semeando as nove etapas antigas de SaaS (`NOVO LEAD`, `NEGOCIANDO`,
+`TESTE GRÁTIS`, ...). A 0061 não tocou nele. Consequência: empresa criada
+por cadastro público nasce com o funil errado, e como as tarefas do
+atendimento natural por IA buscam etapa **pelo nome** (`Novo Lead`,
+`Em Negociação`, ...), a criação de oportunidade pela IA falha em
+silêncio nessas empresas. Isso ainda precisa ser corrigido em
+`handle_new_user` — não fazia parte do escopo desta migração.
 
 ### Planos e limites por empresa
 

@@ -12,14 +12,32 @@
 -- TROQUE v_location_id abaixo pelo id da empresa antes de rodar.
 --
 -- Ordem de segurança:
---   1. Recusa (raise exception) se alguma etapa que seria removida
+--   1. Calcula UMA VEZ, num array, os ids das etapas na ordem
+--      (position, created_at, id) — o `id` entra como desempate final
+--      porque `position` NÃO é chave única (a tela grava
+--      `position: stages.length` ao criar etapa — apagar e criar de
+--      novo repete posição — e as etapas semeadas por
+--      prepare_client_company/handle_new_user têm `created_at`
+--      idêntico, todas do mesmo insert dentro da mesma transação).
+--      As primeiras cinco desse array são as "sobreviventes"
+--      (reaproveitadas); o resto é "remover". Esse MESMO array é usado
+--      depois no laço — não se refaz a consulta, então não há como a
+--      ordem mudar entre a checagem e a exclusão.
+--   2. Recusa (raise exception) se alguma etapa do grupo "remover"
 --      ainda tiver oportunidade — apagar uma etapa com oportunidade
 --      apaga a oportunidade junto (FK on delete cascade em
 --      opportunities.stage_id), silenciosamente. O dono precisa mover
 --      essas oportunidades e rodar de novo.
---   2. Só então: reaproveita (renomeia/recolore) as primeiras cinco
---      etapas por posição, cria as que faltarem e apaga as que
---      sobrarem (agora comprovadamente vazias).
+--   3. Emite um `raise notice` com o mapa de-para completo (etapa
+--      antiga -> etapa nova, incluindo criações e remoções) ANTES de
+--      aplicar qualquer mudança — o remapeamento é por posição, então
+--      oportunidades de uma etapa antiga passam a contar como
+--      "Fechado/Ganho" ou "Perdido" sem a etapa em si sumir, e é
+--      exatamente esse número que a agência olha para saber quanto
+--      vendeu. O dono precisa ver isso antes, não descobrir depois.
+--   4. Só então: reaproveita (renomeia/recolore) as etapas
+--      sobreviventes, cria as que faltarem e apaga as que sobraram
+--      (agora comprovadamente vazias).
 --
 -- Idempotente: pode ser rodado de novo sem efeito adicional depois que
 -- o funil já está nas cinco etapas.
@@ -32,9 +50,11 @@ declare
   v_nomes         text[] := array['Novo Lead', 'Proposta Enviada', 'Em Negociação', 'Fechado/Ganho', 'Perdido'];
   v_cores         text[] := array['#3b82f6', '#f97316', '#a855f7', '#22c55e', '#ef4444'];
   v_qtd_alvo      int := 5;
+  v_ids_ordenados uuid[];
   v_qtd_existente int;
   v_orfas_resumo  text;
-  r               record;
+  v_mapa          text;
+  v_id            uuid;
   v_rn            int;
 begin
   select id into v_pipeline_id
@@ -47,50 +67,74 @@ begin
     raise exception 'Nenhum pipeline "✅ Controle de Leads" encontrado para o location_id %. Confira o id antes de rodar.', v_location_id;
   end if;
 
-  select count(*) into v_qtd_existente
+  -- Um único cálculo dos ids ordenados. Tudo abaixo (checagem, aviso e
+  -- aplicação) usa este mesmo array, na mesma ordem — nunca uma nova
+  -- consulta a public.stages.
+  select coalesce(array_agg(id order by position, created_at, id), array[]::uuid[])
+    into v_ids_ordenados
     from public.stages
    where pipeline_id = v_pipeline_id;
 
-  -- Trava: das etapas atuais, ordenadas por posição, só as v_qtd_alvo
-  -- primeiras são reaproveitadas — o resto seria apagado. Recusa se
-  -- qualquer uma das que sairiam tiver oportunidade.
-  select string_agg(format('"%s" (%s oportunidade(s))', s.name, s.cnt), ', ' order by s.name)
+  v_qtd_existente := cardinality(v_ids_ordenados);
+
+  -- Trava: das etapas em v_ids_ordenados, só as v_qtd_alvo primeiras
+  -- (posição 1..v_qtd_alvo do array) são reaproveitadas — o resto
+  -- (posição v_qtd_alvo+1..fim, se houver) seria apagado. Recusa se
+  -- qualquer uma dessas tiver oportunidade.
+  select string_agg(format('"%s" (%s oportunidade(s))', st.name, cnt.c), ', ' order by st.name)
     into v_orfas_resumo
-    from (
-      select st.id, st.name, count(o.id) as cnt,
-             row_number() over (order by st.position, st.created_at) as rn
-        from public.stages st
-        left join public.opportunities o on o.stage_id = st.id
-       where st.pipeline_id = v_pipeline_id
-       group by st.id, st.name, st.position, st.created_at
-    ) s
-   where s.rn > v_qtd_alvo
-     and s.cnt > 0;
+    from public.stages st
+    join (
+      select stage_id, count(*) as c
+        from public.opportunities
+       where stage_id = any (v_ids_ordenados[v_qtd_alvo + 1 : v_qtd_existente])
+       group by stage_id
+    ) cnt on cnt.stage_id = st.id;
 
   if v_orfas_resumo is not null then
     raise exception 'Existem oportunidades em etapas que seriam removidas ao ajustar o funil: %. Mova essas oportunidades para outra etapa antes de rodar este script de novo.', v_orfas_resumo;
   end if;
 
+  -- Aviso do que vai acontecer, ANTES de aplicar. O remapeamento é por
+  -- posição: uma etapa antiga na posição 4 (ex.: "Fechado/Ganho" novo)
+  -- passa a contar como ganha mesmo sem a etapa "sumir" — só o nome e a
+  -- cor mudam, as oportunidades continuam nela.
+  v_mapa := '';
+  for v_rn in 1 .. v_qtd_alvo loop
+    v_mapa := v_mapa || format(
+      '%s. %s -> "%s"; ',
+      v_rn,
+      case when v_rn <= v_qtd_existente
+             then '"' || (select name from public.stages where id = v_ids_ordenados[v_rn]) || '"'
+           else '(nova etapa)'
+      end,
+      v_nomes[v_rn]
+    );
+  end loop;
+  if v_qtd_existente > v_qtd_alvo then
+    v_mapa := v_mapa || 'Removidas (vazias, confirmado acima): ' || (
+      select string_agg(format('"%s"', st.name), ', ' order by st.name)
+        from public.stages st
+       where st.id = any (v_ids_ordenados[v_qtd_alvo + 1 : v_qtd_existente])
+    );
+  end if;
+  raise notice 'Mapa de-para do funil (pipeline %): %', v_pipeline_id, v_mapa;
+
   -- Comprovadamente seguro a partir daqui: nenhuma etapa a apagar tem
-  -- oportunidade. Reaproveita as primeiras v_qtd_alvo etapas (por
-  -- posição) renomeando/recolorindo — as oportunidades continuam
-  -- apontando para o mesmo id de etapa, então nada se perde.
-  v_rn := 0;
-  for r in
-    select id
-      from public.stages
-     where pipeline_id = v_pipeline_id
-     order by position, created_at
-  loop
-    v_rn := v_rn + 1;
+  -- oportunidade, e o de-para já foi mostrado. Reaproveita (por posição
+  -- no MESMO array v_ids_ordenados) renomeando/recolorindo — as
+  -- oportunidades continuam apontando para o mesmo id de etapa, então
+  -- nada se perde.
+  for v_rn in 1 .. v_qtd_existente loop
+    v_id := v_ids_ordenados[v_rn];
     if v_rn <= v_qtd_alvo then
       update public.stages
          set name = v_nomes[v_rn],
              color = v_cores[v_rn],
              position = v_rn - 1
-       where id = r.id;
+       where id = v_id;
     else
-      delete from public.stages where id = r.id;
+      delete from public.stages where id = v_id;
     end if;
   end loop;
 

@@ -83,10 +83,20 @@ begin
          updated_at            = now()
    where location_id = loc;
 
-  -- Espelha o funil padrão que handle_new_user (0006) cria no ramo de
-  -- cadastro público. Este fluxo usa o ramo "convidado" do trigger, que só
-  -- vincula o membro e não cria pipeline — sem isto o cliente entraria e o
-  -- módulo de Leads não teria nenhum funil.
+  -- Cria o mesmo pipeline "✅ Controle de Leads" que handle_new_user (0006)
+  -- cria no ramo de cadastro público — sem isto o cliente entraria e o
+  -- módulo de Leads não teria nenhum funil. Este fluxo usa o ramo
+  -- "convidado" do trigger, que só vincula o membro e não cria pipeline.
+  --
+  -- ⚠️ DIVERGÊNCIA CONHECIDA: as ETAPAS abaixo NÃO são espelhadas em
+  -- handle_new_user. O trigger (0006, ramo de cadastro público) continua
+  -- semeando as nove etapas antigas (`NOVO LEAD`, `NEGOCIANDO`,
+  -- `TESTE GRÁTIS`, ...) — esta migração não foi replicada lá. Empresa
+  -- criada pelo cadastro público nasce com o funil errado, e as tarefas
+  -- do atendimento natural por IA buscam etapa por nome (`Novo Lead`,
+  -- `Em Negociação`, ...): a criação de oportunidade pela IA falha em
+  -- silêncio para essas empresas. Ver AGENTS.md, seção "Funil padrão de
+  -- empresa nova", para o detalhe e o que falta corrigir.
   insert into public.pipelines (location_id, name, position)
   values (loc, '✅ Controle de Leads', 0)
   returning id into pipe;
