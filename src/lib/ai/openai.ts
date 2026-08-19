@@ -59,7 +59,7 @@ type MensagemChat = {
 
 export async function chat(
   messages: MensagemChat[],
-  opts?: { model?: string; temperature?: number; maxTokens?: number },
+  opts?: { model?: string; temperature?: number; maxTokens?: number; json?: boolean },
 ): Promise<{ text: string; usage: { promptTokens: number; completionTokens: number } }> {
   const res = await fetch(OPENAI_URL, {
     method: "POST",
@@ -74,6 +74,7 @@ export async function chat(
       messages,
       temperature: opts?.temperature ?? 0.7,
       ...(opts?.maxTokens ? { max_tokens: opts.maxTokens } : {}),
+      ...(opts?.json ? { response_format: { type: "json_object" } } : {}),
     }),
   });
   const json: any = await res.json().catch(() => ({}));
