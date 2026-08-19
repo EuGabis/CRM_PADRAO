@@ -1,4 +1,4 @@
-import { chat } from "@/lib/ai/openai";
+import { chat, modeloPermitido } from "@/lib/ai/openai";
 import { transcreverAudio } from "@/lib/ai/transcrever";
 import { assertModuleEnabled } from "@/lib/plan/guard";
 import { isLocationSuspended } from "@/lib/plan/suspensao";
@@ -8,13 +8,30 @@ import { enviarTexto } from "@/lib/whatsapp/enviar";
 
 /**
  * Teto de áudio recebido: acima disso não transcreve, trata como mídia não
- * interpretada. Sem teto, um áudio longo de um cliente final vira custo
- * aberto (Whisper) na conta do dono da plataforma. Checa duração quando o
- * payload trouxer `seconds`; na ausência dele, só o tamanho em bytes.
+ * interpretada. O que ele economiza é o WHISPER, não a banda: quando
+ * `maybeAutoReply` roda, o webhook já baixou o arquivo do gateway e já subiu
+ * para o Storage — o download acontece antes, lá. Sem teto, um áudio longo de
+ * um cliente final vira custo aberto (Whisper) na conta do dono da
+ * plataforma. Checa duração quando o payload trouxer `seconds`; na ausência
+ * dele, só o tamanho em bytes.
+ *
+ * O teto em bytes precisa ficar ABAIXO do limite de recebimento de áudio
+ * (16 MB em `media-limits.ts`), senão é código morto: o webhook já recusou o
+ * arquivo antes de chegar aqui.
  */
 const TETO_AUDIO_SEGUNDOS = 5 * 60;
-const TETO_AUDIO_BYTES = 20 * 1024 * 1024;
+const TETO_AUDIO_BYTES = 8 * 1024 * 1024;
 const AUDIO_NAO_INTERPRETADO = "[áudio recebido, não foi possível transcrever]";
+
+/**
+ * Teto de caracteres por mensagem do histórico. Texto de WhatsApp vai a 65 mil
+ * caracteres; 10 mensagens dessas viram um prompt gigante — pago pelo dono da
+ * plataforma — a cada resposta automática.
+ */
+const TETO_BODY_CARACTERES = 2000;
+
+/** Teto de saída do modelo, pelo mesmo motivo do teto de entrada. */
+const MAX_TOKENS_RESPOSTA = 600;
 
 /** Duração da URL assinada da imagem enviada à OpenAI: só o tempo de uma
  * chamada de chat, para reduzir a janela de exposição do bucket privado. */
@@ -47,6 +64,29 @@ const TRAVA_IMAGEM =
  */
 function sair(locationId: string, motivo: string): void {
   console.info(`[auto-reply] saída: ${motivo} · location ${locationId}`);
+}
+
+/**
+ * Falha inesperada. Mesmo contrato do `sair`: só motivo, location e código do
+ * erro — NUNCA a mensagem do erro (o Postgres ecoa o valor ofensor, que aqui
+ * pode ser o conteúdo da conversa do cliente final), nunca credencial.
+ */
+function falha(locationId: string, onde: string, e: unknown): void {
+  console.error(
+    `[auto-reply] falha: ${onde} · location ${locationId} · código:`,
+    (e as any)?.code ?? "desconhecido",
+  );
+}
+
+/**
+ * Rótulo de mídia acrescentado à legenda do cliente, nunca no lugar dela.
+ * Substituir apagava a fala ("segue o comprovante, pode liberar?" virava
+ * literalmente `[documento recebido]`) — e é justamente essa fala que a
+ * TRAVA_IMAGEM existe para impedir que o modelo confirme.
+ */
+function comRotulo(legenda: unknown, rotulo: string): string {
+  const texto = String(legenda ?? "").trim();
+  return texto ? `${texto}\n${rotulo}` : rotulo;
 }
 
 /**
@@ -83,7 +123,20 @@ export async function maybeAutoReply(
     // plataforma) a cada mensagem recebida. A location vem do próprio
     // webhook, resolvida pelo canal/conversa. Saída silenciosa como as
     // demais: a função é best-effort e não pode quebrar o 200 do webhook.
-    if (await assertModuleEnabled(p.locationId, "whatsapp")) return sair(p.locationId, "modulo-bloqueado");
+    if (await assertModuleEnabled(p.locationId, "whatsapp")) return sair(p.locationId, "modulo-whatsapp-bloqueado");
+
+    // E o módulo da IA, que é quem representa a OPENAI_API_KEY (mesmo módulo
+    // exigido por `api/ai/chat`). Os dois são obrigatórios, e por motivos
+    // diferentes: `whatsapp` cobre a credencial global do gateway, `agentes-ia`
+    // cobre a chave da OpenAI. Desde a 0056, `whatsapp` nasce liberado e
+    // `agentes-ia` nasce bloqueado — exatamente a combinação em que o dono
+    // acha que desligou a IA e ela continua respondendo. Sem esta guarda,
+    // bloquear `agentes-ia` para cortar o gasto de um cliente não cortava
+    // nada. Motivo de log distinto do anterior de propósito: são decisões
+    // comerciais diferentes.
+    if (await assertModuleEnabled(p.locationId, "agentes-ia")) {
+      return sair(p.locationId, "modulo-agentes-ia-bloqueado");
+    }
 
     // Empresa suspensa não responde: o webhook roda com service role, então a
     // suspensão da 0051 (que vive na RLS) não chega aqui. Suspender quem parou
@@ -92,6 +145,25 @@ export async function maybeAutoReply(
     // plataforma. Só esta empresa é pulada — o webhook das demais continua
     // respondendo.
     if (await isLocationSuspended(p.locationId, db)) return sair(p.locationId, "empresa-suspensa");
+
+    // Canal entregável ANTES de gastar qualquer coisa. `enviarTexto` já checa
+    // `active` e `connection_state`, mas só na hora do envio — ou seja, DEPOIS
+    // de já ter pago Whisper, visão e chat. Canal Evolution/Baileys cai
+    // sozinho com frequência, e o limite diário não segura: ele conta saídas
+    // GRAVADAS, e envio que falha não grava, então o contador nunca sobe.
+    // Sem esta guarda, canal caído = cada mensagem do cliente final paga a
+    // OpenAI integral, para sempre, sem entregar nada. Mesmo critério da rota
+    // interativa (`api/whatsapp/send/route.ts`).
+    const { data: canal } = await db
+      .from("whatsapp_channels")
+      .select("id, provider, connection_state, active")
+      .eq("id", p.channelId)
+      .maybeSingle();
+    if (!canal) return sair(p.locationId, "canal-nao-encontrado");
+    if (!canal.active) return sair(p.locationId, "canal-inativo");
+    if (canal.provider === "evolution" && canal.connection_state !== "open") {
+      return sair(p.locationId, "canal-desconectado");
+    }
 
     // handoff: humano já assumiu esta conversa?
     const { data: conv } = await db
@@ -153,12 +225,14 @@ export async function maybeAutoReply(
           (typeof incoming.media_size === "number" && incoming.media_size > TETO_AUDIO_BYTES);
 
         if (tetoEstourado || !incoming.media_path) {
-          // Acima do teto: nem baixa — o download é o gasto, checar depois
-          // não adianta. Motivo distinto de "transcricao-falhou": aqui não
-          // houve tentativa de download/Whisper, é decisão de custo — as duas
-          // situações pedem ações opostas (ajustar teto x investigar erro).
+          // Acima do teto: não transcreve. O que se economiza aqui é o
+          // Whisper — o arquivo JÁ foi baixado e guardado pelo webhook antes
+          // desta função existir na jogada. Motivo distinto de
+          // "transcricao-falhou": aqui não houve tentativa de Whisper, é
+          // decisão de custo — as duas situações pedem ações opostas
+          // (ajustar teto x investigar erro).
           sair(p.locationId, "audio-acima-do-teto");
-          incoming.body = AUDIO_NAO_INTERPRETADO;
+          incoming.body = comRotulo(incoming.body, AUDIO_NAO_INTERPRETADO);
         } else {
           try {
             const { data: file, error: dlErr } = await db.storage
@@ -187,7 +261,7 @@ export async function maybeAutoReply(
             // como mídia não interpretada. Sem conteúdo do áudio nem nome de
             // arquivo do cliente no log.
             sair(p.locationId, "transcricao-falhou");
-            incoming.body = AUDIO_NAO_INTERPRETADO;
+            incoming.body = comRotulo(incoming.body, AUDIO_NAO_INTERPRETADO);
           }
         }
       }
@@ -198,7 +272,7 @@ export async function maybeAutoReply(
       // webhook (já teria virado type="text" com rótulo lá, mas a checagem
       // aqui é defensiva, não confia só nisso).
       if (!incoming.media_path) {
-        incoming.body = incoming.body || IMAGEM_NAO_INTERPRETADA;
+        incoming.body = comRotulo(incoming.body, IMAGEM_NAO_INTERPRETADA);
       } else {
         try {
           const { data: signed, error: signErr } = await db.storage
@@ -209,7 +283,7 @@ export async function maybeAutoReply(
         } catch {
           // Nunca logar a URL nem o erro do storage (pode ecoar caminho/token).
           sair(p.locationId, "imagem-sem-url-assinada");
-          incoming.body = IMAGEM_NAO_INTERPRETADA;
+          incoming.body = comRotulo(incoming.body, IMAGEM_NAO_INTERPRETADA);
         }
       }
     } else if (
@@ -220,8 +294,15 @@ export async function maybeAutoReply(
       // Vídeo e documento NÃO são interpretados: a IA só reconhece o
       // recebimento (o texto de fato vem do modelo, guiado por este rótulo) e
       // o bot NÃO pausa — pausar deixaria a conversa muda pra sempre depois
-      // de um único anexo, hoje não existe como despausar.
-      incoming.body = incoming.type === "video" ? VIDEO_RECEBIDO : DOCUMENTO_RECEBIDO;
+      // de um único anexo. O rótulo é ACRESCENTADO à legenda, nunca no lugar
+      // dela: o comprovante mandado "como documento" (documentMessage com
+      // mimetype image/jpeg, tipo `file` aqui) vem acompanhado de "segue o
+      // comprovante, pode liberar?" — apagar essa frase escondia do modelo
+      // exatamente o pedido que a TRAVA_IMAGEM precisa recusar.
+      incoming.body = comRotulo(
+        incoming.body,
+        incoming.type === "video" ? VIDEO_RECEBIDO : DOCUMENTO_RECEBIDO,
+      );
     }
 
     const parts = [
@@ -233,9 +314,20 @@ export async function maybeAutoReply(
     // A trava é acrescentada DEPOIS do texto do agente (personalidade,
     // objetivo, informações — tudo configurado pelo cliente), nunca antes:
     // uma personalidade mais assertiva escrita pelo cliente poderia atropelar
-    // uma instrução que viesse primeiro. Só entra quando há imagem nesta
-    // rodada.
-    if (imagemUrlAssinada) {
+    // uma instrução que viesse primeiro. Entra sempre que a mensagem que
+    // disparou esta rodada for de QUALQUER mídia — não só quando a imagem foi
+    // de fato enviada ao modelo. Amarrar a trava à existência da URL assinada
+    // deixava de fora justamente os casos mais caros: comprovante mandado
+    // "como documento" (chega como `documentMessage` com mimetype image/jpeg
+    // e vira tipo `file`), comprovante narrado em áudio, e imagem cuja URL
+    // assinada falhou — em todos eles o contexto textual pede confirmação de
+    // pagamento, e uma personalidade assertiva configurada pelo cliente
+    // confirma.
+    const ehMidiaDeEntrada =
+      !!incoming &&
+      incoming.direction === "in" &&
+      ["image", "audio", "video", "file"].includes(String(incoming.type));
+    if (ehMidiaDeEntrada) {
       system = `${system}\n\n${TRAVA_IMAGEM}`;
     }
 
@@ -247,22 +339,35 @@ export async function maybeAutoReply(
       { role: "system", content: system },
       ...history.map((m) => {
         const role = m.direction === "out" ? ("assistant" as const) : ("user" as const);
+        // Trunca sempre: uma única mensagem de WhatsApp pode ter 65 mil
+        // caracteres, e o prompt inteiro é pago pelo dono da plataforma.
+        const texto = String(m.body ?? "").slice(0, TETO_BODY_CARACTERES);
         if (m === incoming && imagemUrlAssinada) {
-          const legenda = String(m.body ?? "").trim();
+          const legenda = texto.trim();
           const partes: ParteConteudo[] = [];
           if (legenda) partes.push({ type: "text", text: legenda });
           partes.push({ type: "image_url", image_url: { url: imagemUrlAssinada } });
           return { role, content: partes };
         }
-        return { role, content: String(m.body ?? "") };
+        return { role, content: texto };
       }),
     ];
 
     let result;
     try {
-      result = await chat(messages, { model: agent.model });
-    } catch {
-      return sair(p.locationId, "openai-falhou");
+      // O modelo passa pela allowlist do servidor dentro de `chat` — o valor
+      // de `ai_agents.model` é digitado pelo cliente em campo livre.
+      result = await chat(messages, { model: agent.model, maxTokens: MAX_TOKENS_RESPOSTA });
+    } catch (e) {
+      // Separado por status HTTP: 429 (cota estourada) derruba TODAS as
+      // empresas ao mesmo tempo, porque a chave é única e global; 401 é chave
+      // inválida; 400 costuma ser modelo/payload. Só o status vai pro log —
+      // nunca o corpo da resposta, que pode ecoar trecho do prompt.
+      const status = (e as any)?.status;
+      return sair(
+        p.locationId,
+        typeof status === "number" ? `openai-falhou:http-${status}` : "openai-falhou",
+      );
     }
     const reply = (result.text ?? "").trim();
     if (!reply) return sair(p.locationId, "resposta-vazia");
@@ -274,7 +379,7 @@ export async function maybeAutoReply(
     const waMessageId = envio.waMessageId;
 
     // grava a saída + atualiza a conversa (mesma forma do /api/whatsapp/send)
-    const { data: msg } = await db
+    const { data: msg, error: insErr } = await db
       .from("messages")
       .insert({
         location_id: p.locationId,
@@ -289,6 +394,11 @@ export async function maybeAutoReply(
       })
       .select("created_at")
       .single();
+    // A mensagem JÁ foi entregue ao cliente final neste ponto: falhar aqui
+    // significa resposta enviada e não registrada (o inbox some com ela e o
+    // limite diário não conta). É exatamente o tipo de coisa que sumia sem
+    // log nenhum.
+    if (insErr) falha(p.locationId, "saida-nao-gravada", insErr);
     await db
       .from("conversations")
       .update({
@@ -299,17 +409,24 @@ export async function maybeAutoReply(
 
     // log (best-effort; created_by null = máquina)
     const lastUser = [...history].reverse().find((m) => m.direction === "in");
-    await db.from("ai_logs").insert({
+    const { error: logErr } = await db.from("ai_logs").insert({
       location_id: p.locationId,
       feature: "whatsapp-auto",
-      model: agent.model,
-      prompt: String(lastUser?.body ?? ""),
+      model: modeloPermitido(agent.model),
+      prompt: String(lastUser?.body ?? "").slice(0, TETO_BODY_CARACTERES),
       response: reply,
       prompt_tokens: result.usage.promptTokens,
       completion_tokens: result.usage.completionTokens,
       created_by: null,
     });
-  } catch {
-    // best-effort absoluto: nunca propaga pro webhook
+    // O ai_logs é a única contabilidade de consumo por empresa: falhar aqui em
+    // silêncio significa gasto real da chave global sem registro nenhum.
+    if (logErr) falha(p.locationId, "ai-log-nao-gravado", logErr);
+  } catch (e) {
+    // Best-effort absoluto: nunca propaga pro webhook. Mas nunca silencioso —
+    // um throw inesperado aqui (createAdminClient, insert, storage) matava a
+    // IA sem UMA linha de log, justamente no caminho que o resto do arquivo
+    // se preocupa em rastrear. Só location e código do erro.
+    falha(p.locationId, "erro-inesperado", e);
   }
 }

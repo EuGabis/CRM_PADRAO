@@ -86,7 +86,14 @@ export async function POST(request: Request) {
     // Canal desconhecido: pode ser instância de outro projeto do dono
     // apontando pra cá por engano de configuração. Não é erro nosso — ignora
     // sem gravar nada e sem vazar se a instância existe ou não além disso.
+    // Mas LOGA: se for uma instância nossa que perdeu o registro no banco,
+    // este é o único sinal de que a mensagem do cliente foi descartada. Só o
+    // nome da instância (que já aparece nos outros logs), nunca o payload.
     if (!channel) {
+      console.error(
+        "[whatsapp/evolution/webhook] canal desconhecido — mensagem descartada; instância:",
+        instancia,
+      );
       return Response.json({ ok: true });
     }
 
@@ -173,13 +180,20 @@ async function handleMessage(db: any, channel: any, item: any) {
   // em algum tipo de evento, é melhor logar a suposição furada do que
   // duplicar a conversa do cliente com o eco da própria mensagem.
   if (key.fromMe === true || key.fromMe === "true") return;
-  // `fromMe` ausente: grava a mensagem (não perder o dado do cliente), mas
-  // nunca aciona a IA por ela. Sem essa cautela, um eco da própria resposta
-  // da IA (se `sendText` devolver id vazio nesse mesmo evento — caminho
-  // nunca confirmado por sonda) entraria como `direction = "in"` e disparava
-  // uma nova auto-resposta: laço sem fim gastando OPENAI_API_KEY e a chave
-  // global do gateway Evolution.
-  const fromMeIndefinido = key.fromMe === undefined;
+  // `fromMe` ausente OU indefinido: grava a mensagem (não perder o dado do
+  // cliente), mas nunca aciona a IA por ela. Sem essa cautela, um eco da
+  // própria resposta da IA (se `sendText` devolver id vazio nesse mesmo
+  // evento — caminho nunca confirmado por sonda) entraria como
+  // `direction = "in"` e disparava uma nova auto-resposta: laço sem fim
+  // gastando OPENAI_API_KEY e a chave global do gateway Evolution.
+  //
+  // Só `false` (ou a string "false") conta como "confirmadamente recebida".
+  // Testar apenas `undefined` furava a proteção: a serialização
+  // protobuf→JSON emite `null` com frequência, e `null` não é `true` nem
+  // `undefined` — entrava como mensagem de cliente e a IA respondia ao
+  // próprio eco. Como o formato nunca foi confirmado por sonda, qualquer
+  // valor fora do esperado cai no lado cauteloso.
+  const fromMeIndefinido = !(key.fromMe === false || key.fromMe === "false");
   if (fromMeIndefinido) {
     console.error(
       "[whatsapp/evolution/webhook] mensagem sem key.fromMe — assumindo recebida (chaves):",
@@ -204,6 +218,20 @@ async function handleMessage(db: any, channel: any, item: any) {
       ? remoteJidAlt.split("@")[0]
       : remoteJid.split("@")[0];
   if (!phone) return;
+
+  // Envelopes ANTES de qualquer escrita: desembrulha os transparentes e
+  // descarta os que não são mensagem nenhuma. Feito aqui, antes de criar
+  // contato/conversa, porque uma reação ou um "apagar para todos" não pode
+  // criar contato, incrementar não lidas nem reabrir conversa fechada.
+  const msg = desembrulharEnvelope(item?.message ?? {});
+  const temConteudoReal = !!(
+    msg?.conversation ||
+    msg?.extendedTextMessage?.text ||
+    extrairEnvelopeDeMidia(msg)
+  );
+  if (!temConteudoReal && Object.keys(msg ?? {}).some((k) => ENVELOPES_IGNORADOS.has(k))) {
+    return;
+  }
 
   // idempotência: mesma mensagem chega mais de uma vez (reentrega do gateway)
   const { data: dup } = await db
@@ -240,7 +268,15 @@ async function handleMessage(db: any, channel: any, item: any) {
       .single();
     contact = created;
   }
-  if (!contact) return;
+  if (!contact) {
+    // Mensagem de cliente descartada em silêncio até aqui — sem log, ninguém
+    // descobre. Nunca o nome nem o telefone do contato: só a location.
+    console.error(
+      "[whatsapp/evolution/webhook] contato não criado — mensagem descartada; location:",
+      channel.location_id,
+    );
+    return;
+  }
 
   // Conteúdo: texto, ou mídia (imagem/áudio/vídeo/documento) baixada da
   // Evolution. Classificação SEMPRE pelo envelope (`imageMessage`,
@@ -249,7 +285,6 @@ async function handleMessage(db: any, channel: any, item: any) {
   // documento"); classificar por mime perderia o `fileName`, que só o
   // envelope de documento carrega. `tipoPorMime` é do caminho de ENVIO, não
   // vale aqui.
-  const msg = item?.message ?? {};
   let msgType = "text";
   let body: string | undefined;
   const media: {
@@ -380,11 +415,26 @@ async function handleMessage(db: any, channel: any, item: any) {
       msg.extendedTextMessage?.text ??
       undefined;
     if (body === undefined) {
-      // Envelope não reconhecido (sticker, reação, localização, contato,
+      // Envelope sem conteúdo interpretável (figurinha, localização, contato,
       // enquete, ...): vira um rótulo pra não perder o registro, mas não é
-      // texto real do cliente — `ehTextoReal` fica false.
-      const tipo = item?.messageType || Object.keys(msg)[0] || "mensagem";
-      body = `[${tipo}]`;
+      // texto real do cliente — `ehTextoReal` fica false, então nunca aciona
+      // a IA. Rótulo em PORTUGUÊS: o nome cru do envelope
+      // (`[stickerMessage]`) aparecia no inbox e na prévia da conversa do
+      // atendente. Envelope realmente desconhecido é logado (só a chave,
+      // nunca o conteúdo) para virar rótulo próprio depois.
+      const chaves = Object.keys(msg ?? {}).filter((k) => k !== "messageContextInfo");
+      const chave = chaves.find((k) => k in ROTULOS_ENVELOPE) ?? chaves[0];
+      const rotulo =
+        ROTULOS_ENVELOPE[chave] ??
+        ROTULOS_ENVELOPE[String(item?.messageType ?? "")] ??
+        null;
+      if (!rotulo) {
+        console.error(
+          "[whatsapp/evolution/webhook] envelope não reconhecido — chaves:",
+          chaves,
+        );
+      }
+      body = `[${rotulo ?? "mensagem não suportada"}]`;
     } else {
       ehTextoReal = true;
     }
@@ -431,7 +481,13 @@ async function handleMessage(db: any, channel: any, item: any) {
       })
       .eq("id", conv.id);
   }
-  if (!conv) return;
+  if (!conv) {
+    console.error(
+      "[whatsapp/evolution/webhook] conversa não criada — mensagem descartada; location:",
+      channel.location_id,
+    );
+    return;
+  }
 
   const { error: insErr } = await db.from("messages").insert({
     location_id: channel.location_id,
@@ -473,6 +529,99 @@ async function handleMessage(db: any, channel: any, item: any) {
     });
   }
 }
+
+/**
+ * Envelopes que NÃO são mensagem e não podem gravar nada. Gravar cada um
+ * deles como `[nome-do-envelope]` enchia o inbox de lixo, incrementava não
+ * lidas, sobrescrevia a prévia da conversa e — o pior — zerava
+ * `closed_at`/`archived_at`, reabrindo conversa que o atendente já tinha
+ * fechado.
+ *
+ * - `albumMessage`: só metadados do álbum; as fotos chegam em mensagens
+ *   separadas, que são processadas normalmente.
+ * - `protocolMessage`: "apagar para todos" e afins — altíssima frequência.
+ * - `reactionMessage`: emoji de reação a uma mensagem existente.
+ * - `senderKeyDistributionMessage`: chave de grupo, sem conteúdo.
+ * - `pollUpdateMessage`: voto em enquete.
+ * - `pinInChatMessage` / `keepInChatMessage`: fixar/manter na conversa.
+ *
+ * A checagem que usa esta lista só descarta quando NÃO há conteúdo real junto
+ * (`senderKeyDistributionMessage`, por exemplo, pode acompanhar texto de
+ * verdade) — perder mensagem do cliente é pior que gravar um registro a mais.
+ */
+const ENVELOPES_IGNORADOS = new Set([
+  "albumMessage",
+  "protocolMessage",
+  "reactionMessage",
+  "senderKeyDistributionMessage",
+  "pollUpdateMessage",
+  "pinInChatMessage",
+  "keepInChatMessage",
+]);
+
+/**
+ * Envelopes que EMBRULHAM conteúdo real e precisam ser abertos antes de
+ * qualquer classificação. `ephemeralMessage` é o mais grave: quem usa
+ * mensagens temporárias tem TODO o conteúdo embrulhado nele, então texto e
+ * mídia desse cliente sumiam (viravam `[ephemeralMessage]`) e a IA nunca
+ * disparava para ele.
+ */
+const ENVELOPES_TRANSPARENTES = [
+  "ephemeralMessage",
+  "viewOnceMessage",
+  "viewOnceMessageV2",
+  "viewOnceMessageV2Extension",
+  "editedMessage",
+];
+
+/**
+ * Abre os envelopes transparentes recursivamente (podem vir aninhados, ex.:
+ * efêmero contendo visualização única). Profundidade limitada: payload
+ * hostil/malformado não pode virar recursão infinita dentro do webhook.
+ */
+function desembrulharEnvelope(msg: any, profundidade = 0): any {
+  if (!msg || typeof msg !== "object" || profundidade >= 5) return msg ?? {};
+  for (const nome of ENVELOPES_TRANSPARENTES) {
+    const interno = msg[nome]?.message;
+    if (interno) return desembrulharEnvelope(interno, profundidade + 1);
+  }
+  return msg;
+}
+
+/**
+ * Rótulo em português do que sobra: sem isso o atendente via `[stickerMessage]`
+ * no inbox e na prévia da conversa. Continua sendo gravado como mensagem (o
+ * comportamento atual), só que legível. Nunca aciona a IA — `ehTextoReal`
+ * segue false para todos eles.
+ */
+const ROTULOS_ENVELOPE: Record<string, string> = {
+  stickerMessage: "figurinha",
+  locationMessage: "localização",
+  liveLocationMessage: "localização em tempo real",
+  contactMessage: "contato",
+  contactsArrayMessage: "contatos",
+  pollCreationMessage: "enquete",
+  pollCreationMessageV2: "enquete",
+  pollCreationMessageV3: "enquete",
+  listMessage: "lista de opções",
+  listResponseMessage: "resposta de lista",
+  buttonsMessage: "mensagem com botões",
+  buttonsResponseMessage: "resposta de botão",
+  templateMessage: "mensagem com botões",
+  templateButtonReplyMessage: "resposta de botão",
+  interactiveMessage: "mensagem interativa",
+  interactiveResponseMessage: "resposta interativa",
+  ptvMessage: "vídeo",
+  eventMessage: "evento",
+  orderMessage: "pedido",
+  productMessage: "produto",
+  paymentInviteMessage: "cobrança",
+  requestPaymentMessage: "cobrança",
+  groupInviteMessage: "convite de grupo",
+  callLogMesssage: "registro de chamada",
+  scheduledCallCreationMessage: "chamada agendada",
+  secretEncryptedMessage: "mensagem não suportada",
+};
 
 /**
  * Reconhece o envelope de mídia dentro de `body.data.message` e devolve o

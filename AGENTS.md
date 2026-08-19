@@ -240,30 +240,61 @@ Mensagem com mídia que falha (limite estourado, download ou upload com erro)
 e sem as colunas de mídia — perder a mensagem do cliente é pior que mostrá-la
 incompleta. O webhook sempre responde 200, mesmo nesses casos.
 
-**Envio de texto (`src/lib/whatsapp/enviar.ts`):** todo envio de texto do CRM
-— agendadas (`src/lib/messages/scheduled.ts`) e auto-resposta
+**Envio de texto (`src/lib/whatsapp/enviar.ts`):** todo envio **automático** de
+texto do CRM — agendadas (`src/lib/messages/scheduled.ts`) e auto-resposta
 (`src/lib/whatsapp/auto-reply.ts`) — passa por `enviarTexto`, o helper único
 que bifurca Meta/Evolution por `channel.provider`. É a única forma de garantir
-que os dois caminhos não divirjam na próxima regra nova.
+que os dois caminhos automáticos não divirjam na próxima regra nova. A rota
+**interativa** (`api/whatsapp/send/route.ts`) ainda bifurca por conta própria,
+porque carrega regras que só valem para ela (janela de 24h e template do
+canal Meta) — ao mudar regra de envio, mexa nos dois.
 
 **Auto-resposta funciona nos dois provedores.** `maybeAutoReply` não sabe (nem
-precisa saber) qual é o provedor do canal — quem decide isso é o `enviarTexto`
-que ela chama no fim. O que muda entre Meta e Evolution acontece só na entrega
-do texto, não na geração da resposta.
+precisa saber) qual é o provedor do canal — quem decide a entrega é o
+`enviarTexto` que ela chama no fim. O que muda entre Meta e Evolution na
+GERAÇÃO é só o gatilho: no canal **Evolution** a IA dispara para texto, áudio,
+imagem, vídeo e documento; no canal **Meta** ela dispara **só para texto** —
+áudio e foto recebidos pela Cloud API não acionam a IA (o webhook da Meta só
+chama `maybeAutoReply` no caminho de `m.text?.body`).
 
-A ordem das guardas em `maybeAutoReply` (chave OpenAI → módulo do plano →
-empresa suspensa → `bot_paused` → agente ativo → limite diário) **é proteção
-de custo, não estética**: cada guarda está antes do ponto em que a chamada
-gastaria `OPENAI_API_KEY` ou a credencial global do provedor de WhatsApp — a
-mais barata de checar vem primeiro, a mídia (que é o que de fato paga
-Whisper/Vision) só é processada depois de todas elas passarem. Adicionar uma
-guarda nova: decida a posição pelo custo que ela evita, não pelo fim da lista.
+A ordem das guardas em `maybeAutoReply` (chave OpenAI → módulo `whatsapp` →
+módulo `agentes-ia` → empresa suspensa → canal entregável → `bot_paused` →
+agente ativo → limite diário) **é proteção de custo, não estética**: cada
+guarda está antes do ponto em que a chamada gastaria `OPENAI_API_KEY` ou a
+credencial global do provedor de WhatsApp — a mais barata de checar vem
+primeiro, a mídia (que é o que de fato paga Whisper/Vision) só é processada
+depois de todas elas passarem. Adicionar uma guarda nova: decida a posição
+pelo custo que ela evita, não pelo fim da lista.
 
-**Tetos de áudio:** 5 minutos (`TETO_AUDIO_SEGUNDOS`) e 20 MB
-(`TETO_AUDIO_BYTES`) em `auto-reply.ts`. Acima de qualquer um dos dois, a
-função nem baixa o arquivo — o download já é o gasto que se quer evitar,
-checar o teto depois de baixar não adianta nada. Sem teto, um áudio longo de
-um cliente final vira custo aberto (Whisper) na conta do dono da plataforma.
+**Os dois módulos são exigidos**, com motivos de log distintos: `whatsapp`
+cobre a credencial global do gateway e `agentes-ia` cobre a `OPENAI_API_KEY`
+(é o mesmo módulo que `api/ai/chat` exige). Desde a `0056`, `whatsapp` nasce
+liberado e `agentes-ia` nasce bloqueado — exigir só o primeiro deixava a IA
+respondendo justamente na combinação em que o dono acha que a desligou.
+
+**O canal é checado dentro de `maybeAutoReply`**, antes da mídia e do chat —
+não só no `enviarTexto`. Checar só na entrega significa pagar Whisper, visão e
+chat para descobrir depois que o canal está caído; e o limite diário não
+segura o prejuízo, porque ele conta saídas **gravadas** e envio que falha não
+grava, então o contador nunca sobe. Canal Evolution/Baileys cai sozinho com
+frequência.
+
+**Modelo da OpenAI passa por allowlist no servidor** (`MODELOS_PERMITIDOS` em
+`src/lib/ai/openai.ts`): `ai_agents.model` é um campo de texto livre que o
+cliente digita, e quem paga é o dono da plataforma. Modelo fora da lista cai
+no `defaultModel()` em vez de recusar a resposta. Validar na tela não serve —
+a API pode ser chamada direto. Só modelos baratos entram na lista.
+
+**Tetos de áudio:** 5 minutos (`TETO_AUDIO_SEGUNDOS`) e 8 MB
+(`TETO_AUDIO_BYTES`) em `auto-reply.ts`. O que esse teto economiza é o
+**Whisper, não a banda**: quando `maybeAutoReply` roda, o webhook já baixou o
+arquivo do gateway e já subiu para o Storage. O teto em bytes tem que ficar
+**abaixo** do limite de recebimento de áudio (16 MB em `media-limits.ts`),
+senão vira código morto — era o caso dos 20 MB anteriores. Sem teto, um áudio
+longo de um cliente final vira custo aberto (Whisper) na conta do dono da
+plataforma. O histórico mandado ao modelo também é truncado (2.000 caracteres
+por mensagem) e a resposta tem `max_tokens`: uma mensagem de WhatsApp vai a 65
+mil caracteres.
 
 **Trava da imagem** (`TRAVA_IMAGEM`, texto verbatim da Task 6, não alterar) é
 acrescentada ao **fim** do `system`, depois da personalidade/objetivo/
@@ -274,10 +305,46 @@ clássico e caro: cliente manda comprovante de PIX, a IA "lê" a imagem e
 responde "pagamento confirmado" sem checar nada — o erro cai no cliente do
 dono da plataforma.
 
+A trava entra para **qualquer mídia** de entrada, não só quando há imagem
+enviada ao modelo. Amarrá-la à imagem deixava de fora os casos mais caros: o
+comprovante mandado "como documento" (chega como `documentMessage` com
+`mimetype: image/jpeg` e vira tipo `file`), o comprovante narrado em áudio e a
+imagem cuja URL assinada falhou — em todos, o pedido de confirmação está no
+**texto**, e é o texto que o modelo confirma.
+
 **Vídeo e documento não são interpretados** pela IA: o agente só reconhece o
 recebimento (`[vídeo recebido]` / `[documento recebido]`) e o bot **não
-pausa** — pausar deixaria a conversa muda para sempre depois de um único
-anexo, hoje não existe como despausar.
+pausa** — pausar deixaria a conversa muda depois de um único anexo. (Despausar
+existe desde a Task 8: botão "IA pausada / Reativar IA" no cabeçalho da
+conversa, em `components/inbox/thread.tsx`.) O rótulo é **concatenado** à
+legenda do cliente, nunca no lugar dela: substituir transformava "segue o
+comprovante, pode liberar?" em `[documento recebido]` e escondia do modelo
+justamente o pedido que a trava precisa recusar.
+
+**Envelopes do Baileys** (`evolution/webhook/route.ts`) são tratados em três
+grupos, e a distinção importa:
+
+1. **Ignorados sem gravar nada** (`ENVELOPES_IGNORADOS`): `albumMessage`,
+   `protocolMessage`, `reactionMessage`, `senderKeyDistributionMessage`,
+   `pollUpdateMessage`, `pinInChatMessage`, `keepInChatMessage`. Gravá-los
+   enchia o inbox de lixo, incrementava não lidas, sobrescrevia a prévia e
+   **reabria conversa fechada** (o update zera `closed_at`/`archived_at`). O
+   descarte só acontece quando não há conteúdo real junto no mesmo payload.
+2. **Desembrulhados** (`ENVELOPES_TRANSPARENTES`, recursivo):
+   `ephemeralMessage`, `viewOnceMessage`, `viewOnceMessageV2`,
+   `viewOnceMessageV2Extension`, `editedMessage`. `ephemeralMessage` é o mais
+   grave — quem usa mensagens temporárias tem **todo** o conteúdo embrulhado
+   nele, então texto e mídia desse cliente sumiam e a IA nunca disparava.
+3. **Rótulo em português** para o resto (`ROTULOS_ENVELOPE`): `[figurinha]`,
+   `[localização]`, `[contato]`, `[enquete]`… em vez do nome cru do envelope.
+   Continuam sendo gravados e **nunca** acionam a IA — `ehTextoReal` segue
+   `false` para todos.
+
+`key.fromMe` só conta como "recebida" quando é explicitamente `false` (ou a
+string `"false"`). Testar apenas `undefined` furava a proteção anti-laço: a
+serialização protobuf→JSON emite `null` com frequência, e `null` entrava como
+mensagem de cliente — a IA respondia ao próprio eco, gastando as duas chaves
+globais.
 
 **Janela de 24h e templates são só do canal Meta.** São regras da Cloud API
 oficial (número verificado, WABA) — canal Evolution não tem número verificado
