@@ -239,7 +239,6 @@ async function handleIncoming(db: any, channel: any, value: any, m: any) {
       locationId: channel.location_id,
       conversationId: conv.id,
       channelId: channel.id,
-      phoneNumberId: value?.metadata?.phone_number_id,
       toPhone: phone,
       dailyLimit: channel.daily_limit ?? 1000,
     });

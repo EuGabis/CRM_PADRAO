@@ -6,6 +6,7 @@ import {
   limiteExcedido,
   type TipoMidia,
 } from "@/lib/whatsapp/media-limits";
+import { maybeAutoReply } from "@/lib/whatsapp/auto-reply";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -418,6 +419,19 @@ async function handleMessage(db: any, channel: any, item: any) {
     // corrida: reentrega do gateway — o índice único parcial (0022) barra o
     // 2º insert. Nesse caso NÃO reprocessa.
     if ((insErr as any).code !== "23505") throw insErr;
+    return;
+  }
+
+  // Auto-responder: só para mensagens de texto de verdade, best-effort. Mídia
+  // fica para as Tasks 5/6 (transcrição e visão).
+  if (msgType === "text" && body) {
+    await maybeAutoReply(db, {
+      locationId: channel.location_id,
+      conversationId: conv.id,
+      channelId: channel.id,
+      toPhone: phone,
+      dailyLimit: channel.daily_limit ?? 1000,
+    });
   }
 }
 

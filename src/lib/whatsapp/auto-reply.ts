@@ -1,9 +1,20 @@
 import { chat } from "@/lib/ai/openai";
 import { assertModuleEnabled } from "@/lib/plan/guard";
 import { isLocationSuspended } from "@/lib/plan/suspensao";
-import { sendText } from "@/lib/whatsapp/client";
+import { enviarTexto } from "@/lib/whatsapp/enviar";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+/**
+ * Registra o motivo de cada saída da auto-resposta. Este é o caminho mais
+ * caro do produto (gasta OPENAI_API_KEY e a credencial global do provedor a
+ * cada mensagem recebida); sem este log não sobra nenhum rastro de que a IA
+ * parou de responder. NUNCA logar conteúdo da conversa, transcrição ou
+ * credencial — só o motivo e a location.
+ */
+function sair(locationId: string, motivo: string): void {
+  console.info(`[auto-reply] saída: ${motivo} · location ${locationId}`);
+}
 
 /**
  * Auto-responder do WhatsApp. Chamado pelo webhook (service role) depois de
@@ -22,28 +33,28 @@ export async function maybeAutoReply(
     locationId: string;
     conversationId: string;
     channelId: string;
-    phoneNumberId: string;
     toPhone: string;
     dailyLimit: number;
   },
 ): Promise<void> {
   try {
-    if (!process.env.OPENAI_API_KEY) return;
+    if (!process.env.OPENAI_API_KEY) return sair(p.locationId, "sem-openai-key");
 
     // Plano da empresa ANTES de qualquer coisa: este caminho é o mais caro do
     // produto — roda pelo webhook, com service role, e gasta OPENAI_API_KEY e
-    // WHATSAPP_TOKEN (ambos globais, na conta do dono da plataforma) a cada
-    // mensagem recebida. A location vem do próprio webhook, resolvida pelo
-    // canal/conversa. Saída silenciosa como as demais: a função é best-effort e
-    // não pode quebrar o 200 do webhook.
-    if (await assertModuleEnabled(p.locationId, "whatsapp")) return;
+    // a credencial global do provedor de WhatsApp (ambas na conta do dono da
+    // plataforma) a cada mensagem recebida. A location vem do próprio
+    // webhook, resolvida pelo canal/conversa. Saída silenciosa como as
+    // demais: a função é best-effort e não pode quebrar o 200 do webhook.
+    if (await assertModuleEnabled(p.locationId, "whatsapp")) return sair(p.locationId, "modulo-bloqueado");
 
     // Empresa suspensa não responde: o webhook roda com service role, então a
     // suspensão da 0051 (que vive na RLS) não chega aqui. Suspender quem parou
-    // de pagar tem que parar o gasto de OPENAI_API_KEY e WHATSAPP_TOKEN, senão
-    // o inadimplente segue consumindo credencial global do dono da plataforma.
-    // Só esta empresa é pulada — o webhook das demais continua respondendo.
-    if (await isLocationSuspended(p.locationId, db)) return;
+    // de pagar tem que parar o gasto de OPENAI_API_KEY e da credencial global
+    // do provedor, senão o inadimplente segue consumindo crédito do dono da
+    // plataforma. Só esta empresa é pulada — o webhook das demais continua
+    // respondendo.
+    if (await isLocationSuspended(p.locationId, db)) return sair(p.locationId, "empresa-suspensa");
 
     // handoff: humano já assumiu esta conversa?
     const { data: conv } = await db
@@ -51,7 +62,7 @@ export async function maybeAutoReply(
       .select("bot_paused")
       .eq("id", p.conversationId)
       .maybeSingle();
-    if (!conv || conv.bot_paused) return;
+    if (!conv || conv.bot_paused) return sair(p.locationId, "bot-pausado");
 
     // agente principal ATIVO da empresa
     const { data: agent } = await db
@@ -61,7 +72,7 @@ export async function maybeAutoReply(
       .eq("is_primary", true)
       .eq("status", "ativo")
       .maybeSingle();
-    if (!agent) return;
+    if (!agent) return sair(p.locationId, "sem-agente-ativo");
 
     // limite diário do canal (conta saídas de hoje)
     const startOfDay = new Date();
@@ -72,7 +83,7 @@ export async function maybeAutoReply(
       .eq("channel_id", p.channelId)
       .eq("direction", "out")
       .gte("created_at", startOfDay.toISOString());
-    if ((count ?? 0) >= p.dailyLimit) return;
+    if ((count ?? 0) >= p.dailyLimit) return sair(p.locationId, "limite-diario");
 
     // histórico (últimas 10, ordem cronológica)
     const { data: rows } = await db
@@ -102,19 +113,16 @@ export async function maybeAutoReply(
     try {
       result = await chat(messages, { model: agent.model });
     } catch {
-      return; // OpenAI falhou — best-effort
+      return sair(p.locationId, "openai-falhou");
     }
     const reply = (result.text ?? "").trim();
-    if (!reply) return;
+    if (!reply) return sair(p.locationId, "resposta-vazia");
 
-    // envia pela Cloud API
-    let waResp: any;
-    try {
-      waResp = await sendText(p.phoneNumberId, p.toPhone, reply);
-    } catch {
-      return; // envio falhou — best-effort
-    }
-    const waMessageId = waResp?.messages?.[0]?.id ?? null;
+    // envia pelo helper único (resolve provedor, checa connection_state e
+    // busca o token da instância — ver src/lib/whatsapp/enviar.ts)
+    const envio = await enviarTexto(db, p.channelId, p.toPhone, reply);
+    if (!envio.ok) return sair(p.locationId, `envio-falhou:${envio.motivo}`);
+    const waMessageId = envio.waMessageId;
 
     // grava a saída + atualiza a conversa (mesma forma do /api/whatsapp/send)
     const { data: msg } = await db
