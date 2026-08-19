@@ -64,7 +64,8 @@ $partes = [ordered]@{
     # evolution) ja terem rodado.
     "0058_colunas_secretas.sql",
     "0059_limite_tamanho_bucket.sql",
-    "0060_transcricao_audio.sql"
+    "0060_transcricao_audio.sql",
+    "0061_funil_padrao.sql"
   )
 }
 

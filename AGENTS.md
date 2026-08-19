@@ -115,7 +115,7 @@ deny-by-default, políticas `TO authenticated` checando membership. `admin.ts`
 
 - Migrações em `supabase/migrations/000N_nome.sql`, aplicadas **à mão no SQL Editor**.
 - Sempre **idempotentes** (`create ... if not exists`, `drop policy if exists`).
-- **Próximo número livre: `0061`.**
+- **Próximo número livre: `0062`.**
 - ⚠️ **Há números duplicados no histórico** — `0014`, `0015`, `0016` e `0019`
   aparecem duas vezes cada (colisão de trabalho paralelo no projeto anterior).
   Não dá pra confiar no número como ordem real; confira o conteúdo. **Não repita
@@ -143,6 +143,25 @@ cronológica real (a numérica está errada). Procedimento completo em
 
 Ao criar migração nova, registre-a em `scripts/gerar-setup.ps1` e rode o script —
 ele falha de propósito se alguma migração ficar sem classificar.
+
+### Funil padrão de empresa nova
+
+`private.prepare_client_company` (0053, ajustada na 0061) semeia cinco
+etapas genéricas de venda no pipeline `✅ Controle de Leads` de toda
+empresa nova: `Novo Lead`, `Proposta Enviada`, `Em Negociação`,
+`Fechado/Ganho`, `Perdido`. Antes da 0061 o seed era o funil de SaaS do
+próprio dono da plataforma (`TESTE GRÁTIS`, `ASSINOU`, `FILA DEMO`,
+`CALL DEMO`, ...) — não fazia sentido para o cliente. Esses cinco nomes
+são contrato: o atendimento natural por IA (Tasks 4 e 5) procura etapa
+por este nome exato.
+
+A 0061 só afeta empresa **nova**. Empresa existente não é tocada pela
+migração — pode ter oportunidades nas etapas antigas, e reescrever em
+massa apagaria trabalho de vendas em silêncio. Ajustar uma empresa
+existente é manual: `supabase/manual/ajustar-funil-5-etapas.sql`, com
+trava que recusa (`raise exception`) se houver oportunidade em etapa
+que seria removida. Scripts em `supabase/manual/` não entram no
+`gerar-setup.ps1`.
 
 ### Planos e limites por empresa
 
