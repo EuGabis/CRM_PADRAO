@@ -550,6 +550,91 @@ git commit -m "feat(whatsapp): agendadas e templates por provedor"
 
 ---
 
+### Task 8: Despausar a IA, e o aviso de agente sem principal
+
+**Files:**
+- Modify: `src/lib/data/repos/db/conversations.ts`
+- Modify: o componente do cabeçalho da conversa na inbox (descubra qual renderiza o nome do contato e os botões Atribuir/Finalizar)
+- Modify: `src/components/ai/conversation-ai-tab.tsx`
+
+**Interfaces:**
+- Consumes: coluna `conversations.bot_paused` (migração `0032`).
+
+**Por que esta tarefa existe.** Hoje `bot_paused` é escrito como `true` em
+**exatamente um lugar** — `src/app/api/whatsapp/send/route.ts:216`, quando um
+humano responde pelo CRM — e **nunca** volta para `false`. Não há botão, não há
+rota, não há nada. Na prática: o atendente responde uma vez para tirar uma
+dúvida rápida e a IA fica desligada **para sempre** naquela conversa, sem
+nenhum indicador na tela dizendo por quê.
+
+- [ ] **Step 1: Confirmar que a RLS deixa o membro despausar**
+
+`conversations` tem policy de update para `authenticated` checando membership
+(migração `0003`). Confirme lendo a policy antes de escrever a ação — se não
+houver update permitido, esta tarefa precisa de rota server-side em vez de
+update direto, e você deve relatar isso em vez de contornar.
+
+- [ ] **Step 2: Ação de despausar no repo**
+
+Em `src/lib/data/repos/db/conversations.ts`, acrescente ao objeto de ações:
+
+```ts
+/**
+ * Religa a IA numa conversa que foi pausada quando um humano respondeu.
+ * Sem isso a pausa é permanente: `bot_paused` só era escrito como true, em
+ * `api/whatsapp/send/route.ts`, e nunca voltava.
+ */
+async despausarBot(conversationId: string): Promise<{ ok: boolean; error?: string }>
+```
+
+Atualize `bot_paused: false` no banco e reflita no store. **Não** filtre, mapeie
+nem crie objeto dentro de selector do Zustand — devolve referência nova a cada
+render e trava a página; derive com `useMemo`.
+
+- [ ] **Step 3: Botão no cabeçalho da conversa**
+
+Visível **somente** quando `bot_paused` é verdadeiro. Texto: `IA pausada` como
+rótulo do estado, e a ação `Reativar IA`. Ao clicar, chama `despausarBot` e
+mostra `toast.success("IA reativada nesta conversa")`.
+
+Se o estado não estiver visível, o atendente não tem como saber que a IA parou —
+metade do valor desta tarefa é o indicador, não o botão.
+
+⚠️ Base UI, **não** Radix: triggers usam `render={<Button />}`, não `asChild`.
+Estilo da casa: botões `h-8 text-xs`, primário indigo (#6366f1).
+
+- [ ] **Step 4: Aviso de agente ativo sem principal**
+
+Em `src/components/ai/conversation-ai-tab.tsx`: a auto-resposta só dispara para
+o agente que é **principal E ativo** (`auto-reply.ts` filtra por
+`is_primary = true` e `status = 'ativo'`). Hoje, se existir agente ativo e
+nenhum marcado como principal, nada acontece e a tela não diz nada.
+
+Mostre um aviso quando houver pelo menos um agente com `status = "ativo"` e
+nenhum com `isPrimary`. Texto em pt-BR, deixando claro o efeito: nenhum agente
+está respondendo automaticamente porque nenhum foi marcado como principal.
+
+- [ ] **Step 5: Type check e build**
+
+```bash
+npx tsc --noEmit
+```
+
+Com o dev parado e `.next` apagado:
+
+```bash
+npm run build
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/lib/data/repos/db/conversations.ts src/components
+git commit -m "feat(ia): reativar a IA numa conversa pausada e avisar agente sem principal"
+```
+
+---
+
 ## Verificação final (manual, pelo Gabriel)
 
 Sem test runner, a prova é de ponta a ponta, com o número de teste e o módulo de
