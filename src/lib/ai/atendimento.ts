@@ -41,8 +41,11 @@ export function parseAtendimento(bruto: string): RespostaAtendimento | null {
     const resposta = typeof j?.resposta === "string" ? j.resposta.trim() : "";
     if (!resposta) return null; // sem texto não há o que enviar
     const dados: Record<string, string> = {};
-    for (const [k, v] of Object.entries(j?.dados ?? {})) {
-      if (typeof v === "string" && v.trim()) dados[k] = v.trim();
+    const bruto2 = j?.dados;
+    if (bruto2 && typeof bruto2 === "object" && !Array.isArray(bruto2)) {
+      for (const [k, v] of Object.entries(bruto2)) {
+        if (typeof v === "string" && v.trim()) dados[k] = v.trim();
+      }
     }
     const etapa =
       typeof j?.etapaSugerida === "string"
