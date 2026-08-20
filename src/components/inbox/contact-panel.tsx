@@ -10,11 +10,15 @@ import {
   Plus,
   Search,
   Target,
+  Trash2,
   User,
 } from "lucide-react";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Accordion,
   AccordionContent,
@@ -28,9 +32,10 @@ import {
 } from "@/components/ui/tooltip";
 import { SendToPipelineDialog } from "./send-to-pipeline-dialog";
 import { contactName } from "@/lib/data/repos/contacts";
-import { useDbContact } from "@/lib/data/repos/db/contacts";
+import { useDbContact, useDbStore, useDbTeam } from "@/lib/data/repos/db/contacts";
 import { usePipelineDb } from "@/lib/data/repos/db/pipeline";
 import { formatBRL } from "@/lib/data/repos/opportunities";
+import { useContactNotes, contactNoteActions } from "@/lib/data/repos/db/contact-notes";
 import { cn } from "@/lib/utils";
 
 type Panel = "campos" | "tarefas" | "notas" | "compromissos" | "arquivos";
@@ -73,6 +78,99 @@ function PanelShell({
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto p-3 [scrollbar-width:thin]">{children}</div>
+    </div>
+  );
+}
+
+function NotesPanel({ contactId }: { contactId: string }) {
+  const { notes, loading } = useContactNotes(contactId);
+  const team = useDbTeam();
+  const userId = useDbStore((s) => s.userId);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const authorName = (createdBy: string | null) => {
+    if (!createdBy) return null;
+    if (createdBy === userId) return "Você";
+    return team.find((u) => u.id === createdBy)?.name ?? null;
+  };
+
+  const handleAdd = async () => {
+    const body = draft.trim();
+    if (!body || saving) return;
+    setSaving(true);
+    const ok = await contactNoteActions.add(contactId, body);
+    setSaving(false);
+    if (!ok) {
+      // Nunca some com o texto digitado: mantém o draft pra tentar de novo.
+      toast.error("Não foi possível salvar a observação. Tente novamente.");
+      return;
+    }
+    setDraft("");
+    toast.success("Observação adicionada.");
+  };
+
+  const handleRemove = async (id: string) => {
+    const ok = await contactNoteActions.remove(id);
+    if (!ok) {
+      toast.error("Não foi possível apagar a observação.");
+      return;
+    }
+    toast.success("Observação removida.");
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="border-b p-3">
+        <Textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Escreva uma observação sobre este contato..."
+          className="min-h-16 resize-none text-xs"
+        />
+        <button
+          onClick={handleAdd}
+          disabled={!draft.trim() || saving}
+          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md bg-indigo-600 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Plus className="size-3" /> Adicionar observação
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 [scrollbar-width:thin]">
+        {loading ? (
+          <p className="text-[11px] text-slate-400">Carregando...</p>
+        ) : notes.length === 0 ? (
+          <SmallEmpty
+            icon={Pencil}
+            title="Ainda não há observações"
+            text="Adicione a primeira observação sobre este lead."
+          />
+        ) : (
+          <div className="space-y-2">
+            {notes.map((n) => {
+              const author = authorName(n.createdBy);
+              return (
+                <div key={n.id} className="group rounded-lg border p-2.5">
+                  <p className="whitespace-pre-wrap text-xs text-slate-700">{n.body}</p>
+                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                    <p className="text-[10px] text-slate-400">
+                      {author ? `${author} · ` : ""}
+                      {format(new Date(n.createdAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                    </p>
+                    <button
+                      onClick={() => handleRemove(n.id)}
+                      className="text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100"
+                      title="Apagar observação"
+                    >
+                      <Trash2 className="size-3" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -275,13 +373,12 @@ export function ContactPanel({ contactId }: { contactId: string }) {
             />
           </PanelShell>
         ) : panel === "notas" ? (
-          <PanelShell title="Observações" searchPlaceholder="Pesquisar notas">
-            <SmallEmpty
-              icon={Pencil}
-              title="Ainda não há observações"
-              text="Adicione a primeira observação sobre este lead."
-            />
-          </PanelShell>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="border-b px-3 py-2">
+              <h3 className="text-xs font-bold text-slate-700">Observações</h3>
+            </div>
+            <NotesPanel contactId={contactId} />
+          </div>
         ) : panel === "compromissos" ? (
           <PanelShell title="Compromissos" searchPlaceholder="Pesquisar por calendário">
             <SmallEmpty
