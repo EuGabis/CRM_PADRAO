@@ -250,6 +250,103 @@ git commit -m "docs: atualiza regras do funil da IA no AGENTS.md"
 
 ---
 
+### Task 4: O funil atualiza sozinho
+
+**Files:**
+- Create: `supabase/migrations/0062_realtime_oportunidades.sql`
+- Modify: `scripts/gerar-setup.ps1`, `AGENTS.md`
+- Modify: `src/lib/data/repos/db/pipeline.ts`
+
+**Por que esta tarefa existe.** Hoje o card criado pela IA só aparece depois de
+`F5`. Duas causas somadas: `opportunities` **não está** na publicação
+`supabase_realtime` (só `messages`, `conversations`, `payment_events` e
+`payment_subscriptions` estão), e `pipeline.ts` **não tem inscrição nenhuma** de
+Realtime.
+
+O problema é maior que a IA: dois atendentes olhando o mesmo funil não veem o
+card que o outro arrastou, e quem está com o funil aberto não vê lead chegando.
+
+- [ ] **Step 1: Migração**
+
+```sql
+-- ============================================================
+-- CRM ON — Realtime das oportunidades.
+--
+-- Sem isso o card criado ou movido não chega ao navegador: a tela do
+-- funil carrega uma vez e só atualiza com F5. Vale para o card que a IA
+-- cria pelo WhatsApp e para o card que outro atendente arrasta.
+--
+-- `add table` NÃO é idempotente (erra se a tabela já estiver na
+-- publicação), por isso o guard.
+-- ============================================================
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+     where pubname = 'supabase_realtime'
+       and schemaname = 'public'
+       and tablename = 'opportunities'
+  ) then
+    alter publication supabase_realtime add table public.opportunities;
+  end if;
+end $$;
+```
+
+⚠️ Confira o número livre em `AGENTS.md` e com `ls supabase/migrations/` antes —
+o histórico deste projeto já tem números duplicados por não conferirem.
+
+Registre em `scripts/gerar-setup.ps1` (parte 04, no fim), rode
+`powershell -File scripts/gerar-setup.ps1`, e atualize o "Próximo número livre"
+no `AGENTS.md`.
+
+- [ ] **Step 2: Inscrição no repo do funil**
+
+Em `src/lib/data/repos/db/pipeline.ts`, assine `postgres_changes` da tabela
+`opportunities` (INSERT, UPDATE e DELETE) e reflita no store.
+
+⚠️ **Chame `autenticarRealtime(supabase)` ANTES de `.subscribe()`** — ver
+`src/lib/supabase/realtime.ts`. Sem isso o socket conecta como visitante
+anônimo: a inscrição é **aceita**, o indicador acende, e a RLS filtra todas as
+linhas, então nenhum evento chega. Esse bug já custou uma sessão inteira de
+diagnóstico neste projeto; o helper existe justamente para não repetir.
+
+Use `statusRealtime(...)` no callback do `subscribe`, como a inbox faz — engolir
+`CHANNEL_ERROR` em silêncio foi a outra metade daquele bug.
+
+- [ ] **Step 3: Não duplicar o que a própria tela acabou de fazer**
+
+Quando o usuário arrasta um card, a tela já atualiza o store de forma otimista.
+O evento do Realtime vai chegar logo depois com a mesma linha: trate como
+atualização idempotente (substituir a oportunidade de mesmo `id`), nunca como
+inserção nova — senão o card duplica na tela de quem o moveu.
+
+- [ ] **Step 4: Zustand**
+
+⚠️ Nunca filtrar, mapear, usar `.find` ou criar objeto/array dentro de um
+selector — devolve referência nova a cada render e **trava a página**. Já
+aconteceu neste projeto. Selecione o valor cru e derive com `useMemo`.
+
+- [ ] **Step 5: Type check e build**
+
+```bash
+npx tsc --noEmit
+```
+
+Com o dev parado e `.next` apagado:
+
+```bash
+npm run build
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add supabase/migrations scripts/gerar-setup.ps1 supabase/setup src/lib/data/repos/db/pipeline.ts AGENTS.md
+git commit -m "feat(pipeline): funil atualiza em tempo real"
+```
+
+---
+
 ## Verificação final (manual, pelo Gabriel)
 
 1. Mandar "oi, queria uma passagem" → card criado em **Novo Lead**, evento na conversa.
