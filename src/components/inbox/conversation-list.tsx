@@ -154,7 +154,7 @@ export function ConversationList({
     : sorted;
 
   return (
-    <div className="flex h-full w-[300px] shrink-0 flex-col border-r bg-white">
+    <div className="flex h-full w-full shrink-0 flex-col border-r bg-white md:w-[300px]">
       <div className="flex items-center justify-between border-b px-3 py-2">
         <h2 className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-slate-800">
           <DropdownMenu>

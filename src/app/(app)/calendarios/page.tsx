@@ -724,10 +724,11 @@ export default function CalendariosPage() {
       <div className="p-6">
         {tab === "Visualização de calendário" ? (
           <>
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex flex-col items-start gap-2 md:flex-row md:items-center md:justify-between">
               <h1 className="text-lg font-bold text-slate-900">Calendários</h1>
-              <div className="flex items-center gap-3">
-                <p className="text-xs text-slate-500">
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Instruções de arrastar/clicar só no desktop — no toque não se aplicam. */}
+                <p className="hidden text-xs text-slate-500 md:block">
                   {view === "semana"
                     ? "Clique num horário para criar · clique no evento para editar · arraste para mudar de dia ou hora"
                     : "Clique num dia para criar · clique no evento para editar"}

@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarClock, Link2, Phone, Plus, Smartphone, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronLeft, Link2, Phone, Plus, Smartphone, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { SubNav } from "@/components/layout/subnav";
 import { Composer } from "@/components/inbox/composer";
@@ -50,6 +50,7 @@ import {
 } from "@/lib/data/repos/db/conversations";
 import { useTeam } from "@/lib/data/repos/db/team";
 import { brand } from "@/lib/config/brand";
+import { cn } from "@/lib/utils";
 import type { Channel, ScheduleStatus } from "@/lib/data/types";
 
 const TABS = [
@@ -104,19 +105,34 @@ function ConversasPageInner() {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          <ViewsRail onNew={() => setNewOpen(true)} onSelectConversation={setSelectedId} />
-          <ConversationList
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            onNew={() => setNewOpen(true)}
-          />
+          {/* Rail de ícones: só desktop. */}
+          <div className="hidden md:flex">
+            <ViewsRail onNew={() => setNewOpen(true)} onSelectConversation={setSelectedId} />
+          </div>
+          {/* Lista: tela cheia no mobile; some quando uma conversa está aberta
+              (aí o mobile mostra o detalhe). No desktop fica sempre visível. */}
+          <div className={cn("w-full md:w-auto", selectedId && "hidden md:flex")}>
+            <ConversationList
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onNew={() => setNewOpen(true)}
+            />
+          </div>
           {selectedId ? (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              {/* Barra "voltar" só no mobile: volta para a lista. */}
+              <button
+                onClick={() => setSelectedId(null)}
+                className="flex items-center gap-1 border-b bg-white px-3 py-2 text-sm font-medium text-slate-600 md:hidden"
+              >
+                <ChevronLeft className="size-4" /> Conversas
+              </button>
               <Thread conversationId={selectedId} onDeleted={() => setSelectedId(null)} />
               <Composer conversationId={selectedId} />
             </div>
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-slate-50">
+            /* Estado vazio: no mobile a lista já ocupa a tela, então só aparece no desktop. */
+            <div className="hidden flex-1 flex-col items-center justify-center gap-3 bg-slate-50 md:flex">
               <p className="text-sm text-slate-400">
                 {conversations.length === 0
                   ? "Nenhuma conversa ainda — comece uma com um contato"
@@ -127,7 +143,12 @@ function ConversasPageInner() {
               </Button>
             </div>
           )}
-          {selectedConversation && <ContactPanel contactId={selectedConversation.contactId} />}
+          {/* Painel do contato: só em telas largas. */}
+          {selectedConversation && (
+            <div className="hidden lg:flex lg:w-[300px] lg:shrink-0 lg:border-l">
+              <ContactPanel contactId={selectedConversation.contactId} />
+            </div>
+          )}
         </div>
       )}
       <NewConversationDialog
