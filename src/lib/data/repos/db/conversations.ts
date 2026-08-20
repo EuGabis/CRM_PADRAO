@@ -673,8 +673,12 @@ export const conversationActions = {
   async close(conversationId: string, done: boolean): Promise<boolean> {
     const supabase = createClient();
     const { data: auth } = await supabase.auth.getUser();
+    // Finalizar RELIGA a IA (bot_paused: false): o atendente terminou, então
+    // se o cliente escrever de novo a IA volta a atender, sem precisar caçar o
+    // botão "Reativar IA". Reabrir (done=false) não mexe no bot — quem reabre
+    // não quer necessariamente a IA de volta na hora.
     const patch = done
-      ? { closed_at: new Date().toISOString(), closed_by: auth.user?.id ?? null }
+      ? { closed_at: new Date().toISOString(), closed_by: auth.user?.id ?? null, bot_paused: false }
       : { closed_at: null, closed_by: null };
     const { data, error } = await supabase
       .from("conversations")
