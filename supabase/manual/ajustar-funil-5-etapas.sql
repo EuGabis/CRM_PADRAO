@@ -54,7 +54,9 @@
 
 do $$
 declare
-  v_location_id   uuid := '00000000-0000-0000-0000-000000000000'; -- <<< TROQUE AQUI antes de rodar
+  -- Gaabtur. Para outra empresa, troque o id aqui (a "Minha empresa" é
+  -- 776ffb6b-44ac-46dc-88a6-7e19c53c964f).
+  v_location_id   uuid := '394491f9-288d-44b1-9647-ab836b0d699d';
   -- false = simulação: mostra o de-para (via raise exception, que o SQL
   -- Editor exibe) e não altera nada. Troque para true só depois de
   -- conferir o mapa.
