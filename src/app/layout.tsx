@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { brand } from "@/lib/config/brand";
@@ -15,6 +15,16 @@ export const metadata: Metadata = {
     template: `%s · ${brand.name}`,
   },
   description: brand.tagline,
+};
+
+// `viewportFit: "cover"` faz o app encostar nas bordas (as variáveis
+// env(safe-area-inset-*) usadas na barra de abas mobile só valem com isso);
+// `themeColor` pinta a barra de status do navegador/PWA na cor do shell.
+export const viewport: Viewport = {
+  themeColor: "#0d1117",
+  viewportFit: "cover",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

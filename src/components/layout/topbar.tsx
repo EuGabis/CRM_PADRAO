@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { createClient } from "@/lib/supabase/client";
+import { brand } from "@/lib/config/brand";
 import { clearBrowserSession } from "@/lib/auth/session-marker";
 import { NotificationsPanel } from "./notifications-panel";
 import { SupportPanel } from "./support-panel";
@@ -46,12 +47,21 @@ export function Topbar() {
 
   return (
     <header className="flex h-12 shrink-0 items-center justify-end gap-2 border-b bg-[#0d1117] px-4">
+      {/* Marca à esquerda só no mobile: a Sidebar (que já mostra a marca) fica
+          escondida abaixo de md. `mr-auto` empurra o resto dos botões pra
+          direita. */}
+      <div className="mr-auto flex items-center gap-2 md:hidden">
+        <div className="flex size-7 items-center justify-center rounded-lg bg-[var(--crm-sidebar-accent)] text-xs font-black text-white">
+          {brand.shortName[0]}
+        </div>
+        <span className="text-sm font-bold text-white">{brand.name}</span>
+      </div>
       <button
         onClick={() => setSupportOpen(true)}
         className="flex items-center gap-1.5 rounded-full bg-lime-400 px-3 py-1 text-xs font-bold text-lime-950 hover:bg-lime-300"
       >
         <LifeBuoy className="size-3.5" />
-        Suporte
+        <span className="hidden sm:inline">Suporte</span>
       </button>
       {/* Popover controlado: "Ligar" no card do kanban e no cabeçalho da
           conversa abrem ESTE painel, com o número do contato já no visor. */}
@@ -62,7 +72,7 @@ export function Topbar() {
           }
         >
           <Headset className="size-3.5" />
-          Webphone
+          <span className="hidden md:inline">Webphone</span>
         </PopoverTrigger>
         <PopoverContent align="end" className="p-0">
           <WebphonePanel />
@@ -72,7 +82,7 @@ export function Topbar() {
       <button
         onClick={() => setWebphoneOpen(true)}
         title="Abrir o webphone"
-        className="flex size-7 items-center justify-center rounded-full bg-emerald-500 text-white hover:bg-emerald-400"
+        className="hidden size-7 items-center justify-center rounded-full bg-emerald-500 text-white hover:bg-emerald-400 sm:flex"
       >
         <Phone className="size-3.5" />
       </button>

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { BottomNav } from "@/components/layout/bottom-nav";
 import { SessionManager } from "@/components/layout/session-manager";
 import { AppointmentReminders } from "@/components/calendar/appointment-reminders";
 import { ModuleGuard } from "@/components/layout/module-guard";
@@ -54,10 +55,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
-        <main className="min-h-0 flex-1 overflow-y-auto bg-slate-50">
+        {/* Respiro inferior no mobile para o conteúdo não ficar atrás da barra
+            de abas fixa (altura da barra + safe-area do iPhone). */}
+        <main className="min-h-0 flex-1 overflow-y-auto bg-slate-50 pb-[calc(3.75rem+env(safe-area-inset-bottom))] md:pb-0">
           <ModuleGuard>{children}</ModuleGuard>
         </main>
       </div>
+      {/* Navegação mobile (só aparece abaixo de md; some no desktop). */}
+      <BottomNav />
     </div>
   );
 }

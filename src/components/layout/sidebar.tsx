@@ -37,7 +37,7 @@ export function Sidebar() {
   const { can } = useMyMembership();
   const { company } = useAccount();
   return (
-    <aside className="flex h-screen w-[240px] shrink-0 flex-col bg-[var(--crm-sidebar)]">
+    <aside className="hidden h-screen w-[240px] shrink-0 flex-col bg-[var(--crm-sidebar)] md:flex">
       <div className="px-4 pt-4">
         <div className="flex items-center gap-2">
           <div className="flex size-8 items-center justify-center overflow-hidden rounded-lg bg-[var(--crm-sidebar-accent)] text-sm font-black text-white">
