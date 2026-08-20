@@ -60,7 +60,7 @@ declare
   -- false = simulação: mostra o de-para (via raise exception, que o SQL
   -- Editor exibe) e não altera nada. Troque para true só depois de
   -- conferir o mapa.
-  v_aplicar       boolean := false;
+  v_aplicar       boolean := true;
   v_pipeline_id   uuid;
   v_nomes         text[] := array['Novo Lead', 'Proposta Enviada', 'Em Negociação', 'Fechado/Ganho', 'Perdido'];
   v_cores         text[] := array['#3b82f6', '#f97316', '#a855f7', '#22c55e', '#ef4444'];
