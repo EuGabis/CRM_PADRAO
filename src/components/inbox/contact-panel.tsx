@@ -5,12 +5,14 @@ import Link from "next/link";
 import {
   CalendarDays,
   CheckSquare,
+  Download,
   FileText,
+  Loader2,
   Pencil,
   Plus,
-  Search,
   Target,
   Trash2,
+  Upload,
   User,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -43,6 +45,7 @@ import { useDbContact, useDbStore, useDbTeam } from "@/lib/data/repos/db/contact
 import { usePipelineDb } from "@/lib/data/repos/db/pipeline";
 import { formatBRL } from "@/lib/data/repos/opportunities";
 import { useContactNotes, contactNoteActions } from "@/lib/data/repos/db/contact-notes";
+import { useContactFiles, contactFileActions, type ContactFile } from "@/lib/data/repos/db/contact-files";
 import {
   appointmentActions,
   useContactAppointments,
@@ -70,40 +73,6 @@ const PANELS: { key: Panel; icon: typeof User; label: string }[] = [
   { key: "compromissos", icon: CalendarDays, label: "Compromissos" },
   { key: "arquivos", icon: FileText, label: "Arquivos" },
 ];
-
-function PanelShell({
-  title,
-  children,
-  searchPlaceholder,
-}: {
-  title: string;
-  children: React.ReactNode;
-  searchPlaceholder?: string;
-}) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center justify-between border-b px-3 py-2">
-        <h3 className="text-xs font-bold text-slate-700">{title}</h3>
-        <button
-          onClick={() => toast.info(`Adicionar em "${title}" chega com o backend`)}
-          className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:underline"
-        >
-          <Plus className="size-3" /> Adicionar
-        </button>
-      </div>
-      {searchPlaceholder && (
-        <div className="flex items-center gap-1.5 border-b px-3 py-1.5">
-          <Search className="size-3 text-slate-400" />
-          <Input
-            placeholder={searchPlaceholder}
-            className="h-6 border-0 p-0 text-[11px] shadow-none focus-visible:ring-0"
-          />
-        </div>
-      )}
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 [scrollbar-width:thin]">{children}</div>
-    </div>
-  );
-}
 
 function NotesPanel({ contactId }: { contactId: string }) {
   const { notes, loading } = useContactNotes(contactId);
@@ -455,6 +424,136 @@ function TarefasPanel({ contactId }: { contactId: string }) {
   );
 }
 
+/** `bytes` → texto legível (KB/MB), sem casas decimais em excesso. */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function ArquivosPanel({ contactId }: { contactId: string }) {
+  const { files, loading } = useContactFiles(contactId);
+  const [uploading, setUploading] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permite escolher o mesmo arquivo de novo depois
+    if (!file || uploading) return;
+    setUploading(true);
+    const res = await contactFileActions.upload(contactId, file);
+    setUploading(false);
+    if (!res.ok) {
+      toast.error(res.error ?? "Não foi possível enviar o arquivo.");
+      return;
+    }
+    toast.success("Arquivo enviado.");
+  };
+
+  const handleDownload = async (f: ContactFile) => {
+    const url = await contactFileActions.signedUrl(f.storagePath);
+    if (!url) {
+      toast.error("Não foi possível gerar o link do arquivo.");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleRemove = async (f: ContactFile) => {
+    if (!window.confirm(`Remover "${f.fileName}"?`)) return;
+    setRemovingId(f.id);
+    const res = await contactFileActions.remove(f.id);
+    setRemovingId(null);
+    if (!res.ok) {
+      toast.error(res.error ?? "Não foi possível remover o arquivo.");
+      return;
+    }
+    toast.success("Arquivo removido.");
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="border-b px-3 py-2">
+        <h3 className="text-xs font-bold text-slate-700">Arquivos</h3>
+      </div>
+      <div className="border-b p-3">
+        <label
+          className={cn(
+            "flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-semibold text-white",
+            uploading
+              ? "cursor-not-allowed bg-indigo-400"
+              : "bg-indigo-600 hover:bg-indigo-700"
+          )}
+        >
+          {uploading ? (
+            <>
+              <Loader2 className="size-3 animate-spin" /> Enviando...
+            </>
+          ) : (
+            <>
+              <Upload className="size-3" /> Enviar arquivo
+            </>
+          )}
+          <input
+            type="file"
+            className="hidden"
+            disabled={uploading}
+            onChange={handleFileChange}
+          />
+        </label>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 [scrollbar-width:thin]">
+        {loading ? (
+          <p className="text-[11px] text-slate-400">Carregando...</p>
+        ) : files.length === 0 ? (
+          <SmallEmpty
+            icon={FileText}
+            title="Ainda não há arquivos"
+            text="Carregue o primeiro documento deste contato."
+          />
+        ) : (
+          <div className="space-y-2">
+            {files.map((f) => (
+              <div key={f.id} className="group rounded-lg border p-2.5">
+                <p className="truncate text-xs font-semibold text-slate-700" title={f.fileName}>
+                  {f.fileName}
+                </p>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <p className="text-[10px] text-slate-400">
+                    {formatFileSize(f.fileSize)} ·{" "}
+                    {format(new Date(f.createdAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </p>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      onClick={() => handleDownload(f)}
+                      className="text-slate-400 hover:text-indigo-600"
+                      title="Baixar arquivo"
+                    >
+                      <Download className="size-3" />
+                    </button>
+                    <button
+                      onClick={() => handleRemove(f)}
+                      disabled={removingId === f.id}
+                      className="text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100 disabled:opacity-50"
+                      title="Apagar arquivo"
+                    >
+                      {removingId === f.id ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-3" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SmallEmpty({ icon, title, text }: { icon: typeof User; title: string; text: string }) {
   const Icon = icon;
   return (
@@ -469,7 +568,6 @@ function SmallEmpty({ icon, title, text }: { icon: typeof User; title: string; t
 export function ContactPanel({ contactId }: { contactId: string }) {
   const [panel, setPanel] = useState<Panel>("campos");
   const [tab, setTab] = useState<"todos" | "dnd" | "acoes">("todos");
-  const [fileTab, setFileTab] = useState("Todos");
   const [pipelineOpen, setPipelineOpen] = useState(false);
   const { contact } = useDbContact(contactId);
   const { pipelines, opportunities: allOpps } = usePipelineDb();
@@ -656,27 +754,7 @@ export function ContactPanel({ contactId }: { contactId: string }) {
         ) : panel === "compromissos" ? (
           <CompromissosPanel contactId={contactId} />
         ) : (
-          <PanelShell title="Arquivos" searchPlaceholder="Pesquisar por documento">
-            <div className="mb-2 flex gap-1">
-              {["Todos", "Interno", "Enviado", "Recebido"].map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setFileTab(t)}
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-[10px] font-medium",
-                    fileTab === t ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"
-                  )}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-            <SmallEmpty
-              icon={FileText}
-              title="Ainda não há documentos"
-              text="Carregue ou envie documentos para vê-los aqui."
-            />
-          </PanelShell>
+          <ArquivosPanel contactId={contactId} />
         )}
       </div>
       <div className="flex w-11 shrink-0 flex-col items-center gap-1 border-l py-2">
