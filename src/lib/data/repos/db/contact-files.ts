@@ -122,8 +122,11 @@ export const contactFileActions = {
     }
 
     const supabase = createClient();
-    const ext =
+    // Extensão sanitizada: só letras/números, no máximo 12 chars. Sem isso um
+    // nome como "foo.ab/cd" injetaria uma barra no path do storage.
+    const extBruta =
       (file.name.includes(".") ? file.name.split(".").pop() : file.type.split("/")[1]) || "bin";
+    const ext = extBruta.replace(/[^a-z0-9]/gi, "").slice(0, 12) || "bin";
     // Primeiro segmento TEM que ser o location_id — é o que a policy do
     // bucket usa pra isolar tenant (mesmo padrão de conversation-media).
     const path = `${locationId}/${contactId}/${crypto.randomUUID()}.${ext.toLowerCase()}`;
