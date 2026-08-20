@@ -346,7 +346,10 @@ function MessageBubble({ message }: { message: Message }) {
         message.type === "file" ? (
           <MediaContent message={message} out={isOut && !message.internal} />
         ) : (
-          message.body
+          // whitespace-pre-wrap preserva as quebras de linha do texto — sem
+          // isso o HTML colapsa cada \n em espaço, e a mensagem que chega
+          // formatada no WhatsApp aparece grudada aqui no CRM.
+          <span className="whitespace-pre-wrap">{message.body}</span>
         )}
         <p
           className={cn(

@@ -361,6 +361,18 @@ export async function maybeAutoReply(
     // dois — o cliente define a personalidade, mas nem o formato de resposta
     // nem a trava de imagem podem ser atropelados por ela.
     system = `${system}\n\n${INSTRUCAO_ATENDIMENTO}`;
+    // O modelo não tem relógio: sem isso ele chuta a hora e erra a saudação
+    // (às 00h dizia "boa tarde"). Injetamos a hora real de Brasília para ele
+    // acertar bom dia / boa tarde / boa noite.
+    const agora = new Date().toLocaleString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      minute: "2-digit",
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+    });
+    system = `${system}\n\nAgora em Brasília: ${agora}. Use isto para a saudação correta (bom dia até 12h, boa tarde até 18h, boa noite depois) e para qualquer referência a horário ou data.`;
     // A trava é acrescentada DEPOIS do texto do agente (personalidade,
     // objetivo, informações — tudo configurado pelo cliente), nunca antes:
     // uma personalidade mais assertiva escrita pelo cliente poderia atropelar
