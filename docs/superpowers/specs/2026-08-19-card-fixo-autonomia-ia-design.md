@@ -1,25 +1,27 @@
-# Card fixo por contato e autonomia total da IA no funil — design
+# Card fixo por contato e autonomia da IA no funil — design
 
 **Data:** 2026-08-19
 
-**Objetivo:** cada contato tem **um** card no funil, para sempre o mesmo, e a IA
-pode movê-lo para qualquer uma das cinco etapas conforme entende a conversa. O
-dono do card acompanha o atendente da conversa.
+**Objetivo:** cada contato tem **um** card no funil, para sempre o mesmo. A IA
+cria em `Novo Lead` e move entre `Novo Lead`, `Em Negociação` e `Perdido`
+conforme entende a conversa; `Proposta Enviada` e `Fechado/Ganho` continuam
+sendo do humano. O dono do card acompanha o atendente da conversa.
 
 ## Decisão do dono, registrada
 
-O desenho anterior travava a IA em `Novo Lead` e `Em Negociação` de propósito:
-`Fechado/Ganho` e `Perdido` são resultado de negócio, e deixá-los fora do alcance
-do modelo mantinha o relatório de vendas independente de interpretação.
+O desenho anterior travava a IA em `Novo Lead` e `Em Negociação`. O dono pediu
+autonomia total e, depois de avisado do risco, recuou para um meio-termo que
+mantém a proteção onde ela importa: **`Fechado/Ganho` continua sendo só do
+humano**, então o número de vendas da agência não depende de interpretação do
+modelo. `Perdido` passou para a IA.
 
-**O dono foi avisado disso e decidiu o contrário**, para ganhar visualização
-automática do funil. A partir daqui, **quanto a agência vendeu passa a ser o que
-o modelo entendeu da conversa**. É decisão consciente, não descuido, e este
-parágrafo existe para quem ler o código depois não "consertar" achando que é bug.
+Este parágrafo existe para quem ler o código depois não "consertar" achando que
+é inconsistência: a assimetria entre ganho e perdido é deliberada. Errar um
+perdido é recuperável — o consultor arrasta o card de volta. Errar um ganho
+infla receita e só aparece quando alguém cobra uma venda que não existiu.
 
-O contrapeso é o registro: todo movimento grava evento na conversa dizendo que
-foi a IA. Com autonomia total, esse log deixa de ser conveniência e passa a ser a
-única forma de auditar erro do modelo.
+O contrapeso geral é o registro: todo movimento grava evento na conversa dizendo
+que foi a IA. É a única forma de auditar erro do modelo.
 
 ## Arquitetura
 
@@ -31,33 +33,47 @@ que volta ganha card novo. Isso sai.
 A IA passa a encontrar o card do contato **em qualquer status**, dentro do funil
 da empresa, e a mover esse mesmo. Nunca cria um segundo.
 
-Consequência aceita: uma venda registrada pode ser desmarcada quando o mesmo
-cliente volta e a conversa leva a IA a mover o card. É o preço de "card fixo", e
+Consequência aceita: um card já perdido pode voltar para negociação quando o mesmo
+cliente volta e a conversa retoma. É o preço de "card fixo", e
 é coerente com o que o dono pediu — evitar duplicata e erro de contagem.
 
 **A ligação é `contact_id` + funil da empresa.** Não há coluna nova: o contato é
 a chave, como o dono descreveu ("cada contato tem um card fixo").
 
-### 2. A lista fechada continua, com outro propósito
+### 2. Três etapas para a IA, duas para o humano
 
-`ETAPAS_DA_IA` passa a ter as cinco etapas. Ela **não limita mais** a IA — existe
-agora só para **recusar nome que o modelo invente**. Se ele devolver "Aguardando
-cliente" ou "Follow-up", isso é descartado com log, em vez de virar etapa nova no
-funil da agência.
+`ETAPAS_DA_IA` passa a ter **três** destinos:
 
-Sai também a regra de "só avança": a IA precisa poder voltar de `Perdido` para
-`Em Negociação` quando o cliente reaparece, e de `Proposta Enviada` para
-`Perdido` quando ele desiste.
+| Etapa | Quem move |
+|---|---|
+| **Novo Lead** | IA (cria) |
+| **Em Negociação** | IA |
+| **Perdido** | IA |
+| **Proposta Enviada** | só humano |
+| **Fechado/Ganho** | só humano |
 
-Sai igualmente a regra de "não toca em card fora do território": com autonomia
-total, a IA move mesmo o card que um humano posicionou. Se o consultor marcou
-`Proposta Enviada` e o cliente respondeu que desistiu, a IA move para `Perdido`.
+`Proposta Enviada` é do humano porque quem envia proposta é o consultor, muitas
+vezes fora do CRM — a IA não tem como saber que aconteceu. `Fechado/Ganho` é do
+humano porque é o número de venda da agência: "pode fechar então!" não é uma
+venda, o cliente ainda não pagou nem emitiu.
+
+`Perdido` fica com a IA porque errar um perdido é recuperável e não infla
+receita — o consultor vê o card na coluna errada e arrasta de volta.
+
+Sai a regra de "só avança": a IA precisa poder voltar de `Perdido` para
+`Em Negociação` quando o cliente reaparece.
+
+**`Fechado/Ganho` é terminal para a IA.** Ela pode mover um card que está em
+`Proposta Enviada` (cliente recusou → `Perdido`), mas **nunca tira um card de
+`Fechado/Ganho`**. Uma conversa mal interpretada não pode apagar uma venda já
+registrada; para reabrir, o humano arrasta.
 
 ### 3. O `status` acompanha a etapa
 
 `opportunities.status` é o que alimenta relatório: `won`, `lost` ou `open`.
-Quando a IA move para `Fechado/Ganho` o status vira `won`; para `Perdido`,
-`lost`; para as outras três, volta a `open`.
+Quando a IA move para `Perdido` o status vira `lost`; para `Novo Lead` ou
+`Em Negociação`, volta a `open`. `won` só é escrito pelo humano, porque só o
+humano move para `Fechado/Ganho`.
 
 O projeto já tem essa derivação em dois lugares (`statusForStage` no repo do
 funil e `statusForStageName` nas automações). **A IA usa a mesma**, em vez de uma
