@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
+import { normalizarTelefone } from "@/lib/contacts/telefone";
 import type { Channel, Contact, User } from "@/lib/data/types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -147,7 +148,7 @@ export const dbContactActions = {
         first_name: input.firstName,
         last_name: input.lastName,
         email: input.email,
-        phone: input.phone,
+        phone: normalizarTelefone(input.phone),
         company: input.company ?? null,
         tags: input.tags,
         owner_id: userId,
@@ -220,7 +221,7 @@ export const dbContactActions = {
     if (patch.firstName !== undefined) row.first_name = patch.firstName;
     if (patch.lastName !== undefined) row.last_name = patch.lastName;
     if (patch.email !== undefined) row.email = patch.email;
-    if (patch.phone !== undefined) row.phone = patch.phone;
+    if (patch.phone !== undefined) row.phone = normalizarTelefone(patch.phone);
     if (patch.company !== undefined) row.company = patch.company || null;
     if (patch.customFields !== undefined) row.custom_fields = patch.customFields;
     const { data, error } = await supabase
@@ -258,7 +259,7 @@ export const dbContactActions = {
           first_name: r.firstName,
           last_name: r.lastName,
           email: r.email,
-          phone: r.phone,
+          phone: normalizarTelefone(r.phone),
           company: r.company ?? null,
           tags: r.tags,
           owner_id: userId,

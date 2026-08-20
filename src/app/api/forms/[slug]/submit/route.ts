@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { normalizarTelefone } from "@/lib/contacts/telefone";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export const dynamic = "force-dynamic";
@@ -62,7 +63,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
       firstName = parts.shift() ?? raw;
       lastName = parts.join(" ");
     } else if (f.mapsTo === "email") email = raw;
-    else if (f.mapsTo === "phone") phone = raw;
+    else if (f.mapsTo === "phone") phone = normalizarTelefone(raw);
     else if (f.mapsTo === "company") company = raw;
     else if (typeof f.mapsTo === "string" && f.mapsTo.startsWith("custom:")) {
       custom[f.mapsTo.slice(7)] = raw;
