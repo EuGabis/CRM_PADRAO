@@ -454,7 +454,9 @@ function AppointmentDialog({
       toast.error("Preencha título, data e horários");
       return;
     }
-    if (endTime <= startTime) {
+    // Tarefa é um ponto no tempo (end = start), então término igual ao início
+    // é válido. Só compromisso exige fim depois do início.
+    if (editing?.kind !== "tarefa" && endTime <= startTime) {
       toast.error("O horário de término precisa ser depois do início");
       return;
     }
