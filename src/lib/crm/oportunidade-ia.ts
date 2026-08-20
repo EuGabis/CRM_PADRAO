@@ -228,7 +228,7 @@ async function sincronizarOportunidade(
   // como desempate determinístico — nunca cria um segundo.
   const { data: existentes, error: existenteError } = await db
     .from("opportunities")
-    .select("id, stage_id")
+    .select("id, stage_id, status")
     .eq("location_id", p.locationId)
     .eq("contact_id", p.contactId)
     .eq("pipeline_id", pipeline.id)
@@ -250,10 +250,21 @@ async function sincronizarOportunidade(
   if (existente) {
     if (existente.stage_id === etapa.id) return; // nada mudou — não polui a conversa
 
+    // Segunda linha de defesa: card já marcado como ganho por outro caminho
+    // (automação do dono, importação, ou etapa cujo nome não denuncia a
+    // venda) — nem precisa olhar a etapa atual.
+    if (existente.status === "won") {
+      console.info("[registrarAtendimento] card marcado como ganho, IA nao move", {
+        locationId: p.locationId,
+      });
+      return;
+    }
+
     const { data: etapaAtual, error: etapaAtualError } = await db
       .from("stages")
       .select("name, position")
       .eq("id", existente.stage_id)
+      .eq("location_id", p.locationId)
       .maybeSingle();
     if (etapaAtualError) throw etapaAtualError;
 
@@ -262,8 +273,13 @@ async function sincronizarOportunidade(
 
     // Fechado/Ganho é terminal para a IA: uma conversa mal interpretada não
     // pode apagar uma venda já registrada. Para reabrir, o humano arrasta.
-    if (etapaAtual.name === "Fechado/Ganho") {
-      console.info("[registrarAtendimento] card em Fechado/Ganho, IA nao move", {
+    // O nome da etapa é editável pelo dono (renameStage) e empresas antigas
+    // têm funil divergente — comparar o nome literal ("Fechado/Ganho") furava
+    // assim que alguém renomeasse para "Ganho" ou tivesse "ASSINOU" no funil
+    // legado. `statusForStageName` é o mesmo predicado usado duas linhas
+    // abaixo para o status de destino — uma única noção de "isto é venda".
+    if (statusForStageName(etapaAtual.name) === "won") {
+      console.info("[registrarAtendimento] card em etapa de ganho, IA nao move", {
         locationId: p.locationId,
       });
       return;
