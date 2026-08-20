@@ -285,6 +285,18 @@ async function sincronizarOportunidade(
       return;
     }
 
+    // A IA NUNCA retrocede no funil. Ela avança (Novo Lead → Em Negociação) e
+    // pode marcar Perdido; voltar para uma etapa anterior é decisão humana.
+    // Sem esta regra o modelo oscilava a cada mensagem — ao responder "1
+    // adulto" ele reclassificava como "ainda coletando = Novo Lead" e puxava
+    // o card de volta de Em Negociação, na mesma conversa. `Perdido` é
+    // exceção: não é "voltar", é uma saída lateral, e o cliente pode desistir
+    // a qualquer momento.
+    const ehPerdido = status === "lost";
+    if (!ehPerdido && etapa.position <= etapaAtual.position) {
+      return; // destino não avança e não é Perdido — não mexe, não polui a conversa
+    }
+
     const { error: moverError } = await db
       .from("opportunities")
       .update({ stage_id: etapa.id, status })
