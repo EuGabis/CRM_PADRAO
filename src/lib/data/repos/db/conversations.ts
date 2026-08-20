@@ -348,22 +348,61 @@ function logFalhaEvento(err: unknown): void {
  * deixa o card sem dono (`null`). Igual a `registrarAtendimento`
  * (oportunidade-ia.ts), que dá o `owner_id` inicial ao criar o card.
  *
- * Contato sem card: não sincroniza nada, e não cria um — isso encheria o
- * funil de cards sem negócio nenhum (`.update` sobre zero linhas é no-op).
+ * Escopo é **só o card do contato no pipeline da empresa** (`scope =
+ * 'empresa'`), o mesmo que `sincronizarOportunidade` usa — a 0039 introduziu
+ * pipeline por departamento e por usuário, e um contato pode ter card em
+ * mais de um funil. Sem esse filtro o update reatribuiria qualquer
+ * oportunidade do contato em qualquer funil, inclusive negócios sem relação
+ * com este atendimento. Se houver mais de um card do contato nesse funil
+ * (um humano pode ter criado outro pela tela), pega o mais recente por
+ * `created_at`, com `id` como desempate — mesma regra de
+ * `sincronizarOportunidade`, nunca reatribui os dois.
  *
- * Aqui a query roda com a sessão do usuário (RLS ativa), não service role:
- * um usuário com `only_assigned = true` que não enxerga o card do contato
- * (0039: `sees_all(location_id) or owner_id = auth.uid()`) tem esse update
- * recusado pela RLS — falha esperada, best-effort, nunca pode derrubar a
- * atribuição da conversa, que é a ação que o usuário pediu.
+ * Contato sem card nesse funil: não sincroniza nada, e não cria um — isso
+ * encheria o funil de cards sem negócio nenhum.
+ *
+ * Aqui as queries rodam com a sessão do usuário (RLS ativa), não service
+ * role: um usuário com `only_assigned = true` que não enxerga o card do
+ * contato (0039: `sees_all(location_id) or owner_id = auth.uid()`) tem o
+ * update recusado pela RLS (zero linhas afetadas, sem erro) — falha
+ * esperada, best-effort, nunca pode derrubar a atribuição da conversa, que
+ * é a ação que o usuário pediu.
  */
 async function sincronizarDonoDoCard(
   supabase: ReturnType<typeof createClient>,
   contactId: string,
   userId: string | null
 ): Promise<void> {
+  const location = loc();
+  if (!location) return;
   try {
-    await supabase.from("opportunities").update({ owner_id: userId }).eq("contact_id", contactId);
+    const { data: pipeline } = await supabase
+      .from("pipelines")
+      .select("id")
+      .eq("location_id", location)
+      .eq("scope", "empresa")
+      .order("position", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (!pipeline) return;
+
+    const { data: existentes } = await supabase
+      .from("opportunities")
+      .select("id")
+      .eq("location_id", location)
+      .eq("contact_id", contactId)
+      .eq("pipeline_id", pipeline.id)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1);
+    const card = existentes?.[0] ?? null;
+    if (!card) return; // sem card nesse funil — não cria um só para a atribuição
+
+    await supabase
+      .from("opportunities")
+      .update({ owner_id: userId })
+      .eq("id", card.id)
+      .eq("location_id", location);
   } catch (err) {
     logFalhaEvento(err);
   }
