@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ArrowLeft, MessageSquare, Pencil, X } from "lucide-react";
@@ -15,14 +16,31 @@ import { ChannelIcon } from "@/components/shared/channel-icon";
 import { CustomFieldsInputs } from "@/components/contacts/custom-fields-inputs";
 import { contactName } from "@/lib/data/repos/contacts";
 import { dbContactActions, useDbContact, useDbTeam } from "@/lib/data/repos/db/contacts";
+import { conversationActions } from "@/lib/data/repos/db/conversations";
 import { useContactsModule } from "@/lib/data/repos/db/contacts-module";
 import { usePipelineDb } from "@/lib/data/repos/db/pipeline";
 import { formatBRL } from "@/lib/data/repos/opportunities";
 
 export default function ContactDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
+  const [abrindoConversa, setAbrindoConversa] = useState(false);
   const { contact, loading } = useDbContact(id);
   const team = useDbTeam();
+
+  // Abre (ou reaproveita) a conversa de WhatsApp do contato e navega para a
+  // inbox já com ela selecionada (?c=<id>). Antes o botão ia para /conversas
+  // seco, e a inbox caía na primeira conversa da lista, não na deste contato.
+  async function abrirConversa() {
+    setAbrindoConversa(true);
+    const convId = await conversationActions.open(id, "whatsapp");
+    setAbrindoConversa(false);
+    if (!convId) {
+      toast.error("Não foi possível abrir a conversa");
+      return;
+    }
+    router.push(`/conversas?c=${convId}`);
+  }
   const { fields } = useContactsModule();
   const { pipelines, opportunities } = usePipelineDb();
   const contactOpps = opportunities.filter((o) => o.contactId === id);
@@ -149,11 +167,15 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
               >
                 <Pencil className="size-3.5" /> Editar
               </Button>
-              <Link href="/conversas">
-                <Button size="sm" className="h-8 gap-1.5 text-xs">
-                  <MessageSquare className="size-3.5" /> Abrir conversa
-                </Button>
-              </Link>
+              <Button
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+                onClick={abrirConversa}
+                disabled={abrindoConversa}
+              >
+                <MessageSquare className="size-3.5" />
+                {abrindoConversa ? "Abrindo..." : "Abrir conversa"}
+              </Button>
             </>
           )}
         </div>
