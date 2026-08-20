@@ -401,21 +401,38 @@ provedor.
 
 O agente principal do WhatsApp responde em **conversa natural** — sem menu
 numerado —, e por trás disso a cada mensagem do cliente `maybeAutoReply` pede
-ao modelo uma **única chamada** que devolve JSON com três chaves: `resposta`
+ao modelo uma **única chamada** que devolve JSON com quatro chaves: `resposta`
 (o texto que vai ao cliente), `dados` (campos extraídos até agora, ex.:
-origem/destino/data/passageiros) e `etapa_sugerida` (para onde a conversa
-parece estar indo no funil). **O JSON cru nunca é mandado ao cliente** — só o
-campo `resposta` vira mensagem de WhatsApp; `dados` e `etapa_sugerida` são
-consumidos internamente por `registrarAtendimento`
-(`src/lib/crm/oportunidade-ia.ts`).
+origem/destino/data/passageiros), `etapa_sugerida` (para onde a conversa
+parece estar indo no funil) e `escalar` (`{motivo}` ou `null` — ver abaixo).
+**O JSON cru nunca é mandado ao cliente** — só o campo `resposta` vira
+mensagem de WhatsApp; `dados` e `etapa_sugerida` são consumidos internamente
+por `registrarAtendimento` (`src/lib/crm/oportunidade-ia.ts`), e `escalar`
+por `maybeAutoReply` (`src/lib/whatsapp/auto-reply.ts`). O contrato inteiro
+(`RespostaAtendimento`) e o parse seguro dele vivem em
+`src/lib/ai/atendimento.ts`.
 
 A allowlist de etapas que a IA pode tocar (`ETAPAS_DA_IA`, no mesmo arquivo)
-vive **no código**, não no prompt. Pedir ao modelo "não mova para Ganho/
-Perdido" no texto da personalidade é um pedido, não uma garantia — uma
-conversa criativa o suficiente o faz desobedecer. Só o código decide se uma
-etapa sugerida é aplicada; hoje isso cobre só `Novo Lead` e `Em Negociação`.
-Ganho e Perdido são resultado de negócio (o cliente pagou ou não), nunca
-interpretação de intenção — "pode fechar então!" não move o card sozinho.
+vive **no código**, não no prompt. Pedir ao modelo "não mova para Ganho" no
+texto da personalidade é um pedido, não uma garantia — uma conversa criativa o
+suficiente o faz desobedecer. Só o código decide se uma etapa sugerida é
+aplicada, e hoje a allowlist tem **três** etapas: `Novo Lead`, `Em Negociação`
+e `Perdido`. Duas ficam de fora, só para o humano: `Proposta Enviada` (quem
+envia proposta é o consultor, muitas vezes fora do CRM — a IA não tem como
+saber que aconteceu) e `Fechado/Ganho`.
+
+A assimetria entre Ganho e Perdido é deliberada, não inconsistência: errar um
+`Perdido` é recuperável (o consultor arrasta de volta) e não infla receita;
+errar um `Fechado/Ganho` é o número de venda da agência — "pode fechar
+então!" não é uma venda, o cliente não pagou nem emitiu, e o erro só aparece
+quando alguém cobra uma venda que não existiu. `Fechado/Ganho` é **terminal**
+para a IA: se a etapa atual do card já está lá, ela não mexe mais — nem para
+`Perdido`, nem para nenhuma outra. A checagem é por
+`statusForStageName(nomeEtapa) === "won"` (`src/lib/automations/actions.ts`),
+nunca pelo nome literal da etapa — o nome é editável pelo dono
+(`renameStage`) e empresas antigas têm funil divergente; comparar string
+furaria assim que alguém renomeasse "Fechado/Ganho" para "Ganho" ou tivesse
+"ASSINOU" no funil legado.
 
 `custom_fields` do contato **acumula**: um campo novo e não vazio sempre
 atualiza, mas campo vazio (ou repetido) nunca sobrescreve o que já foi
@@ -435,11 +452,38 @@ variáveis embutidas, então uma chave `email` ou `telefone` vinda do modelo
 sobrescreveria o `{{email}}` dos templates do dono. Ampliar a lista é ampliar
 os dois lados — mexa em `INSTRUCAO_ATENDIMENTO` e em `CAMPOS_DA_IA` juntos.
 
+**Um card por contato, em qualquer status.** A busca do card
+(`sincronizarOportunidade`) não filtra `status = "open"` — acha o card do
+contato esteja ele em `Novo Lead`, `Perdido` ou `Fechado/Ganho` — e a IA
+nunca cria um segundo. Se houver mais de um (um humano criou outro pela
+tela), pega o mais recente por `created_at`, com `id` como desempate
+determinístico. Consequência aceita: um card já marcado `Perdido` volta para
+`Em Negociação` quando o mesmo cliente reaparece meses depois — é o
+comportamento certo (reabrir o mesmo negócio, não abrir um concorrente dele
+no funil), não um bug.
+
 A oportunidade criada pela IA nasce com o **`owner_id` do contato** (mesmo
 que a ação `criar-oportunidade` das automações faz). Sem isso a RLS de
 `opportunities` (`0039`: `sees_all(location_id) or owner_id = auth.uid()`)
 esconde o card de qualquer membro com `only_assigned = true` — ele não lê nem
 edita. Passava despercebido só porque o default é `only_assigned = false`.
+
+**O dono do card acompanha o atendente.** Atribuir a conversa a alguém
+(`conversations.assigned_to`) sincroniza `opportunities.owner_id` do card
+daquele contato no mesmo sentido — remover a atribuição deixa o card sem
+dono de novo (`sincronizarDonoDoCard`, em
+`src/lib/data/repos/db/conversations.ts`). Mesmo motivo da RLS acima: sem
+isso, atribuir a conversa a um vendedor com `only_assigned = true` não
+adiantaria nada — ele veria a conversa mas não o card correspondente no
+funil. O escopo é só o pipeline **da empresa** (`scope = 'empresa'`, o mesmo
+que a IA usa) — a 0039 introduziu pipeline por departamento e por usuário, e
+reatribuir sem esse filtro moveria qualquer card do contato em qualquer
+funil, inclusive negócios sem relação com aquele atendimento. Contato sem
+card nesse funil: não sincroniza nada, e não cria um só para a atribuição.
+Essa sincronia roda com a sessão do usuário (RLS ativa, não service role) —
+se o usuário atribuindo a conversa não enxergar o card pela própria RLS, o
+update é recusado em silêncio (zero linhas, sem erro), best-effort, e nunca
+derruba a atribuição da conversa em si.
 
 **O histórico mandado ao modelo exclui `type = 'event'` e `internal = true`.**
 Os dois são gravados com `direction = 'out'`, então entrariam no prompt como
@@ -488,6 +532,41 @@ para pendurar o evento, isso encheria a inbox de conversas vazias. A
 anotação interna (`messages.internal`, gravada pelo composer como mensagem
 comum com `internal: true`) já aparece na linha do tempo por conta própria —
 não duplica como evento.
+
+**Escalonamento para humano.** A resposta da IA pode vir com `escalar: {
+motivo }` preenchido. Os gatilhos (pedido de cancelamento/remarcação/
+reembolso, voo nas próximas 48h, reclamação de cobrança, cliente irritado,
+pedido explícito por humano) vivem **no prompt** (`INSTRUCAO_ATENDIMENTO`,
+`src/lib/ai/atendimento.ts`), não no código — é regra de negócio, muda com o
+tipo de agência, ao contrário da allowlist de etapas, que é garantia e por
+isso é código. Quando `escalar` vem preenchido, `maybeAutoReply` roda por
+último, depois que o cliente já recebeu `resposta` e depois que o card já foi
+criado/movido: marca `bot_paused = true` (o mesmo estado que um humano
+assumindo a conversa aciona — a IA para de responder até religar), marca a
+conversa como não lida (`unread_count + 1`) e grava um evento
+`IA encaminhou para atendimento humano — <motivo>` na conversa, no mesmo
+formato dos eventos de funil (`direction: "out"`, `type: "event"`). **O CRM
+não transfere** — só sinaliza; religar a IA é o botão "IA pausada / Reativar
+IA" no cabeçalho da conversa (Task 8). Todo esse bloco é best-effort com
+try/catch próprio: falhar em pausar/sinalizar não pode desfazer o envio nem
+derrubar o 200 do webhook.
+
+**Funil em tempo real.** `opportunities` entrou na publicação
+`supabase_realtime` (migração desta fase) e `usePipelineDb`
+(`src/lib/data/repos/db/pipeline.ts`) passou a assinar INSERT/UPDATE/DELETE
+da tabela — um card que a IA cria ou move aparece na tela do funil sem F5.
+A inscrição chama `autenticarRealtime(supabase)` **antes** do `.subscribe()`:
+pular esse passo é a armadilha já documentada em `src/lib/supabase/
+realtime.ts` — o socket entra anônimo e a RLS de `opportunities` filtra tudo,
+então o canal conecta mas nunca entrega evento nenhum, falha silenciosa.
+
+**O que continua fora do alcance do modelo.** A trava da imagem
+(`TRAVA_IMAGEM`, ver acima) não mudou com nenhuma dessas capacidades novas.
+Autonomia para mover card no funil não é autonomia para confirmar pagamento
+ao cliente final — são naturezas diferentes de erro: mover card é registro
+interno, que o consultor corrige arrastando de volta; confirmar "pagamento
+recebido" ou "PIX confirmado" é uma afirmação feita ao cliente da agência, e
+a agência não tem como desfazer isso depois que foi dito.
 
 #### Exemplo de personalidade em conversa natural
 
