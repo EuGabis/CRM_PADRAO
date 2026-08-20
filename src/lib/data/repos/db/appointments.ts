@@ -71,6 +71,21 @@ export function useDbAppointments() {
 }
 
 /**
+ * Recorte de visualização por agenda — compartilhado entre WeekCalendar e
+ * MonthCalendar para não duplicar a regra em dois lugares. `ownerFilter`
+ * indefinido ou `"__all__"` é "tudo"; `"__shared__"` é o compromisso sem dono
+ * (agenda da empresa); qualquer outro valor é o id do dono. A RLS já limita o
+ * que chega do banco — isto é só recorte de tela, não permissão. Rode SEMPRE
+ * dentro de um `useMemo` no componente chamador — nunca dentro de um selector
+ * do Zustand (ver AGENTS.md item 4).
+ */
+export function filterByOwner(appointments: Appointment[], ownerFilter?: string): Appointment[] {
+  if (!ownerFilter || ownerFilter === "__all__") return appointments;
+  if (ownerFilter === "__shared__") return appointments.filter((a) => !a.ownerId);
+  return appointments.filter((a) => a.ownerId === ownerFilter);
+}
+
+/**
  * Compromissos/tarefas de UM contato, filtrados por `kind`. O filtro roda
  * dentro do `useMemo`, nunca no selector do Zustand — filtrar/mapear no
  * selector cria array novo a cada render e trava a tela (bug recorrente

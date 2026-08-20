@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { addDays, format, startOfWeek } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -18,31 +18,49 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { appointmentActions, useDbAppointments } from "@/lib/data/repos/db/appointments";
+import { appointmentActions, filterByOwner, useDbAppointments } from "@/lib/data/repos/db/appointments";
 import type { Appointment } from "@/lib/data/types";
 import { cn } from "@/lib/utils";
 
 const HOURS = Array.from({ length: 12 }, (_, i) => 8 + i); // 8h–19h
+const FIRST_HOUR = HOURS[0];
+const LAST_HOUR = HOURS[HOURS.length - 1];
+/** Altura de uma hora na grade — h-14 (Tailwind) = 3.5rem = 56px. */
+const HOUR_HEIGHT_PX = 56;
 
 /** id do droppable = "yyyy-MM-dd|H" (dia + hora da célula). */
 const cellId = (day: Date, hour: number) => `${format(day, "yyyy-MM-dd")}|${hour}`;
+
+const isWeekend = (d: Date) => {
+  const day = d.getDay();
+  return day === 0 || day === 6;
+};
 
 function EventCard({ appointment, dragging }: { appointment: Appointment; dragging?: boolean }) {
   const google = appointment.source === "google";
   return (
     <div
       className={cn(
-        "overflow-hidden rounded border-l-2 px-1 py-0.5 text-[10px] shadow-sm",
+        "flex min-h-[34px] flex-col justify-center overflow-hidden rounded-md border-l-[3px] px-1.5 py-1 text-[10px] leading-tight shadow-sm transition-colors",
         google
-          ? "border-emerald-500 bg-emerald-50 text-emerald-800"
-          : "border-indigo-500 bg-indigo-50 text-indigo-800",
-        dragging && "opacity-90 ring-2 ring-indigo-300"
+          ? "border-emerald-500 bg-emerald-50 text-emerald-900 hover:bg-emerald-100/80"
+          : "border-indigo-500 bg-indigo-50 text-indigo-900 hover:bg-indigo-100/80",
+        dragging && "opacity-90 shadow-md ring-2 ring-indigo-300"
       )}
     >
       <p className="truncate font-semibold">{appointment.title}</p>
-      <p className="truncate opacity-70">
+      <p className="mt-0.5 flex items-center gap-1 truncate font-medium opacity-60">
         {format(new Date(appointment.start), "HH:mm")}–
         {format(new Date(appointment.end), "HH:mm")}
+        {appointment.contactId && (
+          <span
+            className={cn(
+              "inline-block size-1 shrink-0 rounded-full",
+              google ? "bg-emerald-500" : "bg-indigo-500"
+            )}
+            title="Vinculado a um contato"
+          />
+        )}
       </p>
     </div>
   );
@@ -90,12 +108,15 @@ function HourCell({
   children,
   onCreate,
   className,
+  bg,
 }: {
   day: Date;
   hour: number;
   children: React.ReactNode;
   onCreate: (day: Date, hour: number) => void;
   className?: string;
+  /** Fundo sutil de base (hoje / fim de semana), por baixo do hover e do drop. */
+  bg?: string;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: cellId(day, hour) });
   return (
@@ -105,7 +126,8 @@ function HourCell({
       // que se espera de uma agenda, em vez de abrir um formulário em branco.
       onClick={() => onCreate(day, hour)}
       className={cn(
-        "group relative h-14 cursor-pointer border-b hover:bg-indigo-50/40",
+        "group relative h-14 cursor-pointer border-b border-slate-100 hover:bg-indigo-50/60",
+        bg,
         isOver && "bg-indigo-100/70",
         className
       )}
@@ -130,11 +152,7 @@ export function WeekCalendar({
   ownerFilter?: string;
 }) {
   const { appointments: all, loading } = useDbAppointments();
-  const appointments = useMemo(() => {
-    if (!ownerFilter || ownerFilter === "__all__") return all;
-    if (ownerFilter === "__shared__") return all.filter((a) => !a.ownerId);
-    return all.filter((a) => a.ownerId === ownerFilter);
-  }, [all, ownerFilter]);
+  const appointments = useMemo(() => filterByOwner(all, ownerFilter), [all, ownerFilter]);
   // Tarefa (kind === "tarefa") nasce com end = start — duração zero — e não
   // entra na grade de horários (viraria um sliver fino atravessado). Ela
   // aparece como pílula no cabeçalho do dia (ver `tasksByDay` abaixo), não
@@ -153,6 +171,13 @@ export function WeekCalendar({
   }, [appointments]);
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 0 }));
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  // Linha da hora atual: recalcula a cada minuto, não a cada render — não há
+  // necessidade de mais precisão que isso numa grade de agenda.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
@@ -163,6 +188,15 @@ export function WeekCalendar({
     [weekStart]
   );
   const todayStr = format(new Date(), "yyyy-MM-dd");
+  const todayIndex = days.findIndex((d) => format(d, "yyyy-MM-dd") === todayStr);
+
+  // Posição da linha da hora atual dentro da faixa 8h-19h. Fora da faixa
+  // (ex.: 21h ou 6h), ou semana sem "hoje", não desenha nada.
+  const nowHour = now.getHours() + now.getMinutes() / 60;
+  const nowLineTop =
+    todayIndex >= 0 && nowHour >= FIRST_HOUR && nowHour < LAST_HOUR + 1
+      ? (nowHour - FIRST_HOUR) * HOUR_HEIGHT_PX
+      : null;
 
   const weekLabel = `${format(days[0], "d", { locale: ptBR })} – ${format(days[6], "d 'de' MMMM 'de' yyyy", { locale: ptBR })}`;
 
@@ -202,18 +236,18 @@ export function WeekCalendar({
       onDragEnd={onDragEnd}
       onDragCancel={() => setDraggingId(null)}
     >
-      <div className="rounded-xl border bg-white">
-        <div className="flex items-center justify-between border-b px-4 py-2.5">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setWeekStart((w) => addDays(w, -7))}
-              className="flex size-7 items-center justify-center rounded-md border text-slate-500 hover:bg-slate-50"
+              className="flex size-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
             >
               <ChevronLeft className="size-4" />
             </button>
             <button
               onClick={() => setWeekStart((w) => addDays(w, 7))}
-              className="flex size-7 items-center justify-center rounded-md border text-slate-500 hover:bg-slate-50"
+              className="flex size-7 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
             >
               <ChevronRight className="size-4" />
             </button>
@@ -229,23 +263,28 @@ export function WeekCalendar({
             {loading && <span className="text-[11px] text-slate-400">Carregando...</span>}
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary">Semana</Badge>
             <Badge className="bg-indigo-100 text-indigo-700">Calendário: Reuniões</Badge>
           </div>
         </div>
+        {/* Cabeçalho dos dias — grid própria, mesmas colunas do corpo abaixo. */}
         <div className="grid grid-cols-[52px_repeat(7,1fr)] text-[10px]">
-          <div className="border-b border-r px-1 py-2 text-slate-400">GMT-3</div>
+          <div className="border-b border-r border-slate-100 px-1 py-2.5 font-medium text-slate-400">
+            GMT-3
+          </div>
           {days.map((d, i) => {
-            const dayTasks = tasksByDay.get(format(d, "yyyy-MM-dd")) ?? [];
+            const dayStr = format(d, "yyyy-MM-dd");
+            const dayTasks = tasksByDay.get(dayStr) ?? [];
+            const isToday = dayStr === todayStr;
             return (
               <div
                 key={i}
                 className={cn(
-                  "border-b px-1.5 py-2 text-center font-semibold",
-                  format(d, "yyyy-MM-dd") === todayStr
-                    ? "bg-indigo-50 text-indigo-700"
-                    : "text-slate-600",
-                  i < 6 && "border-r"
+                  "border-b px-1.5 py-2.5 text-center font-semibold",
+                  isToday
+                    ? "border-b-indigo-100 bg-indigo-50/70 text-indigo-700"
+                    : "border-b-slate-100 text-slate-600",
+                  isWeekend(d) && !isToday && "bg-slate-50/70",
+                  i < 6 && "border-r border-r-slate-100"
                 )}
               >
                 {format(d, "EEE d", { locale: ptBR })}
@@ -279,35 +318,66 @@ export function WeekCalendar({
               </div>
             );
           })}
-          {HOURS.map((h) => (
-            <div key={h} className="contents">
-              <div className="h-14 border-b border-r px-1 pt-0.5 text-slate-400">{h}:00</div>
-              {days.map((d, di) => {
-                const dayStr = format(d, "yyyy-MM-dd");
-                const hourEvents = events.filter((a) => {
-                  const start = new Date(a.start);
-                  return format(start, "yyyy-MM-dd") === dayStr && start.getHours() === h;
-                });
-                return (
-                  <HourCell
-                    key={di}
-                    day={d}
-                    hour={h}
-                    onCreate={(day, hour) => onCreateAt?.(day, hour)}
-                    className={di < 6 ? "border-r" : undefined}
-                  >
-                    {hourEvents.map((e) => (
-                      <DraggableEvent
-                        key={e.id}
-                        appointment={e}
-                        onOpen={(a) => onEdit?.(a)}
-                      />
-                    ))}
-                  </HourCell>
-                );
-              })}
+        </div>
+        {/* Corpo (horas) — grid separada e `relative` para sobrepor a linha da
+            hora atual sem depender de posicionamento dentro de um único grid
+            gigante (que teria que reservar uma célula explícita e brigar com
+            o auto-placement dos slots). */}
+        <div className="relative">
+          <div className="grid grid-cols-[52px_repeat(7,1fr)] text-[10px]">
+            {HOURS.map((h) => (
+              <div key={h} className="contents">
+                <div className="h-14 border-b border-r border-slate-100 px-1.5 pt-1 font-normal text-slate-400">
+                  {h}:00
+                </div>
+                {days.map((d, di) => {
+                  const dayStr = format(d, "yyyy-MM-dd");
+                  const isToday = dayStr === todayStr;
+                  const hourEvents = events.filter((a) => {
+                    const start = new Date(a.start);
+                    return format(start, "yyyy-MM-dd") === dayStr && start.getHours() === h;
+                  });
+                  return (
+                    <HourCell
+                      key={di}
+                      day={d}
+                      hour={h}
+                      onCreate={(day, hour) => onCreateAt?.(day, hour)}
+                      className={di < 6 ? "border-r border-r-slate-100" : undefined}
+                      bg={
+                        isToday
+                          ? "bg-indigo-50/40"
+                          : isWeekend(d)
+                            ? "bg-slate-50/60"
+                            : undefined
+                      }
+                    >
+                      {hourEvents.map((e) => (
+                        <DraggableEvent
+                          key={e.id}
+                          appointment={e}
+                          onOpen={(a) => onEdit?.(a)}
+                        />
+                      ))}
+                    </HourCell>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          {nowLineTop !== null && (
+            <div
+              className="pointer-events-none absolute z-20 flex items-center"
+              style={{
+                top: nowLineTop,
+                left: `calc(52px + (100% - 52px) * ${todayIndex} / 7)`,
+                width: "calc((100% - 52px) / 7)",
+              }}
+            >
+              <span className="-ml-[3px] size-[7px] shrink-0 rounded-full bg-indigo-500" />
+              <span className="h-px w-full bg-indigo-500" />
             </div>
-          ))}
+          )}
         </div>
       </div>
       <DragOverlay>

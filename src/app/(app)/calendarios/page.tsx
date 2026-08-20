@@ -6,6 +6,7 @@ import { ptBR } from "date-fns/locale";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { SubNav } from "@/components/layout/subnav";
+import { MonthCalendar } from "@/components/modules/month-calendar";
 import { WeekCalendar } from "@/components/modules/week-calendar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -693,11 +694,15 @@ function AppointmentDialog({
 
 /* ---------------------------------- Page --------------------------------- */
 
+/** Alternador Mês/Semana da visualização de calendário. */
+type ViewMode = "semana" | "mes";
+
 export default function CalendariosPage() {
   const [tab, setTab] = useState(TABS[0].label);
   const team = useDbTeam();
   const { isAdmin } = useMyMembership();
   const [owner, setOwner] = useState(ALL);
+  const [view, setView] = useState<ViewMode>("semana");
   // Um diálogo só para criar e editar: o rascunho diz qual dos dois é.
   const [draft, setDraft] = useState<AppointmentDraft | null>(null);
 
@@ -723,9 +728,24 @@ export default function CalendariosPage() {
               <h1 className="text-lg font-bold text-slate-900">Calendários</h1>
               <div className="flex items-center gap-3">
                 <p className="text-xs text-slate-500">
-                  Clique num horário para criar · clique no evento para editar · arraste para
-                  mudar de dia ou hora
+                  {view === "semana"
+                    ? "Clique num horário para criar · clique no evento para editar · arraste para mudar de dia ou hora"
+                    : "Clique num dia para criar · clique no evento para editar"}
                 </p>
+                <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                  {(["semana", "mes"] as const).map((v) => (
+                    <Button
+                      key={v}
+                      type="button"
+                      size="sm"
+                      variant={view === v ? "default" : "ghost"}
+                      className={cn("h-7 px-3 text-xs", view !== v && "text-slate-500")}
+                      onClick={() => setView(v)}
+                    >
+                      {v === "semana" ? "Semana" : "Mês"}
+                    </Button>
+                  ))}
+                </div>
                 {isAdmin && (
                   <Select value={owner} onValueChange={(v) => setOwner(v ?? ALL)}>
                     <SelectTrigger className="h-8 w-[170px] text-xs">
@@ -757,11 +777,19 @@ export default function CalendariosPage() {
                 </Button>
               </div>
             </div>
-            <WeekCalendar
-              ownerFilter={owner}
-              onCreateAt={openSlot}
-              onEdit={(appointment) => setDraft({ appointment })}
-            />
+            {view === "semana" ? (
+              <WeekCalendar
+                ownerFilter={owner}
+                onCreateAt={openSlot}
+                onEdit={(appointment) => setDraft({ appointment })}
+              />
+            ) : (
+              <MonthCalendar
+                ownerFilter={owner}
+                onCreateAt={openSlot}
+                onEdit={(appointment) => setDraft({ appointment })}
+              />
+            )}
           </>
         ) : tab === "Lista de compromissos" ? (
           <ListaCompromissos
