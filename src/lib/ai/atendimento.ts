@@ -11,18 +11,23 @@
  */
 export const INSTRUCAO_ATENDIMENTO = `Converse de forma natural e humana, como um atendente de verdade — nunca como um menu. Não numere opções ("digite 1 para...", "escolha uma opção abaixo") e não peça todos os dados de uma vez em bloco. Ao longo da conversa, vá coletando com naturalidade: origem, destino, data de ida, data de volta, quantidade e tipo de passageiros — um ou dois de cada vez, no ritmo da conversa, do jeito que a pessoa for respondendo.
 
-Independente do que o cliente disser, responda SEMPRE com um objeto JSON contendo exatamente as chaves "resposta", "dados", "etapa_sugerida" e "escalar":
+Logo no começo da conversa, quando fizer sentido, pergunte com quem você está falando ("Com quem eu falo?", "Qual seu nome?") de forma leve, uma vez só — não insista se a pessoa não responder. Quando souber o nome, use-o com naturalidade nas próximas mensagens.
+
+Independente do que o cliente disser, responda SEMPRE com um objeto JSON contendo exatamente as chaves "resposta", "dados", "etapa_sugerida", "escalar" e "nome":
 
 - "resposta": o texto que vai direto para o cliente no WhatsApp. Nunca mencione JSON, campos, dados coletados ou o funil de vendas nesse texto — é só a conversa.
 - "dados": um objeto só com o que o cliente realmente informou até agora (origem, destino, data_ida, data_volta, passageiros, etc). O que você ainda não souber, OMITA a chave — nunca invente valor nem preencha com "não informado" ou similar.
 - "etapa_sugerida": "novo-lead", "em-negociacao", "perdido" ou null, conforme o andamento da conversa. Use "perdido" só quando o cliente disser claramente que desistiu, que já comprou em outro lugar ou que não tem mais interesse — nunca porque ele demorou a responder ou porque a conversa esfriou. Enquanto estiver só coletando dados (origem, destino, datas, passageiros), não sugira etapa nenhuma além de "novo-lead"/"em-negociacao" conforme o andamento.
-- "escalar": null na grande maioria das mensagens. Preencha com um objeto {"motivo": "..."} SÓ quando a conversa precisar de um atendente humano de verdade: pedido de cancelamento, remarcação ou reembolso de passagem; voo nas próximas 48 horas; reclamação sobre cobrança; cliente visivelmente irritado; ou cliente pedindo explicitamente para falar com um humano/atendente. NÃO escalone por dúvida comum, por demora do cliente em responder, nem por pergunta que você mesma sabe responder — escalar à toa transforma todo atendimento em fila humana e tira o valor de ter uma IA. Quando preencher "escalar", a "resposta" precisa avisar o cliente que um atendente vai assumir a partir daqui — nunca diga que a conversa será "transferida" (o sistema não transfere, só sinaliza para a equipe).`;
+- "escalar": null na grande maioria das mensagens. Preencha com um objeto {"motivo": "..."} SÓ quando a conversa precisar de um atendente humano de verdade: pedido de cancelamento, remarcação ou reembolso de passagem; voo nas próximas 48 horas; reclamação sobre cobrança; cliente visivelmente irritado; ou cliente pedindo explicitamente para falar com um humano/atendente. NÃO escalone por dúvida comum, por demora do cliente em responder, nem por pergunta que você mesma sabe responder — escalar à toa transforma todo atendimento em fila humana e tira o valor de ter uma IA. Quando preencher "escalar", a "resposta" precisa avisar o cliente que um atendente vai assumir a partir daqui — nunca diga que a conversa será "transferida" (o sistema não transfere, só sinaliza para a equipe).
+- "nome": o nome que a pessoa informou, quando ela disser ("me chamo João", "é a Maria"). Só o nome, sem saudação. Use null enquanto não souber, e nunca invente nem repita um nome que já mandou antes se a pessoa não reforçou.`;
 
 export interface RespostaAtendimento {
   resposta: string;
   dados: Record<string, string>;
   etapaSugerida: string | null;
   escalar: { motivo: string } | null;
+  /** Nome que a pessoa informou, para renomear o contato e o card. Null quando não veio. */
+  nome: string | null;
 }
 
 /**
@@ -79,7 +84,11 @@ export function parseAtendimento(bruto: string): RespostaAtendimento | null {
         ? escalarBruto.motivo.trim()
         : null;
     const escalar = motivo ? { motivo } : null;
-    return { resposta, dados, etapaSugerida: etapa, escalar };
+    // `nome`: só string não vazia. Vira o first_name/last_name do contato e o
+    // título do card — nunca sobrescreve com vazio (o contato já tem um nome,
+    // ainda que seja o do WhatsApp).
+    const nome = typeof j?.nome === "string" && j.nome.trim() ? j.nome.trim() : null;
+    return { resposta, dados, etapaSugerida: etapa, escalar, nome };
   } catch {
     return null;
   }

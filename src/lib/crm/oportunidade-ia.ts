@@ -46,6 +46,8 @@ interface RegistrarAtendimentoParams {
   contactId: string;
   dados: Record<string, string>;
   etapaSugerida: string | null;
+  /** Nome que a IA coletou nesta rodada, para renomear contato e card. Null quando não veio. */
+  nome: string | null;
 }
 
 /**
@@ -91,8 +93,30 @@ export async function registrarAtendimento(
     logFalha(p.locationId, err);
   }
 
+  // Nome que a IA coletou: renomeia o contato (hoje o nome vem do pushName do
+  // WhatsApp, que muitas vezes é apelido/emoji/nome de loja) e passa a valer
+  // como título do card. Só quando `nome` veio de fato — nunca sobrescreve
+  // com vazio, e o `?? ""` do last_name evita gravar "undefined".
+  let nomeContato = `${contato.first_name} ${contato.last_name}`.trim() || "Contato";
+  if (p.nome) {
+    const partes = p.nome.trim().split(/\s+/);
+    const first = partes.shift() ?? "";
+    const last = partes.join(" ");
+    if (first) {
+      try {
+        await db
+          .from("contacts")
+          .update({ first_name: first, last_name: last })
+          .eq("id", p.contactId)
+          .eq("location_id", p.locationId);
+        nomeContato = `${first} ${last}`.trim();
+      } catch (err) {
+        logFalha(p.locationId, err);
+      }
+    }
+  }
+
   try {
-    const nomeContato = `${contato.first_name} ${contato.last_name}`.trim() || "Contato";
     await sincronizarOportunidade(db, p, nomeContato, contato.owner_id ?? null);
   } catch (err) {
     logFalha(p.locationId, err);
@@ -228,7 +252,7 @@ async function sincronizarOportunidade(
   // como desempate determinístico — nunca cria um segundo.
   const { data: existentes, error: existenteError } = await db
     .from("opportunities")
-    .select("id, stage_id, status")
+    .select("id, stage_id, status, name")
     .eq("location_id", p.locationId)
     .eq("contact_id", p.contactId)
     .eq("pipeline_id", pipeline.id)
@@ -248,7 +272,19 @@ async function sincronizarOportunidade(
   const status = statusForStageName(nomeEtapa);
 
   if (existente) {
-    if (existente.stage_id === etapa.id) return; // nada mudou — não polui a conversa
+    // Título do card acompanha o nome do contato. O card nasceu com o nome
+    // antigo (pushName/telefone); quando a IA descobre o nome de verdade, o
+    // card precisa refletir isso mesmo que a etapa não mude. Só grava se
+    // realmente diferente — não é evento, é correção silenciosa do rótulo.
+    if (nomeContato && existente.name !== nomeContato) {
+      const { error: renomearError } = await db
+        .from("opportunities")
+        .update({ name: nomeContato })
+        .eq("id", existente.id);
+      if (renomearError) throw renomearError;
+    }
+
+    if (existente.stage_id === etapa.id) return; // etapa não mudou — não move nem gera evento
 
     // Segunda linha de defesa: card já marcado como ganho por outro caminho
     // (automação do dono, importação, ou etapa cujo nome não denuncia a

@@ -86,8 +86,8 @@ const TEXTO_FALLBACK =
  */
 const CORRECAO_JSON =
   "Sua resposta anterior não era um JSON válido. Responda de novo APENAS com o " +
-  'objeto JSON, com as chaves "resposta", "dados", "etapa_sugerida" e "escalar" ' +
-  "— nada de texto, explicação ou markdown fora do objeto.";
+  'objeto JSON, com as chaves "resposta", "dados", "etapa_sugerida", "escalar" ' +
+  'e "nome" — nada de texto, explicação ou markdown fora do objeto.';
 
 /**
  * Registra o motivo de cada saída da auto-resposta. Este é o caminho mais
@@ -554,6 +554,7 @@ export async function maybeAutoReply(
       contactId: p.contactId,
       dados: resposta.dados,
       etapaSugerida: resposta.etapaSugerida,
+      nome: resposta.nome,
     });
 
     // log (best-effort; created_by null = máquina)
