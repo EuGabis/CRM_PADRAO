@@ -84,6 +84,23 @@ const TEXTO_FALLBACK =
  * idêntico faz uma falha determinística repetir igual e dobra o custo à toa —
  * a retentativa continua sendo UMA só, sem laço.
  */
+/**
+ * Tira os asteriscos de negrito antes de enviar. Muitas contas WhatsApp
+ * Business/API NÃO renderizam `*texto*` como negrito — os asteriscos aparecem
+ * crus na tela do cliente (`*Origem:*`), o que passa cara de bot mal-feito.
+ * Como não dá para garantir que o número renderiza, o mais seguro é nunca
+ * mandar asterisco de ênfase.
+ *
+ * Remove `**` (negrito markdown) e os `*` que encostam num caractere não-espaço
+ * (a ênfase inline), mas PRESERVA o `* ` de início de linha, que é marcador de
+ * lista e o WhatsApp renderiza como bullet.
+ */
+function limparNegrito(texto: string): string {
+  return texto
+    .replace(/\*\*/g, "")
+    .replace(/(?<=\S)\*|\*(?=\S)/g, "");
+}
+
 const CORRECAO_JSON =
   "Sua resposta anterior não era um JSON válido. Responda de novo APENAS com o " +
   'objeto JSON, com as chaves "resposta", "dados", "etapa_sugerida", "escalar" ' +
@@ -540,7 +557,7 @@ export async function maybeAutoReply(
     // Só `resposta.resposta` vai para o cliente e para o que é gravado.
     // `dados` e `etapaSugerida` nunca aparecem na mensagem — eles só entram
     // depois, via `registrarAtendimento`, no envio.
-    const reply = resposta.resposta;
+    const reply = limparNegrito(resposta.resposta);
     if (!reply) return sair(p.locationId, "resposta-vazia");
 
     // envia pelo helper único (resolve provedor, checa connection_state e
