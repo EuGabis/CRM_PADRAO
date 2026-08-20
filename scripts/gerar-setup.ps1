@@ -65,7 +65,8 @@ $partes = [ordered]@{
     "0058_colunas_secretas.sql",
     "0059_limite_tamanho_bucket.sql",
     "0060_transcricao_audio.sql",
-    "0061_funil_padrao.sql"
+    "0061_funil_padrao.sql",
+    "0062_realtime_oportunidades.sql"
   )
 }
 

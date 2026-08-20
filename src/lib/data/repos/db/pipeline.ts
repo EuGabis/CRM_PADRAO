@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
+import { autenticarRealtime, statusRealtime } from "@/lib/supabase/realtime";
 import type { Opportunity, Pipeline, PipelineScope, Stage } from "@/lib/data/types";
 import { useDbStore } from "./contacts";
 import { logBulk } from "./contacts-module";
@@ -40,15 +41,17 @@ function statusForStage(stage: Stage | undefined): Opportunity["status"] {
 interface PipelineDbState {
   loaded: boolean;
   loading: boolean;
+  realtime: "off" | "on";
   pipelines: Pipeline[];
   opportunities: Opportunity[];
   load: () => Promise<void>;
-  patch: (p: Partial<Pick<PipelineDbState, "pipelines" | "opportunities">>) => void;
+  patch: (p: Partial<Pick<PipelineDbState, "pipelines" | "opportunities" | "realtime">>) => void;
 }
 
 export const usePipelineDbStore = create<PipelineDbState>((set, get) => ({
   loaded: false,
   loading: false,
+  realtime: "off",
   pipelines: [],
   opportunities: [],
 
@@ -84,6 +87,50 @@ export const usePipelineDbStore = create<PipelineDbState>((set, get) => ({
       })),
       opportunities: (opps.data ?? []).map(mapOpportunity),
     });
+
+    // Realtime: card criado ou movido chega ao vivo (RLS filtra por tenant).
+    // O setAuth ANTES do subscribe não é opcional — ver src/lib/supabase/realtime.ts.
+    await autenticarRealtime(supabase);
+    supabase
+      .channel("crm-pipeline")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "opportunities" },
+        (payload) => {
+          const opp = mapOpportunity(payload.new);
+          const s = get();
+          if (s.opportunities.some((o) => o.id === opp.id)) return; // já inserida (otimista)
+          set({ opportunities: [opp, ...s.opportunities] });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "opportunities" },
+        (payload) => {
+          // Idempotente por id, nunca inserção: o arrastar de card já
+          // atualizou o store de forma otimista, esse evento chega logo
+          // depois com a mesma linha — inserir de novo duplicaria o card
+          // na tela de quem o moveu.
+          const opp = mapOpportunity(payload.new);
+          const s = get();
+          set({
+            opportunities: s.opportunities.some((o) => o.id === opp.id)
+              ? s.opportunities.map((o) => (o.id === opp.id ? opp : o))
+              : [opp, ...s.opportunities],
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "opportunities" },
+        (payload) => {
+          const id = (payload.old as { id?: string } | null)?.id;
+          if (!id) return;
+          const s = get();
+          set({ opportunities: s.opportunities.filter((o) => o.id !== id) });
+        }
+      )
+      .subscribe(statusRealtime("pipeline", (ligado) => set({ realtime: ligado ? "on" : "off" })));
   },
 
   patch: (p) => set(p),
