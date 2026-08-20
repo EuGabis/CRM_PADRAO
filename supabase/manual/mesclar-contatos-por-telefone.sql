@@ -31,6 +31,13 @@ returns text language sql immutable as $$
   ) b;
 $$;
 
+-- ── Derruba a trava única de conversa DURANTE o merge ───────────────────────
+-- A 0064 já criou `conversations_location_contact_channel_uniq`. No Fase 1, ao
+-- mover a conversa do perdedor para o sobrevivente (que já tem uma conversa de
+-- WhatsApp), o UPDATE viola a trava na hora — antes do Fase 2 conseguir fundir.
+-- Derruba aqui e recria no fim, depois do Fase 2 já ter deduplicado as conversas.
+drop index if exists public.conversations_location_contact_channel_uniq;
+
 -- ── Fase 1: remapeia as tabelas filhas do perdedor para o sobrevivente ──────
 -- Bloco de mapa reutilizado (perdedor -> sobrevivente), por chave normalizada:
 --   select id as loser, first_value(id) over (
@@ -144,6 +151,11 @@ with ranked as (
   from public.conversations
 ), m as (select id as loser, keeper from ranked where id <> keeper)
 delete from public.conversations v using m where v.id = m.loser;
+
+-- ── Recria a trava única de conversa ────────────────────────────────────────
+-- Conversas já deduplicadas no Fase 2, então a recriação não colide.
+create unique index if not exists conversations_location_contact_channel_uniq
+  on public.conversations (location_id, contact_id, channel);
 
 -- ── Limpeza ─────────────────────────────────────────────────────────────────
 drop function if exists private.norm_phone(text);
