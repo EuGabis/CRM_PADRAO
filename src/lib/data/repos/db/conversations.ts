@@ -342,6 +342,69 @@ function logFalhaEvento(err: unknown): void {
   console.error("[conversations] falha ao registrar evento de encerramento na conversa", { code });
 }
 
+/**
+ * Sincroniza `opportunities.owner_id` com quem foi atribuído à conversa —
+ * nos dois sentidos: atribuir define o dono do card, remover a atribuição
+ * deixa o card sem dono (`null`). Igual a `registrarAtendimento`
+ * (oportunidade-ia.ts), que dá o `owner_id` inicial ao criar o card.
+ *
+ * Contato sem card: não sincroniza nada, e não cria um — isso encheria o
+ * funil de cards sem negócio nenhum (`.update` sobre zero linhas é no-op).
+ *
+ * Aqui a query roda com a sessão do usuário (RLS ativa), não service role:
+ * um usuário com `only_assigned = true` que não enxerga o card do contato
+ * (0039: `sees_all(location_id) or owner_id = auth.uid()`) tem esse update
+ * recusado pela RLS — falha esperada, best-effort, nunca pode derrubar a
+ * atribuição da conversa, que é a ação que o usuário pediu.
+ */
+async function sincronizarDonoDoCard(
+  supabase: ReturnType<typeof createClient>,
+  contactId: string,
+  userId: string | null
+): Promise<void> {
+  try {
+    await supabase.from("opportunities").update({ owner_id: userId }).eq("contact_id", contactId);
+  } catch (err) {
+    logFalhaEvento(err);
+  }
+}
+
+/**
+ * Registra na conversa quem passou a ser o responsável pelo atendimento (e,
+ * por tabela, pelo card). Só quando há alguém sendo atribuído (`userId`
+ * presente) — devolver para a caixa do grupo não gera evento. Mesmo formato
+ * dos outros gravadores: `direction: "out"` (nunca `"in"`, senão o trigger
+ * `messages_automation` dispara a automação "cliente-respondeu" achando que
+ * o cliente falou), best-effort, nunca lança.
+ */
+async function registrarEventoAtribuicao(
+  supabase: ReturnType<typeof createClient>,
+  conversationId: string,
+  userId: string
+): Promise<void> {
+  const location = loc();
+  if (!location) return;
+  try {
+    const { data: perfil } = await supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", userId)
+      .maybeSingle();
+    const nome = perfil?.name ?? null;
+    const body = nome ? `Atendimento e card atribuídos a ${nome}` : "Atendimento atribuído";
+    await supabase.from("messages").insert({
+      location_id: location,
+      conversation_id: conversationId,
+      direction: "out",
+      type: "event",
+      channel: "whatsapp",
+      body,
+    });
+  } catch (err) {
+    logFalhaEvento(err);
+  }
+}
+
 export const conversationActions = {
   async send(
     conversationId: string,
@@ -538,7 +601,11 @@ export const conversationActions = {
     });
   },
 
-  /** Define o responsável pela conversa; `null` devolve para a caixa do grupo. */
+  /**
+   * Define o responsável pela conversa; `null` devolve para a caixa do
+   * grupo. O dono do card do contato acompanha (ver `sincronizarDonoDoCard`)
+   * — o card em si é best-effort e não pode derrubar esta ação.
+   */
   async assign(conversationId: string, userId: string | null): Promise<boolean> {
     const supabase = createClient();
     const { error } = await supabase
@@ -552,6 +619,11 @@ export const conversationActions = {
         c.id === conversationId ? { ...c, assignedTo: userId } : c
       ),
     });
+    const conv = s.conversations.find((c) => c.id === conversationId);
+    if (conv) {
+      void sincronizarDonoDoCard(supabase, conv.contactId, userId);
+      if (userId) void registrarEventoAtribuicao(supabase, conversationId, userId);
+    }
     return true;
   },
 
