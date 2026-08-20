@@ -172,9 +172,92 @@ async function registrarEventoMovimentacao(
       channel: "whatsapp",
       body,
     });
-  } catch {
-    // best-effort — nunca deve derrubar o fluxo de movimentação
+  } catch (err) {
+    logFalhaEvento(err);
   }
+}
+
+/**
+ * Versão em lote de `registrarEventoMovimentacao`, usada pelo `moveMany`
+ * (arrastar vários cards de uma vez no kanban). Mesmas duas regras da
+ * versão única: card cuja oportunidade não tem conversa correspondente
+ * não registra e não cria conversa; falha ao gravar é best-effort e não
+ * pode derrubar a movimentação, que já aconteceu.
+ *
+ * Um único select (conversa mais recente por contato, calculada aqui) e
+ * um único insert em lote — nunca um insert por card, senão 30 cards
+ * arrastados de uma vez travariam a tela em 30 round-trips sequenciais.
+ */
+async function registrarEventosMovimentacaoLote(
+  supabase: ReturnType<typeof createClient>,
+  itens: { contactId: string; origem: string; destino: string }[]
+): Promise<void> {
+  const location = loc();
+  if (!location || itens.length === 0) return;
+  try {
+    const contactIds = itens.map((i) => i.contactId);
+    const { data: conversas } = await supabase
+      .from("conversations")
+      .select("id, contact_id, last_message_at")
+      .in("contact_id", contactIds);
+    if (!conversas || conversas.length === 0) return;
+
+    // Conversa mais recente por contato — mesmo critério de desempate da
+    // versão única (`order by last_message_at desc limit 1`), aqui
+    // calculado em memória porque cobre vários contatos de uma vez.
+    const porContato = new Map<string, { id: string; lastMessageAt: string }>();
+    for (const c of conversas as { id: string; contact_id: string; last_message_at: string | null }[]) {
+      const atual = porContato.get(c.contact_id);
+      const chave = c.last_message_at ?? "";
+      if (!atual || chave > atual.lastMessageAt) {
+        porContato.set(c.contact_id, { id: c.id, lastMessageAt: chave });
+      }
+    }
+
+    let nome: string | null = null;
+    const { data: auth } = await supabase.auth.getUser();
+    if (auth.user?.id) {
+      const { data: perfil } = await supabase
+        .from("profiles")
+        .select("name")
+        .eq("id", auth.user.id)
+        .maybeSingle();
+      nome = perfil?.name ?? null;
+    }
+
+    const rows = itens
+      .map((item) => {
+        const conversa = porContato.get(item.contactId);
+        if (!conversa) return null; // sem conversa ligada — não cria uma só para o evento
+        const body = nome
+          ? `Oportunidade movida de ${item.origem} → ${item.destino} por ${nome}`
+          : `Oportunidade movida de ${item.origem} → ${item.destino}`;
+        return {
+          location_id: location,
+          conversation_id: conversa.id,
+          direction: "out" as const,
+          type: "event" as const,
+          channel: "whatsapp" as const,
+          body,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+    if (rows.length === 0) return;
+
+    await supabase.from("messages").insert(rows);
+  } catch (err) {
+    logFalhaEvento(err);
+  }
+}
+
+/**
+ * Só o código do erro do Postgres, nunca o objeto inteiro ou a mensagem —
+ * a mensagem de erro do Postgres ecoa o valor ofensor, que aqui pode ser
+ * texto de conversa do cliente. Mesmo padrão de `oportunidade-ia.ts`.
+ */
+function logFalhaEvento(err: unknown): void {
+  const code = (err as { code?: string } | null | undefined)?.code;
+  console.error("[pipeline] falha ao registrar evento de movimentação na conversa", { code });
 }
 
 export const oppActions = {
@@ -202,8 +285,13 @@ export const oppActions = {
 
   async moveMany(ids: string[], stageId: string): Promise<boolean> {
     const s = state();
-    const stage = s.pipelines.flatMap((p) => p.stages).find((st) => st.id === stageId);
+    const allStages = s.pipelines.flatMap((p) => p.stages);
+    const stage = allStages.find((st) => st.id === stageId);
     const status = statusForStage(stage);
+    // Capturado ANTES do patch: precisamos da fase de origem de cada card
+    // para o texto do evento, e `s.opportunities` muda de referência no
+    // patch logo abaixo.
+    const opsAntes = s.opportunities.filter((o) => ids.includes(o.id));
     const supabase = createClient();
     const { error } = await supabase
       .from("opportunities")
@@ -216,6 +304,16 @@ export const oppActions = {
       ),
     });
     void logBulk(`Mover ${ids.length} lead(s) para "${stage?.name ?? "fase"}"`, ids.length);
+    if (stage) {
+      const itens = opsAntes
+        .map((o) => {
+          const origem = allStages.find((st) => st.id === o.stageId);
+          if (!origem || origem.id === stage.id) return null;
+          return { contactId: o.contactId, origem: origem.name, destino: stage.name };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+      if (itens.length > 0) void registrarEventosMovimentacaoLote(supabase, itens);
+    }
     return true;
   },
 

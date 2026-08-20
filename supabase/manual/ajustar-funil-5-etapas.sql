@@ -71,16 +71,29 @@ declare
   v_mapa          text;
   v_id            uuid;
   v_rn            int;
+  v_qtd_pipelines int;
 begin
+  -- Quantos pipelines de mesmo nome a empresa tem. Com mais de um, ajustar
+  -- "o primeiro" (`limit 1` sem `order by`, como era antes) escolhe um
+  -- qualquer — o Postgres não garante ordem sem ORDER BY. Nesse caso quem
+  -- decide qual é o dono, não a máquina.
+  select count(*) into v_qtd_pipelines
+    from public.pipelines
+   where location_id = v_location_id
+     and name = '✅ Controle de Leads';
+
+  if v_qtd_pipelines = 0 then
+    raise exception 'Nenhum pipeline "✅ Controle de Leads" encontrado para o location_id %. Confira o id antes de rodar.', v_location_id;
+  elsif v_qtd_pipelines > 1 then
+    raise exception 'Encontrados % pipelines "✅ Controle de Leads" para o location_id %. Escolha manualmente qual ajustar antes de rodar este script.', v_qtd_pipelines, v_location_id;
+  end if;
+
   select id into v_pipeline_id
     from public.pipelines
    where location_id = v_location_id
      and name = '✅ Controle de Leads'
+   order by created_at, id
    limit 1;
-
-  if v_pipeline_id is null then
-    raise exception 'Nenhum pipeline "✅ Controle de Leads" encontrado para o location_id %. Confira o id antes de rodar.', v_location_id;
-  end if;
 
   -- Um único cálculo dos ids ordenados. Tudo abaixo (checagem, aviso e
   -- aplicação) usa este mesmo array, na mesma ordem — nunca uma nova

@@ -327,9 +327,19 @@ async function registrarEventoEncerramento(
       channel: "whatsapp",
       body,
     });
-  } catch {
-    // best-effort — nunca deve derrubar o fluxo de encerramento
+  } catch (err) {
+    logFalhaEvento(err);
   }
+}
+
+/**
+ * Só o código do erro do Postgres, nunca o objeto inteiro ou a mensagem —
+ * a mensagem de erro do Postgres ecoa o valor ofensor, que aqui pode ser
+ * texto de conversa do cliente. Mesmo padrão de `oportunidade-ia.ts`.
+ */
+function logFalhaEvento(err: unknown): void {
+  const code = (err as { code?: string } | null | undefined)?.code;
+  console.error("[conversations] falha ao registrar evento de encerramento na conversa", { code });
 }
 
 export const conversationActions = {
