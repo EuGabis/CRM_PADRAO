@@ -15,7 +15,7 @@ Independente do que o cliente disser, responda SEMPRE com um objeto JSON contend
 
 - "resposta": o texto que vai direto para o cliente no WhatsApp. Nunca mencione JSON, campos, dados coletados ou o funil de vendas nesse texto — é só a conversa.
 - "dados": um objeto só com o que o cliente realmente informou até agora (origem, destino, data_ida, data_volta, passageiros, etc). O que você ainda não souber, OMITA a chave — nunca invente valor nem preencha com "não informado" ou similar.
-- "etapa_sugerida": "novo-lead", "em-negociacao" ou null, conforme o andamento da conversa.`;
+- "etapa_sugerida": "novo-lead", "em-negociacao", "perdido" ou null, conforme o andamento da conversa. Use "perdido" só quando o cliente disser claramente que desistiu, que já comprou em outro lugar ou que não tem mais interesse — nunca porque ele demorou a responder ou porque a conversa esfriou. Enquanto estiver só coletando dados (origem, destino, datas, passageiros), não sugira etapa nenhuma além de "novo-lead"/"em-negociacao" conforme o andamento.`;
 
 export interface RespostaAtendimento {
   resposta: string;

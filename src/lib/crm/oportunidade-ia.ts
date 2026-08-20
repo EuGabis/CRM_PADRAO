@@ -1,23 +1,26 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { statusForStageName } from "@/lib/automations/actions";
+
 /**
  * O que a IA pode fazer no funil. Esta lista é a garantia — pedir ao modelo
- * "não mova para Ganho" no prompt é um pedido, não uma regra: basta uma
- * conversa criativa para ele desobedecer.
+ * "não mova para Ganho" no prompt é pedido, não regra: basta uma conversa
+ * criativa para ele desobedecer.
  *
- * Ganho e Perdido são resultado de negócio, não estado de conversa. "pode
- * fechar então!" não é uma venda: o cliente não pagou nem emitiu. Se a
- * interpretação do modelo virasse número de venda, o relatório da agência
- * viraria ficção.
+ * `Proposta Enviada` fica de fora porque quem envia proposta é o consultor,
+ * muitas vezes fora do CRM — a IA não tem como saber que aconteceu.
+ * `Fechado/Ganho` fica de fora porque é o número de venda da agência: "pode
+ * fechar então!" não é uma venda, o cliente não pagou nem emitiu.
+ *
+ * `Perdido` entra: errar um perdido é recuperável (o consultor arrasta de
+ * volta) e não infla receita. A assimetria entre ganho e perdido é
+ * deliberada — não "conserte" achando que é inconsistência.
  */
 const ETAPAS_DA_IA: Record<string, string> = {
   "novo-lead": "Novo Lead",
   "em-negociacao": "Em Negociação",
+  "perdido": "Perdido",
 };
-
-/** Nomes de etapa que a IA tem permissão de tocar — usado para saber se um
- * card ainda está no "território" dela (ver `sincronizarOportunidade`). */
-const NOMES_DA_IA = new Set(Object.values(ETAPAS_DA_IA));
 
 /**
  * Chaves que a IA pode gravar em `contacts.custom_fields` — exatamente as que
@@ -154,12 +157,14 @@ async function acumularDados(
  * público, com o funil antigo) também não faz nada: nunca cria etapa nova,
  * só registra e segue.
  *
- * A allowlist restringe o destino, não a origem: um card que já saiu do
- * território da IA (etapa fora de `ETAPAS_DA_IA` — humano avançou na mão, ou
- * é um card manual em outra etapa qualquer) não é mais tocado por ela. E
- * dentro do território ela só avança (`stages.position` maior), nunca
- * retrocede um card que já foi movido para a frente — sem isso vira
- * ping-pong entre o humano e a IA a cada mensagem.
+ * `Fechado/Ganho` é terminal para a IA: se a etapa ATUAL do card já é
+ * Fechado/Ganho, ela não mexe — nem para Perdido, nem para qualquer outra.
+ * Uma conversa mal interpretada não pode apagar uma venda já registrada; para
+ * reabrir, o humano arrasta na mão. Fora desse caso, ela move livremente
+ * entre as três etapas da allowlist, em qualquer direção (inclusive de
+ * `Proposta Enviada` para `Perdido`, quando o cliente recusa depois de já ter
+ * recebido proposta). Etapa atual não encontrada (`stage_id` órfão) também
+ * não move — falha fechada.
  */
 async function sincronizarOportunidade(
   db: any,
@@ -216,23 +221,31 @@ async function sincronizarOportunidade(
     return;
   }
 
-  // Uma oportunidade por conversa: procura a oportunidade aberta já ligada a
-  // este contato neste pipeline, não importa quem criou — se o atendente já
-  // abriu o card na mão, a IA reaproveita em vez de duplicar. `source: 'IA'`
-  // só marca quem criou o card quando ele nasce aqui embaixo. Não há coluna
-  // de conversa em `opportunities`; contato + pipeline + aberta é o proxy
-  // disponível no schema atual.
+  // Um card por contato, em qualquer status — sem o filtro `status = "open""`
+  // um cliente que volta depois de Fechado/Ganho ou Perdido ganhava card
+  // novo em vez de reabrir o mesmo. Se houver mais de um (um humano pode ter
+  // criado outro pela tela), pega o mais recente por `created_at`, com `id`
+  // como desempate determinístico — nunca cria um segundo.
   const { data: existentes, error: existenteError } = await db
     .from("opportunities")
     .select("id, stage_id")
     .eq("location_id", p.locationId)
     .eq("contact_id", p.contactId)
     .eq("pipeline_id", pipeline.id)
-    .eq("status", "open")
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(1);
   if (existenteError) throw existenteError;
   const existente = existentes?.[0] ?? null;
+
+  // status é derivado do NOME da etapa de destino (Perdido -> lost; as
+  // outras duas etapas da allowlist -> open). Reaproveita a mesma regra de
+  // `src/lib/automations/actions.ts` em vez de uma terceira cópia. A IA
+  // nunca deve gravar "won": as três etapas da allowlist (Novo Lead, Em
+  // Negociação, Perdido) não contêm "GANHO"/"GANHA"/"ASSINOU", então esse
+  // caminho não alcança "won" mesmo que a função devolva esse valor para
+  // outros nomes de etapa.
+  const status = statusForStageName(nomeEtapa);
 
   if (existente) {
     if (existente.stage_id === etapa.id) return; // nada mudou — não polui a conversa
@@ -244,16 +257,21 @@ async function sincronizarOportunidade(
       .maybeSingle();
     if (etapaAtualError) throw etapaAtualError;
 
-    // Fora do território da IA: o card já saiu da allowlist (humano avançou
-    // na mão, por exemplo). A IA não puxa de volta.
-    if (!etapaAtual || !NOMES_DA_IA.has(etapaAtual.name)) return;
+    // Etapa atual não encontrada (stage_id órfão): não move — falha fechada.
+    if (!etapaAtual) return;
 
-    // Dentro do território, só avança — nunca retrocede.
-    if (etapa.position <= etapaAtual.position) return;
+    // Fechado/Ganho é terminal para a IA: uma conversa mal interpretada não
+    // pode apagar uma venda já registrada. Para reabrir, o humano arrasta.
+    if (etapaAtual.name === "Fechado/Ganho") {
+      console.info("[registrarAtendimento] card em Fechado/Ganho, IA nao move", {
+        locationId: p.locationId,
+      });
+      return;
+    }
 
     const { error: moverError } = await db
       .from("opportunities")
-      .update({ stage_id: etapa.id })
+      .update({ stage_id: etapa.id, status })
       .eq("id", existente.id);
     if (moverError) throw moverError;
 
@@ -280,6 +298,7 @@ async function sincronizarOportunidade(
     name: nomeContato,
     source: "IA",
     owner_id: ownerId,
+    status,
   });
   if (criarError) throw criarError;
 

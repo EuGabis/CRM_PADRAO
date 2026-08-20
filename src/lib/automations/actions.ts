@@ -95,8 +95,13 @@ export function renderTemplate(text: string, vars: Record<string, string>): stri
   return text.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, name: string) => vars[name] ?? "");
 }
 
-/** Deduz o status a partir do nome da fase — mesma regra de `db/pipeline.ts`. */
-function statusForStageName(name: string): "open" | "won" | "lost" {
+/**
+ * Deduz o status a partir do nome da fase — mesma regra de `db/pipeline.ts`.
+ * Exportada para `src/lib/crm/oportunidade-ia.ts` reutilizar em vez de
+ * escrever uma terceira cópia da regra (three implementations diverge o dia
+ * em que alguém renomear uma etapa).
+ */
+export function statusForStageName(name: string): "open" | "won" | "lost" {
   const upper = name.toUpperCase();
   if (upper.includes("PERDID")) return "lost";
   if (upper.includes("ASSINOU") || upper.includes("GANHO") || upper.includes("GANHA")) return "won";
