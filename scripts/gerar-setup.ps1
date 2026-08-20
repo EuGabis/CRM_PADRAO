@@ -67,7 +67,11 @@ $partes = [ordered]@{
     "0060_transcricao_audio.sql",
     "0061_funil_padrao.sql",
     "0062_realtime_oportunidades.sql",
-    "0063_painel_contato.sql"
+    "0063_painel_contato.sql",
+    # 0064 funde duplicatas e cria as travas unicas; precisa rodar depois que
+    # todas as tabelas filhas (inclusive contact_notes/contact_files da 0063)
+    # ja existem.
+    "0064_dedup_contacts_conversations.sql"
   )
 }
 

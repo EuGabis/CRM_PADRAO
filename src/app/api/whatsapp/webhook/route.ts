@@ -117,7 +117,7 @@ async function handleIncoming(db: any, channel: any, value: any, m: any) {
   if (!contact) {
     const parts = profileName.trim().split(/\s+/);
     const first = parts.shift() || phone;
-    const { data: created } = await db
+    const { data: created, error: contatoErr } = await db
       .from("contacts")
       .insert({
         location_id: channel.location_id,
@@ -129,7 +129,21 @@ async function handleIncoming(db: any, channel: any, value: any, m: any) {
       })
       .select("id")
       .single();
-    contact = created;
+    if (contatoErr) {
+      // corrida: a Meta reentrega o mesmo evento e as invocações concorrem
+      // entre o SELECT e o INSERT. O índice único (location_id, phone) da 0064
+      // barra o 2º insert com 23505 — recupera o existente em vez de duplicar.
+      if ((contatoErr as any).code !== "23505") throw contatoErr;
+      const { data: existente } = await db
+        .from("contacts")
+        .select("id")
+        .eq("location_id", channel.location_id)
+        .eq("phone", phone)
+        .maybeSingle();
+      contact = existente;
+    } else {
+      contact = created;
+    }
   }
   if (!contact) return;
 
@@ -179,8 +193,12 @@ async function handleIncoming(db: any, channel: any, value: any, m: any) {
     .eq("contact_id", contact.id)
     .eq("channel", "whatsapp")
     .maybeSingle();
+  // Já existia antes deste evento? Só então leva o UPDATE (bump de não lidas,
+  // reabrir, prévia). Recém-criada aqui já nasce com os valores certos. Corrida
+  // perdida (23505) cai no mesmo caso de "já existia".
+  let convJaExistia = !!conv;
   if (!conv) {
-    const { data: created } = await db
+    const { data: created, error: convErr } = await db
       .from("conversations")
       .insert({
         location_id: channel.location_id,
@@ -191,10 +209,26 @@ async function handleIncoming(db: any, channel: any, value: any, m: any) {
         last_message_at: nowIso,
         last_message_preview: body,
       })
-      .select("id")
+      .select("id, unread_count")
       .single();
-    conv = created;
-  } else {
+    if (convErr) {
+      // corrida: o índice único (location_id, contact_id, channel) da 0064
+      // barra a 2ª conversa. Recupera a existente e trata como "já existia".
+      if ((convErr as any).code !== "23505") throw convErr;
+      const { data: existente } = await db
+        .from("conversations")
+        .select("id, unread_count")
+        .eq("location_id", channel.location_id)
+        .eq("contact_id", contact.id)
+        .eq("channel", "whatsapp")
+        .maybeSingle();
+      conv = existente;
+      convJaExistia = true;
+    } else {
+      conv = created;
+    }
+  }
+  if (conv && convJaExistia) {
     await db
       .from("conversations")
       .update({
