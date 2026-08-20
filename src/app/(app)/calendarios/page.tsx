@@ -169,7 +169,14 @@ function ListaCompromissos({
                 className="cursor-pointer border-b last:border-0 hover:bg-slate-50"
               >
                 <td className="whitespace-nowrap px-4 py-2.5 font-medium text-slate-800">
-                  {a.title}
+                  <span className="flex items-center gap-1.5">
+                    {a.kind === "tarefa" && (
+                      <Badge className="bg-amber-100 text-amber-700">Tarefa</Badge>
+                    )}
+                    <span className={cn(a.kind === "tarefa" && a.done && "text-slate-400 line-through")}>
+                      {a.title}
+                    </span>
+                  </span>
                 </td>
                 <td className="whitespace-nowrap px-4 py-2.5 text-slate-600">
                   {format(a.startDate, "EEE, dd 'de' MMM · HH:mm", { locale: ptBR })}

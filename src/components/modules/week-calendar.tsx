@@ -135,6 +135,22 @@ export function WeekCalendar({
     if (ownerFilter === "__shared__") return all.filter((a) => !a.ownerId);
     return all.filter((a) => a.ownerId === ownerFilter);
   }, [all, ownerFilter]);
+  // Tarefa (kind === "tarefa") nasce com end = start — duração zero — e não
+  // entra na grade de horários (viraria um sliver fino atravessado). Ela
+  // aparece como pílula no cabeçalho do dia (ver `tasksByDay` abaixo), não
+  // como bloco na grade. Compromisso continua indo para a grade, como sempre.
+  const { events, tasksByDay } = useMemo(() => {
+    const events = appointments.filter((a) => a.kind !== "tarefa");
+    const tasksByDay = new Map<string, Appointment[]>();
+    for (const a of appointments) {
+      if (a.kind !== "tarefa") continue;
+      const key = format(new Date(a.start), "yyyy-MM-dd");
+      const list = tasksByDay.get(key);
+      if (list) list.push(a);
+      else tasksByDay.set(key, [a]);
+    }
+    return { events, tasksByDay };
+  }, [appointments]);
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 0 }));
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
@@ -219,26 +235,56 @@ export function WeekCalendar({
         </div>
         <div className="grid grid-cols-[52px_repeat(7,1fr)] text-[10px]">
           <div className="border-b border-r px-1 py-2 text-slate-400">GMT-3</div>
-          {days.map((d, i) => (
-            <div
-              key={i}
-              className={cn(
-                "border-b px-2 py-2 text-center font-semibold",
-                format(d, "yyyy-MM-dd") === todayStr
-                  ? "bg-indigo-50 text-indigo-700"
-                  : "text-slate-600",
-                i < 6 && "border-r"
-              )}
-            >
-              {format(d, "EEE d", { locale: ptBR })}
-            </div>
-          ))}
+          {days.map((d, i) => {
+            const dayTasks = tasksByDay.get(format(d, "yyyy-MM-dd")) ?? [];
+            return (
+              <div
+                key={i}
+                className={cn(
+                  "border-b px-1.5 py-2 text-center font-semibold",
+                  format(d, "yyyy-MM-dd") === todayStr
+                    ? "bg-indigo-50 text-indigo-700"
+                    : "text-slate-600",
+                  i < 6 && "border-r"
+                )}
+              >
+                {format(d, "EEE d", { locale: ptBR })}
+                {/* Tarefa é marcador do dia, não bloco de horário — nasce com
+                    end = start e viraria um sliver fino se entrasse na grade
+                    de slots. Aparece aqui, como pílula, igual a "a fazer" de
+                    calendário de verdade. */}
+                {dayTasks.length > 0 && (
+                  <div className="mt-1 flex flex-col items-stretch gap-0.5">
+                    {dayTasks.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEdit?.(t);
+                        }}
+                        title={t.title}
+                        className={cn(
+                          "truncate rounded-full border px-1.5 py-0.5 text-[9px] font-medium normal-case",
+                          t.done
+                            ? "border-slate-200 bg-slate-100 text-slate-400 line-through"
+                            : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                        )}
+                      >
+                        {t.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {HOURS.map((h) => (
             <div key={h} className="contents">
               <div className="h-14 border-b border-r px-1 pt-0.5 text-slate-400">{h}:00</div>
               {days.map((d, di) => {
                 const dayStr = format(d, "yyyy-MM-dd");
-                const events = appointments.filter((a) => {
+                const hourEvents = events.filter((a) => {
                   const start = new Date(a.start);
                   return format(start, "yyyy-MM-dd") === dayStr && start.getHours() === h;
                 });
@@ -250,7 +296,7 @@ export function WeekCalendar({
                     onCreate={(day, hour) => onCreateAt?.(day, hour)}
                     className={di < 6 ? "border-r" : undefined}
                   >
-                    {events.map((e) => (
+                    {hourEvents.map((e) => (
                       <DraggableEvent
                         key={e.id}
                         appointment={e}
