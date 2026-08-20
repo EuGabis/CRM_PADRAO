@@ -558,6 +558,48 @@ export async function maybeAutoReply(
 
     // log (best-effort; created_by null = máquina)
     await gravarLog(reply);
+
+    // Escalonamento para humano: SEMPRE por último, depois de o cliente já
+    // ter recebido `reply` e depois de `registrarAtendimento` (o card ainda
+    // precisa nascer/mover normalmente). Pausar antes de enviar deixaria o
+    // cliente sem o aviso que o próprio `reply` já contém. Best-effort total:
+    // um try/catch próprio, porque falhar em pausar/sinalizar não pode
+    // desfazer o envio nem quebrar o 200 do webhook.
+    if (resposta.escalar) {
+      try {
+        const { data: convAtual } = await db
+          .from("conversations")
+          .select("unread_count")
+          .eq("id", p.conversationId)
+          .maybeSingle();
+        const { error: escalarError } = await db
+          .from("conversations")
+          .update({
+            bot_paused: true,
+            unread_count: (convAtual?.unread_count ?? 0) + 1,
+          })
+          .eq("id", p.conversationId);
+        if (escalarError) throw escalarError;
+
+        // Mesmo formato dos demais eventos internos (registrarEvento em
+        // oportunidade-ia.ts): direction "out", nunca "in" — o trigger
+        // messages_automation dispara "cliente-respondeu" para toda
+        // mensagem de entrada, e este evento não é fala do cliente.
+        const { error: eventoError } = await db.from("messages").insert({
+          location_id: p.locationId,
+          conversation_id: p.conversationId,
+          direction: "out",
+          type: "event",
+          channel: "whatsapp",
+          body: `IA encaminhou para atendimento humano — ${resposta.escalar.motivo}`,
+        });
+        if (eventoError) throw eventoError;
+      } catch (e) {
+        // Nunca logar o motivo bruto do cliente nem conteúdo da conversa —
+        // só location e código do erro, mesmo contrato de `falha`.
+        falha(p.locationId, "escalonamento-falhou", e);
+      }
+    }
   } catch (e) {
     // Best-effort absoluto: nunca propaga pro webhook. Mas nunca silencioso —
     // um throw inesperado aqui (createAdminClient, insert, storage) matava a
