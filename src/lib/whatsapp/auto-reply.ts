@@ -164,8 +164,31 @@ export async function maybeAutoReply(
     // (ex.: `audioMessage.seconds`) — propagado pelo webhook da Evolution.
     // Quando ausente, o teto usa só `media_size`.
     audioSeconds?: number;
+    // created_at da mensagem de entrada que disparou esta chamada. Serve de
+    // marco para o anti-repetição: numa rajada, só a última mensagem responde
+    // — as anteriores desistem ao ver que já chegou algo mais novo.
+    mensagemEm?: string | null;
   },
 ): Promise<void> {
+  // Anti-repetição: só responde se esta ainda é a mensagem de entrada mais
+  // recente da conversa. Se o cliente mandou várias em sequência, cada uma
+  // dispara uma chamada; sem isto, cada uma responderia (mensagens repetidas,
+  // como as duas do print). Checamos antes de gastar o modelo e de novo antes
+  // de enviar (uma nova pode chegar durante a chamada ao modelo). A ÚLTIMA
+  // mensagem vence e vê todas as anteriores no histórico.
+  async function souAMaisRecente(): Promise<boolean> {
+    if (!p.mensagemEm) return true; // sem marco (canal Meta), não dá pra deduplicar — comporta como antes
+    const { data } = await db
+      .from("messages")
+      .select("created_at")
+      .eq("conversation_id", p.conversationId)
+      .eq("direction", "in")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return !data?.created_at || data.created_at <= p.mensagemEm;
+  }
+
   try {
     if (!process.env.OPENAI_API_KEY) return sair(p.locationId, "sem-openai-key");
 
@@ -245,6 +268,10 @@ export async function maybeAutoReply(
       .eq("direction", "out")
       .gte("created_at", startOfDay.toISOString());
     if ((count ?? 0) >= p.dailyLimit) return sair(p.locationId, "limite-diario");
+
+    // Anti-repetição, 1ª checagem: se já chegou mensagem mais nova, desiste
+    // ANTES de gastar o modelo — a mais nova responde pela rajada inteira.
+    if (!(await souAMaisRecente())) return sair(p.locationId, "mensagem-superada");
 
     // Histórico (últimas 10, ordem cronológica) — SEM evento interno e SEM
     // anotação interna. Os dois são gravados em `messages` com
@@ -559,6 +586,11 @@ export async function maybeAutoReply(
     // depois, via `registrarAtendimento`, no envio.
     const reply = limparNegrito(resposta.resposta);
     if (!reply) return sair(p.locationId, "resposta-vazia");
+
+    // Anti-repetição, 2ª checagem: uma mensagem nova pode ter chegado durante
+    // a chamada ao modelo. Se chegou, não envia — a chamada dela vai responder
+    // com a resposta já ciente desta. Evita as duas mensagens iguais do print.
+    if (!(await souAMaisRecente())) return sair(p.locationId, "mensagem-superada");
 
     // envia pelo helper único (resolve provedor, checa connection_state e
     // busca o token da instância — ver src/lib/whatsapp/enviar.ts)

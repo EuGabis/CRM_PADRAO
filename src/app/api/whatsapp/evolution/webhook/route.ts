@@ -489,18 +489,22 @@ async function handleMessage(db: any, channel: any, item: any) {
     return;
   }
 
-  const { error: insErr } = await db.from("messages").insert({
-    location_id: channel.location_id,
-    conversation_id: conv.id,
-    direction: "in",
-    type: msgType,
-    channel: "whatsapp",
-    body,
-    channel_id: channel.id,
-    wa_message_id: waId,
-    status: "delivered",
-    ...media,
-  });
+  const { data: msgInserida, error: insErr } = await db
+    .from("messages")
+    .insert({
+      location_id: channel.location_id,
+      conversation_id: conv.id,
+      direction: "in",
+      type: msgType,
+      channel: "whatsapp",
+      body,
+      channel_id: channel.id,
+      wa_message_id: waId,
+      status: "delivered",
+      ...media,
+    })
+    .select("created_at")
+    .single();
   if (insErr) {
     // corrida: reentrega do gateway — o índice único parcial (0022) barra o
     // 2º insert. Nesse caso NÃO reprocessa.
@@ -527,6 +531,7 @@ async function handleMessage(db: any, channel: any, item: any) {
       toPhone: phone,
       dailyLimit: channel.daily_limit ?? 1000,
       audioSeconds,
+      mensagemEm: msgInserida?.created_at ?? null,
     });
   }
 }
