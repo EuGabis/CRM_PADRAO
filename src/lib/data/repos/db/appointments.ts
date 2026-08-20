@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { create } from "zustand";
 import { createClient } from "@/lib/supabase/client";
 import type { Appointment } from "@/lib/data/types";
@@ -21,6 +21,10 @@ const mapAppointment = (r: any): Appointment => ({
   end: r.ends_at,
   calendar: r.calendar,
   source: r.source,
+  // Coluna da 0063; `??` cobre o intervalo entre subir o código e aplicar a
+  // migração.
+  kind: r.kind ?? "compromisso",
+  done: r.done ?? false,
 });
 
 interface ApptState {
@@ -66,6 +70,31 @@ export function useDbAppointments() {
   return { appointments, loading: loading || !loaded };
 }
 
+/**
+ * Compromissos/tarefas de UM contato, filtrados por `kind`. O filtro roda
+ * dentro do `useMemo`, nunca no selector do Zustand — filtrar/mapear no
+ * selector cria array novo a cada render e trava a tela (bug recorrente
+ * neste projeto, ver AGENTS.md item 4).
+ */
+export function useContactAppointments(
+  contactId: string,
+  kind: "compromisso" | "tarefa"
+) {
+  const { appointments, loading, loaded, load } = useApptStore();
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const filtered = useMemo(
+    () =>
+      appointments
+        .filter((a) => a.contactId === contactId && a.kind === kind)
+        .sort((a, b) => a.start.localeCompare(b.start)),
+    [appointments, contactId, kind]
+  );
+  return { appointments: filtered, loading: loading || !loaded };
+}
+
 export const appointmentActions = {
   async add(input: {
     title: string;
@@ -77,6 +106,8 @@ export const appointmentActions = {
     start: string; // ISO
     end: string; // ISO
     calendar?: string;
+    /** Ausente = compromisso, mesmo default da coluna (0063). */
+    kind?: "compromisso" | "tarefa";
   }): Promise<boolean> {
     const locationId = useDbStore.getState().locationId;
     if (!locationId) return false;
@@ -95,6 +126,7 @@ export const appointmentActions = {
         starts_at: input.start,
         ends_at: input.end,
         calendar: input.calendar ?? "Reuniões",
+        kind: input.kind ?? "compromisso",
         source: "crm",
       })
       .select()
@@ -182,6 +214,21 @@ export const appointmentActions = {
       useApptStore.getState().patch(previous);
       return false;
     }
+    return true;
+  },
+
+  /** Marca/desmarca uma tarefa como concluída — nunca apaga o registro. */
+  async toggleDone(id: string, done: boolean): Promise<boolean> {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("appointments")
+      .update({ done })
+      .eq("id", id)
+      .select()
+      .maybeSingle();
+    if (error || !data) return false;
+    const s = useApptStore.getState();
+    s.patch(s.appointments.map((a) => (a.id === id ? mapAppointment(data) : a)));
     return true;
   },
 

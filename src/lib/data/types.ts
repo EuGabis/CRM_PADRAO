@@ -180,6 +180,10 @@ export interface Appointment {
   end: string;
   calendar: string;
   source: "google" | "crm";
+  /** Compromisso ou tarefa — mesma tabela, distinguida pela 0063. */
+  kind: "compromisso" | "tarefa";
+  /** Só faz sentido para `kind = 'tarefa'`; compromisso nunca lê isto. */
+  done: boolean;
 }
 
 export interface FormField {
