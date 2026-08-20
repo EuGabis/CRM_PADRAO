@@ -207,6 +207,88 @@ git commit -m "feat(inbox): dono do card acompanha o atendente da conversa"
 
 ---
 
+### Task 5: A IA pede socorro (escalonamento para humano)
+
+**Files:**
+- Modify: `src/lib/ai/atendimento.ts`
+- Modify: `src/lib/whatsapp/auto-reply.ts`
+
+**Interfaces:**
+- Produces: `RespostaAtendimento` ganha `escalar: { motivo: string } | null`; `parseAtendimento` o preenche.
+
+**O que existe hoje.** A IA já para de responder quando a conversa está com
+`bot_paused = true` (um humano assumiu). O que **não** existe é a IA **pedir**
+esse handoff sozinha: ela não tem como sinalizar "isto precisa de gente".
+
+**O que muda.** A resposta JSON ganha um quarto campo. Quando o modelo entender
+que a conversa precisa de humano, ele preenche `escalar` com o motivo; o CRM
+então pausa o bot naquela conversa, sinaliza-a, e a IA cala — **depois** de
+enviar a última mensagem avisando o cliente.
+
+- [ ] **Step 1: O contrato ganha o campo `escalar`**
+
+Em `src/lib/ai/atendimento.ts`, `RespostaAtendimento` passa a ter
+`escalar: { motivo: string } | null`. `parseAtendimento` lê `escalar` do JSON:
+só aceita quando é objeto com `motivo` string não vazia; qualquer outra coisa
+vira `null`. Como nos outros campos, **nunca lança**.
+
+- [ ] **Step 2: A instrução descreve quando escalar**
+
+Em `INSTRUCAO_ATENDIMENTO`, acrescente que a resposta pode conter
+`escalar: { motivo: "..." }` e liste os gatilhos, que são regra de negócio da
+agência (ficam no prompt, não no código, porque mudam): cancelamento,
+remarcação ou reembolso de passagem; voo nas próximas 48 horas; reclamação
+sobre cobrança; cliente irritado ou pedindo explicitamente um humano.
+
+Deixe explícito o outro lado: **não escalar** por dúvida comum, por demora do
+cliente, nem por pergunta que a própria IA sabe responder. Escalar à toa
+transforma todo atendimento em fila humana e mata o valor da IA.
+
+O `resposta` que acompanha um `escalar` deve avisar o cliente que um atendente
+vai assumir — sem prometer "transferência" (o CRM não transfere; ele sinaliza).
+
+- [ ] **Step 3: Ligar o escalonamento em `maybeAutoReply`**
+
+Depois de enviar `resposta.resposta` e gravar a mensagem de saída (o cliente
+**tem** que receber o aviso antes de a IA calar), se `escalar` não for `null`:
+
+- grave `conversations.bot_paused = true` e zere `unread_count`… não —
+  **aumente** a visibilidade: marque como não lida para subir na lista
+  (`unread_count` +1 ou o padrão que a inbox usa para destacar), e grave o
+  evento na conversa: `IA encaminhou para atendimento humano — <motivo>`.
+- `direction: "out"` no evento, **nunca** `"in"` (o trigger `messages_automation`
+  dispara `cliente-respondeu` para entrada — já corrigido duas vezes nesta base).
+
+Tudo isso é **best-effort**: falha ao pausar ou sinalizar não pode quebrar o 200
+do webhook nem impedir que o cliente já tenha recebido a resposta.
+
+- [ ] **Step 4: A ordem importa**
+
+O escalonamento roda **depois** de `registrarAtendimento` (o card ainda deve ser
+criado/atualizado) e **depois** do envio. Pausar antes de enviar deixaria o
+cliente sem o aviso.
+
+- [ ] **Step 5: Type check e build**
+
+```bash
+npx tsc --noEmit
+```
+
+Com o dev parado e `.next` apagado:
+
+```bash
+npm run build
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/lib/ai/atendimento.ts src/lib/whatsapp/auto-reply.ts
+git commit -m "feat(ia): IA escala para atendimento humano quando pede socorro"
+```
+
+---
+
 ### Task 3: Documentação
 
 **Files:**
