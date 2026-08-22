@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
   Archive,
   ArrowUpDown,
   CheckCircle2,
   ChevronDown,
   ListChecks,
+  Mail,
   Plus,
   Search,
   Star,
@@ -399,19 +401,38 @@ export function ConversationList({
                 </div>
                 <p className="truncate text-[11px] text-slate-500">{conv.lastMessagePreview}</p>
               </div>
-              <span
-                onClick={(e) => {
-                  e.stopPropagation();
-                  conversationActions.star(conv.id);
-                }}
-                className="mt-0.5 shrink-0"
-              >
-                <Star
-                  className={cn(
-                    "size-3.5",
-                    conv.starred ? "fill-amber-400 text-amber-400" : "text-slate-300"
-                  )}
-                />
+              <span className="mt-0.5 flex shrink-0 items-center gap-1">
+                {/* Marcar como não lida: só faz sentido quando já está lida.
+                    stopPropagation para não abrir a conversa (o que zeraria de
+                    novo via markRead). */}
+                {conv.unreadCount === 0 && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    title="Marcar como não lida"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void conversationActions.markUnread(conv.id);
+                      toast.success("Marcada como não lida");
+                    }}
+                    className="text-slate-300 hover:text-indigo-500"
+                  >
+                    <Mail className="size-3.5" />
+                  </span>
+                )}
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    conversationActions.star(conv.id);
+                  }}
+                >
+                  <Star
+                    className={cn(
+                      "size-3.5",
+                      conv.starred ? "fill-amber-400 text-amber-400" : "text-slate-300"
+                    )}
+                  />
+                </span>
               </span>
             </button>
             </div>

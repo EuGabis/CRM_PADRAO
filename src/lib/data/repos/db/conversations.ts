@@ -624,6 +624,22 @@ export const conversationActions = {
     });
   },
 
+  /**
+   * Marca a conversa como NÃO lida (unread_count = 1) — para o atendente se
+   * lembrar de voltar nela. Abrir a conversa chama `markRead` e zera de novo,
+   * então o uso é: marcar e sair da conversa; o badge fica até reabrir.
+   */
+  async markUnread(conversationId: string): Promise<void> {
+    const supabase = createClient();
+    await supabase.from("conversations").update({ unread_count: 1 }).eq("id", conversationId);
+    const s = useConvStore.getState();
+    s.patch({
+      conversations: s.conversations.map((c) =>
+        c.id === conversationId ? { ...c, unreadCount: 1 } : c
+      ),
+    });
+  },
+
   async star(conversationId: string): Promise<void> {
     const s = useConvStore.getState();
     const conv = s.conversations.find((c) => c.id === conversationId);
