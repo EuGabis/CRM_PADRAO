@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
@@ -93,12 +94,47 @@ function saveRead(ids: string[]) {
   }
 }
 
+/**
+ * Toque curto de notificação, gerado na hora (Web Audio) — sem depender de um
+ * arquivo de áudio externo, que a política de CSP dos Artifacts/deploy poderia
+ * bloquear. Falha em silêncio se o navegador ainda não liberou áudio (antes de
+ * qualquer clique do usuário) — o toast visual ainda aparece.
+ */
+function tocarBip() {
+  try {
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.36);
+    osc.onended = () => ctx.close();
+  } catch {
+    // navegador bloqueou áudio (sem interação ainda) — o toast cobre.
+  }
+}
+
 export function NotificationsPanel() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"nao-lidas" | "lidas">("nao-lidas");
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [readIds, setReadIds] = useState<string[]>([]);
   const locationId = useDbStore((s) => s.locationId);
+  // Ids de conversa já vistos num ciclo anterior. Serve para tocar/avisar SÓ
+  // quando aparece conversa nova, não a cada polling. `null` no primeiro
+  // ciclo: não dispara ao abrir o app (senão tocaria para tudo que já estava
+  // acumulado). useRef para não re-renderizar a cada check.
+  const conhecidasRef = useRef<Set<string> | null>(null);
 
   const refresh = useCallback(async () => {
     await useDbStore.getState().load();
@@ -201,6 +237,28 @@ export function NotificationsPanel() {
         href: "/whatsapp",
       })),
     ].sort((x, y) => y.at.localeCompare(x.at));
+
+    // Avisa (som + toast) SÓ para conversa nova desde o último ciclo. Outros
+    // tipos (canal caído, agendada falha, compromisso) não tocam — som a cada
+    // polling viraria ruído; conversa nova é o que o atendente quer ouvir.
+    const conversasAgora = new Set(
+      next.filter((i) => i.kind === "conversa").map((i) => i.id)
+    );
+    const conhecidas = conhecidasRef.current;
+    if (conhecidas) {
+      const novas = next.filter(
+        (i) => i.kind === "conversa" && !conhecidas.has(i.id)
+      );
+      if (novas.length > 0) {
+        tocarBip();
+        const primeira = novas[0];
+        toast(primeira.title, {
+          description: primeira.description,
+          duration: 6000,
+        });
+      }
+    }
+    conhecidasRef.current = conversasAgora;
 
     setItems(next);
   }, []);
