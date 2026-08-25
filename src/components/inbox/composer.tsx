@@ -355,6 +355,19 @@ export function Composer({ conversationId }: { conversationId: string }) {
             send();
           }
         }}
+        onPaste={(e) => {
+          // Colar um print (Ctrl/Cmd+V): pega a imagem da área de transferência
+          // e manda pelo mesmo caminho do clipe (envia na hora). Comentário
+          // interno não envia mídia, então nesse modo deixa o colar normal.
+          if (internal) return;
+          const file = Array.from(e.clipboardData.items)
+            .find((it) => it.kind === "file" && it.type.startsWith("image/"))
+            ?.getAsFile();
+          if (file) {
+            e.preventDefault();
+            void uploadFile(file);
+          }
+        }}
         placeholder={
           internal
             ? "Escreva uma nota interna (o lead não vê)"
