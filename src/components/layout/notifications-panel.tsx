@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { createClient } from "@/lib/supabase/client";
+import { autenticarRealtime, statusRealtime } from "@/lib/supabase/realtime";
 import { useApptStore } from "@/lib/data/repos/db/appointments";
 import { useDbStore } from "@/lib/data/repos/db/contacts";
 import { cn } from "@/lib/utils";
@@ -273,10 +274,43 @@ export function NotificationsPanel() {
       if (alive) setReadIds(loadRead());
     };
     void run();
+    // O polling continua como REDE DE SEGURANÇA (o realtime cai sozinho — token
+    // expira, canal Baileys instável). Mas 60s era o atraso que o cliente
+    // sentia: a notificação só aparecia no próximo ciclo. Agora quem manda o
+    // aviso na hora é o realtime abaixo; o timer só cobre a falha dele.
     const timer = setInterval(() => void run(), REFRESH_MS);
+
+    // Inscrição em tempo real PRÓPRIA do sino. A do inbox (canal "crm-inbox")
+    // só existe enquanto a tela de Conversas está aberta; o sino vive no shell,
+    // em toda tela, então precisa da sua própria. Mensagem nova de ENTRADA
+    // dispara o refresh imediatamente — o diff de `conhecidasRef` dentro de
+    // `refresh` cuida de tocar o bip/toast só para conversa realmente nova.
+    const supabase = createClient();
+    let canal: ReturnType<typeof supabase.channel> | null = null;
+    void (async () => {
+      // ANTES do subscribe, senão o socket entra anônimo e a RLS de `messages`
+      // filtra tudo — o canal conecta e nunca entrega evento (ver realtime.ts).
+      await autenticarRealtime(supabase);
+      if (!alive) return;
+      canal = supabase
+        .channel("crm-sino-notificacoes")
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+            filter: "direction=eq.in",
+          },
+          () => void run(),
+        )
+        .subscribe(statusRealtime("sino-notificacoes", () => {}));
+    })();
+
     return () => {
       alive = false;
       clearInterval(timer);
+      if (canal) void supabase.removeChannel(canal);
     };
   }, [refresh, locationId]);
 
