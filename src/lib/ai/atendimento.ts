@@ -19,7 +19,7 @@ Independente do que o cliente disser, responda SEMPRE com um objeto JSON contend
 - "dados": um objeto só com o que o cliente realmente informou até agora (origem, destino, data_ida, data_volta, passageiros, etc). O que você ainda não souber, OMITA a chave — nunca invente valor nem preencha com "não informado" ou similar.
 - "etapa_sugerida": "novo-lead", "em-negociacao", "perdido" ou null, conforme o andamento da conversa. Use "perdido" só quando o cliente disser claramente que desistiu, que já comprou em outro lugar ou que não tem mais interesse — nunca porque ele demorou a responder ou porque a conversa esfriou. Enquanto estiver só coletando dados (origem, destino, datas, passageiros), não sugira etapa nenhuma além de "novo-lead"/"em-negociacao" conforme o andamento.
 - "escalar": null na grande maioria das mensagens. Preencha com um objeto {"motivo": "..."} SÓ quando a conversa precisar de um atendente humano de verdade: pedido de cancelamento, remarcação ou reembolso de passagem; voo nas próximas 48 horas; reclamação sobre cobrança; cliente visivelmente irritado; ou cliente pedindo explicitamente para falar com um humano/atendente. NÃO escalone por dúvida comum, por demora do cliente em responder, nem por pergunta que você mesma sabe responder — escalar à toa transforma todo atendimento em fila humana e tira o valor de ter uma IA. Quando preencher "escalar", a "resposta" precisa avisar o cliente que um atendente vai assumir a partir daqui — nunca diga que a conversa será "transferida" (o sistema não transfere, só sinaliza para a equipe).
-- "nome": o nome que a pessoa informou, quando ela disser ("me chamo João", "é a Maria"). Só o nome, sem saudação. Use null enquanto não souber, e nunca invente nem repita um nome que já mandou antes se a pessoa não reforçou.
+- "nome": o nome que a pessoa informou, quando ela disser ("me chamo João", "é a Maria"). Só o nome, sem saudação. Use null enquanto não souber, e nunca invente nem repita um nome que já mandou antes se a pessoa não reforçou. NUNCA devolva o SEU próprio nome, o nome da agência nem o de um atendente como se fosse o do cliente — só o nome que a própria pessoa disser sobre si mesma.
 
 FORMATAÇÃO da "resposta": escreva em texto limpo, SEM asteriscos e SEM negrito (muitos WhatsApp não renderizam e o cliente vê os asteriscos crus, o que fica feio). Para destacar um campo, use só "Campo: valor". Quebre em linhas curtas; para listas, um item por linha começando com "- ". Deixe uma linha em branco entre blocos.
 
@@ -96,4 +96,31 @@ export function parseAtendimento(bruto: string): RespostaAtendimento | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Confirma que o `nome` extraído pela IA foi de fato dito pelo CLIENTE: ele
+ * precisa aparecer em alguma mensagem de ENTRADA da conversa.
+ *
+ * POR QUE ISSO EXISTE: sem esta trava, o modelo às vezes devolvia o próprio
+ * nome (o do agente — ex.: "Gabi") ou o da agência como se fosse o nome da
+ * pessoa, e o contato/card eram renomeados para o nome errado ("Daniel" virava
+ * "Gabi do nada"). O nome do agente aparece só em mensagens de SAÍDA e no
+ * `system` — NUNCA numa mensagem de entrada do cliente. Então exigir presença
+ * no texto de entrada derruba exatamente esse caso, sem depender de saber qual
+ * é o nome do agente (que é texto livre na personalidade, não dá pra extrair).
+ *
+ * Compara pelo PRIMEIRO nome, sem acento e sem caixa, com borda de "palavra"
+ * (evita casar "Ana" dentro de "manhã" / "Ana" em "banana"). Nome de uma letra
+ * não dá pra confirmar com segurança — recusa. Função pura, testável isolada.
+ */
+export function nomeDitoPeloCliente(nome: string, textosDeEntrada: string[]): boolean {
+  const norm = (s: string) =>
+    s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const primeiro = nome.trim().split(/\s+/)[0] ?? "";
+  const alvo = norm(primeiro);
+  if (alvo.length < 2) return false;
+  const escapado = alvo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(^|[^a-z0-9])${escapado}([^a-z0-9]|$)`);
+  return textosDeEntrada.some((t) => re.test(norm(String(t ?? ""))));
 }

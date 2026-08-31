@@ -1,5 +1,5 @@
 import { chat, modeloPermitido } from "@/lib/ai/openai";
-import { INSTRUCAO_ATENDIMENTO, parseAtendimento } from "@/lib/ai/atendimento";
+import { INSTRUCAO_ATENDIMENTO, nomeDitoPeloCliente, parseAtendimento } from "@/lib/ai/atendimento";
 import { transcreverAudio } from "@/lib/ai/transcrever";
 import { registrarAtendimento } from "@/lib/crm/oportunidade-ia";
 import { assertModuleEnabled } from "@/lib/plan/guard";
@@ -247,6 +247,27 @@ export async function maybeAutoReply(
       .eq("id", p.conversationId)
       .maybeSingle();
     if (!conv || conv.bot_paused) return sair(p.locationId, "bot-pausado");
+
+    // Venda já fechada é terminal para a IA — mesmo princípio de Fechado/Ganho
+    // no funil (oportunidade-ia.ts). Finalizar a conversa RELIGA o bot
+    // (`bot_paused=false` em close(), conversations.ts), o que é certo para um
+    // atendimento comum que volta, mas NÃO para uma venda ganha: o cliente
+    // manda "obrigada!" depois de fechar e a IA reabria o atendimento de um
+    // negócio concluído. Se o contato tem oportunidade GANHA nesta empresa, a
+    // IA não responde — o pós-venda é de um humano. Para reengajar (novo
+    // negócio do mesmo cliente), o humano tira o card de Fechado/Ganho, o que
+    // é a ação semanticamente correta (reabrir o negócio). Guarda barata (uma
+    // consulta indexada), colocada aqui entre as decisões de "a IA deve
+    // engajar?", antes de gastar o modelo.
+    const { data: ganha } = await db
+      .from("opportunities")
+      .select("id")
+      .eq("location_id", p.locationId)
+      .eq("contact_id", p.contactId)
+      .eq("status", "won")
+      .limit(1)
+      .maybeSingle();
+    if (ganha) return sair(p.locationId, "venda-fechada");
 
     // agente principal ATIVO da empresa
     const { data: agent } = await db
@@ -609,13 +630,26 @@ export async function maybeAutoReply(
     // ordem importa — o cliente já foi atendido antes de qualquer chance de
     // falha aqui. O contrário (deixar o cliente sem resposta porque um insert
     // do funil falhou) é pior para quem está do outro lado.
+    // O nome só renomeia contato/card se a própria pessoa o disse numa
+    // mensagem de ENTRADA. Sem isto o modelo às vezes devolvia o nome do
+    // agente ("Gabi") ou o da agência, e o contato era renomeado errado. O
+    // nome do agente vive só na saída e no system — nunca numa entrada.
+    const textosDeEntrada = history
+      .filter((m: any) => m.direction === "in")
+      .map((m: any) => String(m.body ?? ""));
+    const nomeValidado =
+      resposta.nome && nomeDitoPeloCliente(resposta.nome, textosDeEntrada)
+        ? resposta.nome
+        : null;
+    if (resposta.nome && !nomeValidado) sair(p.locationId, "nome-nao-confirmado-pelo-cliente");
+
     await registrarAtendimento(db, {
       locationId: p.locationId,
       conversationId: p.conversationId,
       contactId: p.contactId,
       dados: resposta.dados,
       etapaSugerida: resposta.etapaSugerida,
-      nome: resposta.nome,
+      nome: nomeValidado,
     });
 
     // log (best-effort; created_by null = máquina)
